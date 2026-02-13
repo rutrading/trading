@@ -26,10 +26,10 @@ Then run the database migration and start both servers:
 
 ```bash
 # Run database migration
-cd web && bunx @better-auth/cli migrate
+bun migrate
 
 # Web (Next.js)
-cd web && bun dev
+bun dev
 
 # API (FastAPI) — in a separate terminal
 cd api && uv run uvicorn app.main:app --reload

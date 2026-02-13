@@ -15,10 +15,10 @@ bun install
 bun setup
 
 # Run database migration
-cd web && bunx @better-auth/cli migrate
+bun migrate
 
 # Web
-cd web && bun dev
+bun dev
 
 # API (separate terminal)
 cd api && uv run uvicorn app.main:app --reload

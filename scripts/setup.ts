@@ -52,10 +52,10 @@ console.log(`
 Setup complete! Next steps:
 
   # Run database migrations
-  cd web && bunx @better-auth/cli migrate
+  bun migrate
 
   # Start the web app
-  cd web && bun dev
+  bun dev
 
   # Start the API (separate terminal)
   cd api && uv run uvicorn app.main:app --reload
