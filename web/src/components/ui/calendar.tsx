@@ -61,9 +61,9 @@ function Calendar({
       const baseClass =
         defaultClassNames[key as keyof typeof defaultClassNames];
 
-      acc[key as keyof typeof defaultClassNames] = userClass
+      acc[key as keyof typeof defaultClassNames] = (userClass
         ? cn(baseClass, userClass)
-        : baseClass;
+        : baseClass) as string;
 
       return acc;
     },
