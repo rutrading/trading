@@ -4,7 +4,7 @@
 
 **Prerequisites**
 - Bun 1.3+
-- Python 3.13+ with [uv](https://docs.astral.sh/uv/)
+- Python 3.13+ with [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Docker and Docker Compose
 
 **Getting Started**

@@ -13,6 +13,16 @@ try {
   process.exit(1);
 }
 
+// Check uv is installed
+try {
+  await $`uv --version`.quiet();
+} catch {
+  console.error(
+    "uv is not installed. Install it: https://docs.astral.sh/uv/getting-started/installation/"
+  );
+  process.exit(1);
+}
+
 // Start Postgres
 console.log("Starting Postgres...");
 await $`docker compose up -d`.cwd(root);

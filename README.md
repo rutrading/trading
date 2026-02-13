@@ -11,7 +11,7 @@ Senior project for Rowan University, advised by Professor McKee.
 **Prerequisites**
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Bun](https://bun.sh)
-- [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 **Setup**
 
