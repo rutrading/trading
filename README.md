@@ -1,14 +1,6 @@
 # R U Trading
 
-<p align="center">
-  <a href="https://bun.sh/"><img src="https://img.shields.io/badge/Bun-1.3+-black.svg" alt="Bun"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.13+-blue.svg" alt="Python"></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5+-blue.svg" alt="TypeScript"></a>
-  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/Postgres-16-blue.svg" alt="Postgres"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
-</p>
-
-Paper trading web app for Rowan University.
+Paper trading web app built with Next.js and FastAPI.
 
 ## Getting Started
 
