@@ -2,6 +2,10 @@
 
 Paper trading web app built with Next.js and FastAPI.
 
+Senior project for Rowan University, advised by Professor McKee.
+
+**Team:** Kyle Graham (Scrum/Lead), Nitin Sobti (Scrum/Lead), Josh Odom, Lucas Souder, Sean Twomey
+
 ## Getting Started
 
 **Prerequisites**
