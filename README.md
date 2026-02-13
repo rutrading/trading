@@ -16,20 +16,23 @@ Senior project for Rowan University, advised by Professor McKee.
 **Setup**
 
 ```bash
-# Start Postgres
-docker compose up -d
+bun install
+bun setup
+```
+
+This starts Postgres, creates `.env` files with generated secrets, and installs dependencies.
+
+Then run the database migration and start both servers:
+
+```bash
+# Run database migration
+cd web && bunx @better-auth/cli migrate
 
 # Web (Next.js)
-cd web
-cp .env.example .env.local
-bun install
-bunx @better-auth/cli migrate
-bun dev
+cd web && bun dev
 
 # API (FastAPI) — in a separate terminal
-cd api
-cp .env.example .env
-uv run uvicorn app.main:app --reload
+cd api && uv run uvicorn app.main:app --reload
 ```
 
 Then go to http://localhost:3000/login, create an account, and you'll see the dashboard.

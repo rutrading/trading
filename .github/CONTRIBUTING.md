@@ -11,19 +11,17 @@
 ```bash
 git clone https://github.com/rutrading/trading.git
 cd trading
-docker compose up -d
+bun install
+bun setup
+
+# Run database migration
+cd web && bunx @better-auth/cli migrate
 
 # Web
-cd web
-cp .env.example .env.local
-bun install
-bunx @better-auth/cli migrate
-bun dev
+cd web && bun dev
 
 # API (separate terminal)
-cd api
-cp .env.example .env
-uv run uvicorn app.main:app --reload
+cd api && uv run uvicorn app.main:app --reload
 ```
 
 **Running Tests**

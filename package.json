@@ -1,0 +1,7 @@
+{
+  "name": "trading",
+  "private": true,
+  "scripts": {
+    "setup": "bun run scripts/setup.ts"
+  }
+}
