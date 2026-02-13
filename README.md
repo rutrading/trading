@@ -20,7 +20,11 @@ bun install
 bun setup
 ```
 
-This starts Postgres, creates `.env` files with generated secrets, and installs dependencies.
+The setup script will:
+- Start Postgres via Docker Compose
+- Copy `.env.example` files and generate a `BETTER_AUTH_SECRET`
+- Install web dependencies (`bun install`)
+- Install API dependencies (`uv sync`)
 
 Then run the database migration and start both servers:
 
