@@ -1,75 +1,59 @@
 # R U Trading
 
-Paper trading web app.
+<p align="center">
+  <a href="https://bun.sh/"><img src="https://img.shields.io/badge/Bun-1.3+-black.svg" alt="Bun"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.13+-blue.svg" alt="Python"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5+-blue.svg" alt="TypeScript"></a>
+  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/Postgres-16-blue.svg" alt="Postgres"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+</p>
 
-- **Frontend**: Next.js (App Router) + Tailwind CSS — `web/`
-- **Backend**: Python FastAPI — `api/`
-- **Database**: PostgreSQL (Docker)
-- **Auth**: better-auth (Next.js handles login/registration, Python validates JWTs)
+Paper trading web app for Rowan University.
 
-## Prerequisites
+## Getting Started
 
+**Prerequisites**
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 - [Bun](https://bun.sh)
 - [uv](https://docs.astral.sh/uv/)
 
-## Setup
-
-### 1. Start Postgres
+**Setup**
 
 ```bash
+# Start Postgres
 docker compose up -d
-```
 
-### 2. Set up the web app
-
-```bash
+# Web (Next.js)
 cd web
 cp .env.example .env.local
 bun install
-bunx @better-auth/cli migrate   # creates auth tables
-bun dev                          # http://localhost:3000
-```
+bunx @better-auth/cli migrate
+bun dev
 
-### 3. Set up the API
-
-```bash
+# API (FastAPI) — in a separate terminal
 cd api
 cp .env.example .env
-uv run uvicorn app.main:app --reload   # http://localhost:8000
+uv run uvicorn app.main:app --reload
 ```
 
-### 4. Try it out
+Then go to http://localhost:3000/login, create an account, and you'll see the dashboard.
 
-1. Go to http://localhost:3000/login
-2. Create an account (Sign Up)
-3. You'll land on the dashboard: **Hello {your name}**
-4. The Python API health check: http://localhost:8000/api/health
-
-## Running Tests
+## Testing
 
 ```bash
+# API tests
 cd api
 uv run pytest
+
+# Web tests
+cd web
+bun test
 ```
 
-## Project Structure
+## Contributing
 
-```
-trading/
-├── web/                # Next.js frontend
-│   ├── src/
-│   │   ├── app/        # Pages and API routes
-│   │   ├── lib/        # Auth config
-│   │   └── components/ # React components
-│   └── package.json
-├── api/                # Python FastAPI backend
-│   ├── app/
-│   │   ├── main.py     # FastAPI app
-│   │   ├── auth.py     # JWT validation
-│   │   ├── database.py # SQLAlchemy setup
-│   │   └── routers/    # API routes
-│   ├── tests/
-│   └── pyproject.toml
-└── docker-compose.yml  # Postgres
-```
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and guidelines.
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
