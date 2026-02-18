@@ -1,0 +1,19 @@
+[project]
+name = "market-data"
+version = "0.1.0"
+description = "Market data ingestion gRPC service"
+requires-python = ">=3.13"
+dependencies = [
+    "grpcio>=1.70.0",
+    "grpcio-tools>=1.70.0",
+    "grpcio-reflection>=1.70.0",
+    "grpcio-health-checking>=1.70.0",
+    "httpx>=0.28.1",
+    "trading-lib",
+]
+
+[dependency-groups]
+dev = ["pytest>=9.0.2", "pytest-asyncio>=0.26.0"]
+
+[tool.uv.sources]
+trading-lib = { path = "../../lib", editable = true }
