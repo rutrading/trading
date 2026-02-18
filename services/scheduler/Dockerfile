@@ -27,9 +27,9 @@ RUN mkdir -p generated && \
     /proto/*.proto && \
     touch generated/__init__.py
 
-# Fix imports in generated gRPC files
-RUN for f in generated/*_pb2_grpc.py; do \
-    sed -i 's/^import \(.*_pb2\) as/from . import \1 as/' "$f"; \
+# Fix imports in generated files to use relative imports
+RUN for f in generated/*_pb2.py generated/*_pb2_grpc.py; do \
+    [ -f "$f" ] && sed -i 's/^import \(.*_pb2\) as/from . import \1 as/' "$f"; \
     done
 
 CMD ["uv", "run", "python", "-m", "app.server"]

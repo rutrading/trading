@@ -55,16 +55,18 @@ def generate(target_dir: Path) -> None:
         print(f"protoc failed for {name}:\n{error}")
         sys.exit(1)
 
-    # Fix imports in generated gRPC files to use relative imports
-    for grpc_file in out_dir.glob("*_pb2_grpc.py"):
-        content = grpc_file.read_text()
+    # Fix imports in all generated files to use relative imports
+    for gen_file in list(out_dir.glob("*_pb2.py")) + list(
+        out_dir.glob("*_pb2_grpc.py")
+    ):
+        content = gen_file.read_text()
         for proto_file in proto_files:
             module_name = proto_file.stem + "_pb2"
             content = content.replace(
-                f"import {module_name} as {module_name}",
-                f"from . import {module_name} as {module_name}",
+                f"import {module_name} as ",
+                f"from . import {module_name} as ",
             )
-        grpc_file.write_text(content)
+        gen_file.write_text(content)
 
     print(f"Generated gRPC code for {name} -> {out_dir}")
 
