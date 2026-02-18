@@ -1,6 +1,7 @@
 """Generate Python gRPC code from .proto definitions.
 
 Generates protobuf and gRPC stubs into each service's generated/ directory.
+Runs protoc via `uv run` inside each service so grpcio-tools is available.
 Run from the project root: python scripts/gen_proto.py
 """
 
@@ -14,7 +15,8 @@ SERVICES = ["market_data", "transformer", "filter", "scheduler"]
 
 
 def generate(service: str) -> None:
-    out_dir = ROOT / "services" / service / "generated"
+    service_dir = ROOT / "services" / service
+    out_dir = service_dir / "generated"
     out_dir.mkdir(exist_ok=True)
 
     # Write __init__.py so the generated dir is a package
@@ -28,7 +30,9 @@ def generate(service: str) -> None:
         sys.exit(1)
 
     cmd = [
-        sys.executable,
+        "uv",
+        "run",
+        "python",
         "-m",
         "grpc_tools.protoc",
         f"-I{PROTO_DIR}",
@@ -38,9 +42,10 @@ def generate(service: str) -> None:
         *[str(p) for p in proto_files],
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=service_dir)
     if result.returncode != 0:
-        print(f"protoc failed for {service}:\n{result.stderr}")
+        error = result.stderr or result.stdout
+        print(f"protoc failed for {service}:\n{error}")
         sys.exit(1)
 
     # Fix imports in generated gRPC files to use relative imports
