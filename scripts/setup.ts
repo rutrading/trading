@@ -25,7 +25,7 @@ try {
 
 // Start Postgres
 console.log("Starting Postgres...");
-await $`docker compose up -d`.cwd(root);
+await $`docker compose up -d db`.cwd(root);
 
 // Copy web/.env.example → web/.env.local (if not exists)
 const webEnv = join(root, "web", ".env.local");
@@ -51,12 +51,32 @@ if (!existsSync(apiEnv)) {
   console.log("api/.env already exists, skipping");
 }
 
+// Copy service .env.example files
+const services = ["market_data", "transformer", "filter", "scheduler"];
+for (const service of services) {
+  const envFile = join(root, "services", service, ".env");
+  const envExample = join(root, "services", service, ".env.example");
+  if (existsSync(envExample) && !existsSync(envFile)) {
+    copyFileSync(envExample, envFile);
+    console.log(`Created services/${service}/.env`);
+  }
+}
+
 // Install dependencies
 console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
 
 console.log("Installing API dependencies...");
 await $`uv sync`.cwd(join(root, "api"));
+
+// Install service dependencies and generate proto code
+console.log("Installing service dependencies...");
+for (const service of services) {
+  await $`uv sync`.cwd(join(root, "services", service));
+}
+
+console.log("Generating gRPC proto code...");
+await $`uv run python scripts/gen_proto.py`.cwd(root);
 
 console.log(`
 Setup complete! Next steps:
@@ -69,6 +89,10 @@ Setup complete! Next steps:
 
   # Start the API (separate terminal)
   cd api && uv run uvicorn app.main:app --reload
+
+  # Start gRPC services (separate terminal)
+  docker compose up -d market-data transformer filter scheduler
+  # Or run one locally: cd services/market_data && python -m app.server
 
 Then visit http://localhost:3000/login
 `);

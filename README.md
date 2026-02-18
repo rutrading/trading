@@ -25,6 +25,8 @@ The setup script will:
 - Copy `.env.example` files and generate a `BETTER_AUTH_SECRET`
 - Install web dependencies (`bun install`)
 - Install API dependencies (`uv sync`)
+- Install gRPC service dependencies (`uv sync` per service)
+- Generate proto code (`python scripts/gen_proto.py`)
 
 Then run the database migration and start the servers:
 
@@ -37,6 +39,9 @@ bun dev
 
 # API (FastAPI) — in a separate terminal
 cd api && uv run uvicorn app.main:app --reload
+
+# gRPC services — in a separate terminal
+docker compose up -d market-data transformer filter scheduler
 ```
 
 Then go to http://localhost:3000/login, create an account, and you'll see the dashboard.
@@ -64,21 +69,20 @@ Frontend --REST--> FastAPI --gRPC--> MarketData -> Transformer -> Filter -> DB
 
 **Running the services**
 
+Proto code and dependencies are already set up by `bun setup`. To start:
+
 ```bash
-# Generate proto code (run once, or after changing .proto files)
-cd services/market_data && uv sync && cd ../..
-python scripts/gen_proto.py
+# All services via Docker Compose
+docker compose up -d market-data transformer filter scheduler
 
-# Start all services via Docker Compose
-docker compose up -d
-
-# Or run a single service locally (example: market-data)
+# Or run a single service locally
 cd services/market_data
-uv sync
 python -m app.server
 ```
 
-**Proto definitions** live in `proto/`. Shared library code lives in `lib/`. Run `python scripts/gen_proto.py` to regenerate code after editing `.proto` files.
+If you edit `.proto` files, regenerate code with `python scripts/gen_proto.py`.
+
+Proto definitions live in `proto/`. Shared library code lives in `lib/`.
 
 ## Testing
 
