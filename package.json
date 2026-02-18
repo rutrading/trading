@@ -4,6 +4,12 @@
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "dev": "bun run --cwd web dev",
+    "dev:api": "uv run --directory api uvicorn app.main:app --reload",
+    "dev:services": "concurrently --kill-others -n md,tf,fl,sc -c blue,green,yellow,magenta \"uv run --directory services/market_data python -m app.server\" \"uv run --directory services/transformer python -m app.server\" \"uv run --directory services/filter python -m app.server\" \"uv run --directory services/scheduler python -m app.server\"",
+    "dev:all": "concurrently --kill-others -n web,api,md,tf,fl,sc -c cyan,red,blue,green,yellow,magenta \"bun run dev\" \"bun run dev:api\" \"uv run --directory services/market_data python -m app.server\" \"uv run --directory services/transformer python -m app.server\" \"uv run --directory services/filter python -m app.server\" \"uv run --directory services/scheduler python -m app.server\"",
     "migrate": "bun run --cwd web --env-file .env.local bunx @better-auth/cli migrate && uv run --directory api python ../scripts/migrate_services.py"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

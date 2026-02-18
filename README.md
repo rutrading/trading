@@ -34,13 +34,18 @@ Then run the database migration and start the servers:
 # Run database migration
 bun migrate
 
-# Web (Next.js)
-bun dev
+# Everything (web + API + gRPC services) in one terminal
+bun run dev:all
 
-# API (FastAPI) — in a separate terminal
-cd api && uv run uvicorn app.main:app --reload
+# Or start pieces individually:
+bun dev              # Web (Next.js)
+bun run dev:api      # API (FastAPI) with hot reload
+bun run dev:services # All 4 gRPC services locally
+```
 
-# gRPC services — in a separate terminal
+To run gRPC services via Docker instead:
+
+```bash
 docker compose up -d market-data transformer filter scheduler
 ```
 
@@ -72,12 +77,15 @@ Frontend --REST--> FastAPI --gRPC--> MarketData -> Transformer -> Filter -> DB
 Proto code and dependencies are already set up by `bun setup`. To start:
 
 ```bash
+# All services locally (color-coded output)
+bun run dev:services
+
 # All services via Docker Compose
 docker compose up -d market-data transformer filter scheduler
 
 # Or run a single service locally
 cd services/market_data
-python -m app.server
+uv run python -m app.server
 ```
 
 If you edit `.proto` files, regenerate code with `python scripts/gen_proto.py`.
