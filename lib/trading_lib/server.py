@@ -30,7 +30,13 @@ async def create_server(
         port: The port to listen on.
         service_names: Proto service names for reflection (e.g. "trading.MarketDataService").
     """
-    server = grpc.aio.server(interceptors=[LoggingInterceptor()])
+    server = grpc.aio.server(
+        interceptors=[LoggingInterceptor()],
+        options=[
+            ("grpc.keepalive_permit_without_calls", False),
+            ("grpc.http2.min_recv_ping_interval_without_data_ms", 30000),
+        ],
+    )
 
     # Register the service
     add_servicer_fn(servicer, server)

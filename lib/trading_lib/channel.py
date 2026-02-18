@@ -13,10 +13,9 @@ def create_channel(target: str) -> grpc.aio.Channel:
         A configured async gRPC channel.
     """
     options = [
-        ("grpc.keepalive_time_ms", 10000),
-        ("grpc.keepalive_timeout_ms", 5000),
-        ("grpc.keepalive_permit_without_calls", True),
-        ("grpc.http2.max_pings_without_data", 0),
+        ("grpc.keepalive_time_ms", 60000),
+        ("grpc.keepalive_timeout_ms", 10000),
+        ("grpc.keepalive_permit_without_calls", False),
         ("grpc.initial_reconnect_backoff_ms", 100),
         ("grpc.min_reconnect_backoff_ms", 100),
         ("grpc.max_reconnect_backoff_ms", 1000),
