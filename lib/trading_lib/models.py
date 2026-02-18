@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
+from sqlalchemy import String, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from trading_lib.db import Base
 
@@ -12,34 +13,35 @@ class Quote(Base):
 
     __tablename__ = "quotes"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    symbol = Column(String, nullable=False, index=True)
-    price = Column(Float, nullable=False)
-    open = Column(Float)
-    high = Column(Float)
-    low = Column(Float)
-    volume = Column(Float)
-    change = Column(Float)
-    change_percent = Column(Float)
-    source = Column(String)
-    timestamp = Column(Integer)
-    name = Column(String)
-    exchange = Column(String)
-    currency = Column(String)
-    previous_close = Column(Float)
-    is_market_open = Column(Boolean)
-    average_volume = Column(Float)
-    fifty_two_week_low = Column(Float)
-    fifty_two_week_high = Column(Float)
-    day_range_pct = Column(Float)
-    fifty_two_week_pct = Column(Float)
-    gap_pct = Column(Float)
-    volume_ratio = Column(Float)
-    intraday_range_pct = Column(Float)
-    signal = Column(String)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(
-        DateTime,
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String, index=True)
+    price: Mapped[float]
+    open: Mapped[float | None] = mapped_column(default=None)
+    high: Mapped[float | None] = mapped_column(default=None)
+    low: Mapped[float | None] = mapped_column(default=None)
+    volume: Mapped[float | None] = mapped_column(default=None)
+    change: Mapped[float | None] = mapped_column(default=None)
+    change_percent: Mapped[float | None] = mapped_column(default=None)
+    source: Mapped[str | None] = mapped_column(default=None)
+    timestamp: Mapped[int | None] = mapped_column(default=None)
+    name: Mapped[str | None] = mapped_column(default=None)
+    exchange: Mapped[str | None] = mapped_column(default=None)
+    currency: Mapped[str | None] = mapped_column(default=None)
+    previous_close: Mapped[float | None] = mapped_column(default=None)
+    is_market_open: Mapped[bool | None] = mapped_column(default=None)
+    average_volume: Mapped[float | None] = mapped_column(default=None)
+    fifty_two_week_low: Mapped[float | None] = mapped_column(default=None)
+    fifty_two_week_high: Mapped[float | None] = mapped_column(default=None)
+    day_range_pct: Mapped[float | None] = mapped_column(default=None)
+    fifty_two_week_pct: Mapped[float | None] = mapped_column(default=None)
+    gap_pct: Mapped[float | None] = mapped_column(default=None)
+    volume_ratio: Mapped[float | None] = mapped_column(default=None)
+    intraday_range_pct: Mapped[float | None] = mapped_column(default=None)
+    signal: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime | None] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )

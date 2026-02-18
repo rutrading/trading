@@ -3,11 +3,14 @@
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from trading_lib.config import get_config
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
+
 
 _engine = None
 _SessionLocal = None
