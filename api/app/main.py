@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import health
+from app.routers import health, quotes
 
 app = FastAPI(title="R U Trading API")
 
@@ -14,3 +14,4 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(quotes.router, prefix="/api")
