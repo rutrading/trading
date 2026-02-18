@@ -25,7 +25,7 @@ class PipelineClient:
         self.config = config
         self._market_data_stub = None
         self._transformer_stub = None
-        self._filter_stub = None
+        self._persistence_stub = None
 
     def _ensure_stubs(self) -> None:
         """Lazily create channels and stubs on the asyncio event loop."""
@@ -33,7 +33,7 @@ class PipelineClient:
             return
 
         from generated import (
-            filter_pb2_grpc,
+            persistence_pb2_grpc,
             market_data_pb2_grpc,
             transformer_pb2_grpc,
         )
@@ -44,8 +44,8 @@ class PipelineClient:
         self._transformer_stub = transformer_pb2_grpc.TransformerServiceStub(
             create_channel(self.config.transformer_host)
         )
-        self._filter_stub = filter_pb2_grpc.FilterServiceStub(
-            create_channel(self.config.filter_host)
+        self._persistence_stub = persistence_pb2_grpc.PersistenceServiceStub(
+            create_channel(self.config.persistence_host)
         )
 
     async def fetch_quote(self, symbol: str):
@@ -56,7 +56,7 @@ class PipelineClient:
         self._ensure_stubs()
 
         from generated import (
-            filter_pb2,
+            persistence_pb2,
             market_data_pb2,
             transformer_pb2,
         )
@@ -78,20 +78,20 @@ class PipelineClient:
             )
             transform_ms = (time.perf_counter_ns() - t0) / 1_000_000
 
-            # Step 3: Filter and persist
+            # Step 3: Persist
             t0 = time.perf_counter_ns()
-            filter_request = filter_pb2.ProcessRequest(quote=transformed)
-            await self._filter_stub.Process(filter_request, timeout=2)
-            filter_ms = (time.perf_counter_ns() - t0) / 1_000_000
+            persist_request = persistence_pb2.PersistRequest(quote=transformed)
+            await self._persistence_stub.Persist(persist_request, timeout=2)
+            persist_ms = (time.perf_counter_ns() - t0) / 1_000_000
 
             total_ms = (time.perf_counter_ns() - pipeline_start) / 1_000_000
             logger.info(
-                "%s pipeline: %.1fms total | fetch=%.1fms transform=%.1fms filter=%.1fms",
+                "%s pipeline: %.1fms total | fetch=%.1fms transform=%.1fms persist=%.1fms",
                 symbol,
                 total_ms,
                 fetch_ms,
                 transform_ms,
-                filter_ms,
+                persist_ms,
             )
 
             return transformed
