@@ -10,14 +10,29 @@ load_dotenv()
 
 AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:3000")
 JWKS_URL = f"{AUTH_SERVER_URL}/api/auth/jwks"
+SKIP_AUTH = os.environ.get("SKIP_AUTH", "").lower() in ("1", "true")
 
 jwks_client = PyJWKClient(JWKS_URL)
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=not SKIP_AUTH)
+
+DEV_USER = {
+    "sub": "dev",
+    "name": "Dev User",
+    "email": "dev@localhost",
+}
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:
+    if SKIP_AUTH:
+        return DEV_USER
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+
     token = credentials.credentials
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
