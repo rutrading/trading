@@ -10,5 +10,8 @@ dependencies = [
     "trading-lib",
 ]
 
+[dependency-groups]
+dev = ["pytest>=9.0.2", "httpx>=0.28.1"]
+
 [tool.uv.sources]
 trading-lib = { workspace = true }

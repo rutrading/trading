@@ -1,4 +1,9 @@
+import os
+
+import pytest
 from fastapi.testclient import TestClient
+
+os.environ["SKIP_AUTH"] = "false"
 
 from app.main import app
 
