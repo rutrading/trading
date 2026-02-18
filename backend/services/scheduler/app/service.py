@@ -11,7 +11,7 @@ from trading_lib.utils import is_market_open, is_quote_fresh
 
 logger = logging.getLogger(__name__)
 
-# Polling intervals (free tier = 8 calls/min)
+# Polling intervals
 MARKET_HOURS_INTERVAL = 60  # seconds during market hours
 OFF_MARKET_INTERVAL = 300  # 5 minutes when market is closed
 
@@ -48,21 +48,21 @@ class Scheduler:
 
     async def run(self) -> None:
         """Main scheduler loop."""
-        logger.info("Scheduler starting, loading symbols from DB...")
+        logger.info("Scheduler starting...")
 
-        # Wait for other services to start before first poll
-        logger.info("Waiting 5s for services to start...")
+        # Wait for other services to start
         await asyncio.sleep(5)
 
+        # Create channels to other services
         market_data_channel = create_channel(self.config.market_data_host)
         transformer_channel = create_channel(self.config.transformer_host)
-        filter_channel = create_channel(self.config.filter_host)
+        persistence_channel = create_channel(self.config.persistence_host)
 
         from generated import (
-            filter_pb2,
-            filter_pb2_grpc,
             market_data_pb2,
             market_data_pb2_grpc,
+            persistence_pb2,
+            persistence_pb2_grpc,
             transformer_pb2,
             transformer_pb2_grpc,
         )
@@ -73,7 +73,9 @@ class Scheduler:
         transformer_stub = transformer_pb2_grpc.TransformerServiceStub(
             transformer_channel
         )
-        filter_stub = filter_pb2_grpc.FilterServiceStub(filter_channel)
+        persistence_stub = persistence_pb2_grpc.PersistenceServiceStub(
+            persistence_channel
+        )
 
         while True:
             market_open = is_market_open()
@@ -83,83 +85,68 @@ class Scheduler:
             symbols = _get_tracked_symbols()
             if not symbols:
                 logger.info(
-                    "No symbols in DB yet, waiting %ds (market %s)",
-                    interval,
-                    market_status,
+                    "No symbols in DB, waiting %ds (market %s)", interval, market_status
                 )
-                try:
-                    await asyncio.sleep(interval)
-                except asyncio.CancelledError:
-                    logger.info("Scheduler shutting down")
-                    return
+                await self._sleep(interval)
                 continue
 
             # Only fetch symbols whose quotes are stale
             stale = _get_stale_symbols(symbols, self.config.quote_staleness_seconds)
-
             if not stale:
                 logger.info(
                     "All %d symbols fresh, skipping (market %s)",
                     len(symbols),
                     market_status,
                 )
-                try:
-                    await asyncio.sleep(interval)
-                except asyncio.CancelledError:
-                    logger.info("Scheduler shutting down")
-                    return
+                await self._sleep(interval)
                 continue
 
             logger.info(
-                "Market %s, polling %d/%d stale symbols every %ds",
-                market_status,
+                "Polling %d/%d stale symbols (market %s)",
                 len(stale),
                 len(symbols),
-                interval,
+                market_status,
             )
 
             try:
-                # Step 1: Fetch from MarketData
-                bulk_request = market_data_pb2.BulkFetchRequest(symbols=stale)
-                bulk_response = await market_data_stub.BulkFetch(
-                    bulk_request, timeout=30
+                # Step 1: Fetch raw quotes from MarketData
+                fetch_response = await market_data_stub.BulkFetch(
+                    market_data_pb2.BulkFetchRequest(symbols=stale),
+                    timeout=30,
                 )
-                logger.info("Fetched %d quotes", len(bulk_response.quotes))
+                logger.info("Fetched %d quotes", len(fetch_response.quotes))
 
-                # Step 2: Transform
-                transform_request = transformer_pb2.BulkTransformRequest(
-                    raw_quotes=bulk_response.quotes
-                )
+                # Step 2: Transform the quotes
                 transform_response = await transformer_stub.BulkTransform(
-                    transform_request, timeout=10
+                    transformer_pb2.BulkTransformRequest(
+                        raw_quotes=fetch_response.quotes
+                    ),
+                    timeout=10,
                 )
-                logger.info(
-                    "Transformed %d quotes",
-                    len(transform_response.quotes),
-                )
+                logger.info("Transformed %d quotes", len(transform_response.quotes))
 
-                # Step 3: Filter and persist
-                filter_request = filter_pb2.BulkProcessRequest(
-                    quotes=transform_response.quotes
+                # Step 3: Persist to database
+                persist_response = await persistence_stub.BulkPersist(
+                    persistence_pb2.BulkPersistRequest(
+                        quotes=transform_response.quotes
+                    ),
+                    timeout=10,
                 )
-                filter_response = await filter_stub.BulkProcess(
-                    filter_request, timeout=10
-                )
-                persisted = sum(1 for r in filter_response.results if r.persisted)
-                logger.info(
-                    "Persisted %d/%d quotes",
-                    persisted,
-                    len(filter_response.results),
-                )
+                saved = sum(1 for r in persist_response.results if r.success)
+                logger.info("Saved %d/%d quotes", saved, len(persist_response.results))
 
             except asyncio.CancelledError:
                 logger.info("Scheduler shutting down")
                 return
             except Exception as e:
-                logger.error("Scheduler pipeline error: %s", e)
+                logger.error("Pipeline error: %s", e)
 
-            try:
-                await asyncio.sleep(interval)
-            except asyncio.CancelledError:
-                logger.info("Scheduler shutting down")
-                return
+            await self._sleep(interval)
+
+    async def _sleep(self, seconds: int) -> None:
+        """Sleep with cancellation support."""
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            logger.info("Scheduler shutting down")
+            raise
