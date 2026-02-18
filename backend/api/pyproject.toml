@@ -7,6 +7,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "pyjwt>=2.11.0",
     "cryptography>=46.0.5",
+    "python-dotenv>=1.2.1",
     "trading-lib",
 ]
 
