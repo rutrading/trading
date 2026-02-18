@@ -1,7 +1,7 @@
 [project]
-name = "filter"
+name = "persistence"
 version = "0.1.0"
-description = "Data filtering and persistence gRPC service"
+description = "Persistence gRPC service - saves quotes to the database"
 dependencies = ["trading-lib"]
 
 [tool.uv.sources]

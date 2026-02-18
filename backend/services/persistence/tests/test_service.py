@@ -1,4 +1,4 @@
-"""Unit tests for the Filter servicer."""
+"""Unit tests for the Persistence servicer."""
 
 from unittest.mock import MagicMock, patch
 
@@ -14,9 +14,9 @@ def config():
 
 @pytest.fixture
 def servicer(config):
-    from app.service import FilterServicer
+    from app.service import PersistenceServicer
 
-    return FilterServicer(config)
+    return PersistenceServicer(config)
 
 
 @pytest.fixture
@@ -27,8 +27,8 @@ def context():
     return ctx
 
 
-def _make_quote_request(symbol="AAPL", price=150.0):
-    """Helper to create a mock FilterRequest."""
+def _make_persist_request(symbol="AAPL", price=150.0):
+    """Helper to create a mock PersistRequest."""
     request = MagicMock()
     request.quote.symbol = symbol
     request.quote.price = price
@@ -43,26 +43,26 @@ def _make_quote_request(symbol="AAPL", price=150.0):
 
 
 @pytest.mark.asyncio
-async def test_process_new_quote(servicer, context):
-    """Process should insert a new quote when symbol doesn't exist in DB."""
+async def test_persist_new_quote(servicer, context):
+    """Persist should insert a new quote when symbol doesn't exist in DB."""
     mock_session = MagicMock()
     mock_query = MagicMock()
     mock_query.filter.return_value.first.return_value = None
     mock_session.query.return_value = mock_query
 
     with patch("app.service.get_db", return_value=iter([mock_session])):
-        request = _make_quote_request("AAPL", 150.0)
-        result = await servicer.Process(request, context)
+        request = _make_persist_request("AAPL", 150.0)
+        result = await servicer.Persist(request, context)
 
-        assert result.persisted is True
+        assert result.success is True
         assert result.symbol == "AAPL"
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_update_existing(servicer, context):
-    """Process should update an existing quote."""
+async def test_persist_update_existing(servicer, context):
+    """Persist should update an existing quote."""
     existing = MagicMock()
     existing.symbol = "AAPL"
 
@@ -72,20 +72,21 @@ async def test_process_update_existing(servicer, context):
     mock_session.query.return_value = mock_query
 
     with patch("app.service.get_db", return_value=iter([mock_session])):
-        request = _make_quote_request("AAPL", 155.0)
-        result = await servicer.Process(request, context)
+        request = _make_persist_request("AAPL", 155.0)
+        result = await servicer.Persist(request, context)
 
-        assert result.persisted is True
+        assert result.success is True
         assert existing.price == 155.0
         mock_session.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_process_db_error(servicer, context):
-    """Process should handle database errors gracefully."""
+async def test_persist_db_error(servicer, context):
+    """Persist should handle database errors gracefully."""
     with patch("app.service.get_db", side_effect=Exception("DB connection failed")):
-        request = _make_quote_request("AAPL", 150.0)
-        result = await servicer.Process(request, context)
+        request = _make_persist_request("AAPL", 150.0)
+        result = await servicer.Persist(request, context)
 
-        assert result.persisted is False
+        assert result.success is False
         assert "DB connection failed" in result.message
+        context.set_code.assert_called_once()
