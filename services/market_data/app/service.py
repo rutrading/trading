@@ -1,5 +1,6 @@
 """MarketDataService gRPC servicer implementation."""
 
+import json
 import logging
 import time
 
@@ -52,6 +53,12 @@ class MarketDataServicer:
                     context.set_details(f"TwelveData error: {msg}")
                 return market_data_pb2.GetQuoteResponse()
 
+            # Use json.dumps for nested dicts so downstream can json.loads cleanly
+            raw = {
+                k: (json.dumps(v) if isinstance(v, dict) else str(v))
+                for k, v in data.items()
+            }
+
             return market_data_pb2.GetQuoteResponse(
                 symbol=symbol,
                 price=float(data.get("close", 0)),
@@ -61,7 +68,7 @@ class MarketDataServicer:
                 volume=float(data.get("volume", 0)),
                 timestamp=int(time.time()),
                 source="twelvedata",
-                raw={k: str(v) for k, v in data.items()},
+                raw=raw,
             )
         except httpx.HTTPStatusError as e:
             logger.error("TwelveData HTTP error: %s", e)

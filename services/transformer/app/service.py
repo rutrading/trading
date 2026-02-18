@@ -4,16 +4,9 @@ import json
 import logging
 
 from trading_lib.config import Config
+from trading_lib.utils import safe_float
 
 logger = logging.getLogger(__name__)
-
-
-def _raw_float(raw: dict, key: str, fallback: float = 0.0) -> float:
-    """Safely parse a float from the raw string map."""
-    try:
-        return float(raw.get(key, fallback))
-    except (ValueError, TypeError):
-        return fallback
 
 
 def _safe_pct(numerator: float, denominator: float) -> float:
@@ -52,18 +45,18 @@ class TransformerServicer:
         raw = dict(raw_quote.raw)  # map<string,string> from market_data
 
         # --- Extract raw values from TwelveData ---
-        change = _raw_float(raw, "change")
-        change_percent = _raw_float(raw, "percent_change")
-        previous_close = _raw_float(raw, "previous_close")
-        average_volume = _raw_float(raw, "average_volume")
+        change = safe_float(raw, "change")
+        change_percent = safe_float(raw, "percent_change")
+        previous_close = safe_float(raw, "previous_close")
+        average_volume = safe_float(raw, "average_volume")
 
-        # Parse fifty_two_week nested JSON (stored as string repr)
+        # Parse fifty_two_week nested JSON
         ftw_low = 0.0
         ftw_high = 0.0
         ftw_raw = raw.get("fifty_two_week", "")
         if ftw_raw and ftw_raw.startswith("{"):
             try:
-                ftw = json.loads(ftw_raw.replace("'", '"'))
+                ftw = json.loads(ftw_raw)
                 ftw_low = float(ftw.get("low", 0))
                 ftw_high = float(ftw.get("high", 0))
             except (json.JSONDecodeError, ValueError):
