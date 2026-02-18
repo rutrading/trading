@@ -1,12 +1,12 @@
 FROM python:3.13-slim
 
-WORKDIR /service
+WORKDIR /app/services/market_data
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy shared library
-COPY lib/ /lib/
+# Copy shared library (../../lib relative to workdir = /app/lib)
+COPY lib/ /app/lib/
 
 # Copy proto definitions
 COPY proto/ /proto/
@@ -18,7 +18,8 @@ COPY services/market_data/ .
 RUN uv sync --frozen --no-dev
 
 # Generate proto code
-RUN uv run python -m grpc_tools.protoc \
+RUN mkdir -p generated && \
+    uv run python -m grpc_tools.protoc \
     -I/proto \
     --python_out=generated \
     --pyi_out=generated \
