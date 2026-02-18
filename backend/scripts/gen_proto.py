@@ -17,7 +17,7 @@ PROTO_PACKAGE_DIR = PROTO_DIR / "trading"
 TARGETS = [
     ROOT / "services" / "market_data",
     ROOT / "services" / "transformer",
-    ROOT / "services" / "filter",
+    ROOT / "services" / "persistence",
     ROOT / "services" / "scheduler",
     ROOT / "api",
 ]

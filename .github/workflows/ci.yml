@@ -93,7 +93,7 @@ jobs:
         run: |
           uv run --package market-data pytest services/market_data/tests/ -v
           uv run --package transformer pytest services/transformer/tests/ -v
-          uv run --package filter pytest services/filter/tests/ -v
+          uv run --package persistence pytest services/persistence/tests/ -v
           uv run --package scheduler pytest services/scheduler/tests/ -v
 
   base-image:
@@ -153,7 +153,7 @@ jobs:
       packages: read
     strategy:
       matrix:
-        service: [market_data, transformer, filter, scheduler]
+        service: [market_data, transformer, persistence, scheduler]
     steps:
       - uses: actions/checkout@v4
 

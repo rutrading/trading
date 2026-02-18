@@ -18,9 +18,9 @@ services:
       - "50051:50051"
     environment:
       MARKET_DATA_HOST: "0.0.0.0:50051"
-      TRANSFORMER_HOST: "transformer:50052"
       TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
       TWELVE_DATA_BASE_URL: "https://api.twelvedata.com"
+      TWELVE_DATA_RATE_LIMIT: 8
       LOG_LEVEL: INFO
 
   transformer:
@@ -33,14 +33,14 @@ services:
       TRANSFORMER_HOST: "0.0.0.0:50052"
       LOG_LEVEL: INFO
 
-  filter:
+  persistence:
     build:
       context: .
-      dockerfile: backend/services/filter/Dockerfile
+      dockerfile: backend/services/persistence/Dockerfile
     ports:
       - "50053:50053"
     environment:
-      FILTER_HOST: "0.0.0.0:50053"
+      PERSISTENCE_HOST: "0.0.0.0:50053"
       DATABASE_URL: "postgresql://postgres:postgres@db:5432/trading"
       LOG_LEVEL: INFO
     depends_on:
@@ -53,12 +53,13 @@ services:
     environment:
       MARKET_DATA_HOST: "market-data:50051"
       TRANSFORMER_HOST: "transformer:50052"
-      FILTER_HOST: "filter:50053"
+      PERSISTENCE_HOST: "persistence:50053"
+      DATABASE_URL: "postgresql://postgres:postgres@db:5432/trading"
       LOG_LEVEL: INFO
     depends_on:
       - market-data
       - transformer
-      - filter
+      - persistence
 
 volumes:
   postgres_data:

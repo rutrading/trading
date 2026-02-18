@@ -52,7 +52,7 @@ if (!existsSync(apiEnv)) {
 }
 
 // Copy service .env.example files
-const services = ["market_data", "transformer", "filter", "scheduler"];
+const services = ["market_data", "transformer", "persistence", "scheduler"];
 for (const service of services) {
   const envFile = join(root, "services", service, ".env");
   const envExample = join(root, "services", service, ".env.example");
@@ -91,7 +91,7 @@ Setup complete! Next steps:
   cd api && uv run uvicorn app.main:app --reload
 
   # Start gRPC services (separate terminal)
-  docker compose up -d market-data transformer filter scheduler
+  docker compose up -d market-data transformer persistence scheduler
   # Or run one locally: cd services/market_data && python -m app.server
 
 Then visit http://localhost:3000/login
