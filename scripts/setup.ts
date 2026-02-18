@@ -76,7 +76,7 @@ for (const service of services) {
 }
 
 console.log("Generating gRPC proto code...");
-await $`uv run python scripts/gen_proto.py`.cwd(join(root, "services", "market_data"));
+await $`uv run python ${join(root, "scripts", "gen_proto.py")}`.cwd(join(root, "services", "market_data"));
 
 console.log(`
 Setup complete! Next steps:
