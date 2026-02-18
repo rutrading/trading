@@ -2,35 +2,42 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from trading_lib.channel import create_channel
 from trading_lib.config import Config
+from trading_lib.db import get_db
+from trading_lib.models import Quote
+from trading_lib.utils import is_market_open, is_quote_fresh
 
 logger = logging.getLogger(__name__)
 
-# US market hours (ET): 9:30 AM - 4:00 PM
-MARKET_OPEN_HOUR = 14  # 9:30 AM ET = 14:30 UTC
-MARKET_OPEN_MINUTE = 30
-MARKET_CLOSE_HOUR = 21  # 4:00 PM ET = 21:00 UTC
-
 # Polling intervals (free tier = 8 calls/min)
 MARKET_HOURS_INTERVAL = 60  # seconds during market hours
-OFF_MARKET_INTERVAL = 300  # 5 minutes when market is closed (prices don't change)
+OFF_MARKET_INTERVAL = 300  # 5 minutes when market is closed
 
 
-def is_market_open() -> bool:
-    """Check if US stock market is currently open (approximate, UTC-based)."""
-    now = datetime.now(timezone.utc)
-    # Skip weekends
-    if now.weekday() >= 5:
-        return False
-    hour, minute = now.hour, now.minute
-    if hour < MARKET_OPEN_HOUR or hour >= MARKET_CLOSE_HOUR:
-        return False
-    if hour == MARKET_OPEN_HOUR and minute < MARKET_OPEN_MINUTE:
-        return False
-    return True
+def _get_tracked_symbols() -> list[str]:
+    """Return distinct symbols already stored in the quotes table."""
+    db = next(get_db())
+    try:
+        rows = db.query(Quote.symbol).distinct().all()
+        return [row[0] for row in rows]
+    finally:
+        db.close()
+
+
+def _get_stale_symbols(symbols: list[str], staleness_seconds: int) -> list[str]:
+    """Return symbols whose cached quote is not fresh."""
+    db = next(get_db())
+    try:
+        stale = []
+        for sym in symbols:
+            quote = db.query(Quote).filter(Quote.symbol == sym).first()
+            if quote is None or not is_quote_fresh(quote.updated_at, staleness_seconds):
+                stale.append(sym)
+        return stale
+    finally:
+        db.close()
 
 
 class Scheduler:
@@ -38,20 +45,10 @@ class Scheduler:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        raw = config.scheduler_symbols.strip()
-        if not raw:
-            logger.error("SCHEDULER_SYMBOLS is empty, nothing to poll")
-        self.symbols = [s.strip().upper() for s in raw.split(",") if s.strip()]
 
     async def run(self) -> None:
         """Main scheduler loop."""
-        if not self.symbols:
-            logger.error(
-                "No symbols configured. Set SCHEDULER_SYMBOLS env var (comma-separated)."
-            )
-            return
-
-        logger.info("Scheduler starting with symbols: %s", self.symbols)
+        logger.info("Scheduler starting, loading symbols from DB...")
 
         # Wait for other services to start before first poll
         logger.info("Waiting 5s for services to start...")
@@ -79,15 +76,51 @@ class Scheduler:
         filter_stub = filter_pb2_grpc.FilterServiceStub(filter_channel)
 
         while True:
-            interval = (
-                MARKET_HOURS_INTERVAL if is_market_open() else OFF_MARKET_INTERVAL
+            market_open = is_market_open()
+            interval = MARKET_HOURS_INTERVAL if market_open else OFF_MARKET_INTERVAL
+            market_status = "open" if market_open else "closed"
+
+            symbols = _get_tracked_symbols()
+            if not symbols:
+                logger.info(
+                    "No symbols in DB yet, waiting %ds (market %s)",
+                    interval,
+                    market_status,
+                )
+                try:
+                    await asyncio.sleep(interval)
+                except asyncio.CancelledError:
+                    logger.info("Scheduler shutting down")
+                    return
+                continue
+
+            # Only fetch symbols whose quotes are stale
+            stale = _get_stale_symbols(symbols, self.config.quote_staleness_seconds)
+
+            if not stale:
+                logger.info(
+                    "All %d symbols fresh, skipping (market %s)",
+                    len(symbols),
+                    market_status,
+                )
+                try:
+                    await asyncio.sleep(interval)
+                except asyncio.CancelledError:
+                    logger.info("Scheduler shutting down")
+                    return
+                continue
+
+            logger.info(
+                "Market %s, polling %d/%d stale symbols every %ds",
+                market_status,
+                len(stale),
+                len(symbols),
+                interval,
             )
-            market_status = "open" if is_market_open() else "closed"
-            logger.info("Market %s, polling every %ds", market_status, interval)
 
             try:
                 # Step 1: Fetch from MarketData
-                bulk_request = market_data_pb2.BulkFetchRequest(symbols=self.symbols)
+                bulk_request = market_data_pb2.BulkFetchRequest(symbols=stale)
                 bulk_response = await market_data_stub.BulkFetch(
                     bulk_request, timeout=30
                 )
