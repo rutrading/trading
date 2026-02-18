@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
 
 from trading_lib.db import Base
 
@@ -23,5 +23,19 @@ class Quote(Base):
     change_percent = Column(Float)
     source = Column(String)
     timestamp = Column(Integer)
+    name = Column(String)
+    exchange = Column(String)
+    currency = Column(String)
+    previous_close = Column(Float)
+    is_market_open = Column(Boolean)
+    average_volume = Column(Float)
+    fifty_two_week_low = Column(Float)
+    fifty_two_week_high = Column(Float)
+    day_range_pct = Column(Float)
+    fifty_two_week_pct = Column(Float)
+    gap_pct = Column(Float)
+    volume_ratio = Column(Float)
+    intraday_range_pct = Column(Float)
+    signal = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
