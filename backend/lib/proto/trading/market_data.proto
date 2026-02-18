@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package trading;
+
+service MarketDataService {
+  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+  rpc BulkFetch(BulkFetchRequest) returns (BulkFetchResponse);
+}
+
+message GetQuoteRequest {
+  string symbol = 1;
+}
+
+message GetQuoteResponse {
+  string symbol = 1;
+  double price = 2;
+  double open = 3;
+  double high = 4;
+  double low = 5;
+  double volume = 6;
+  int64 timestamp = 7;
+  string source = 8;
+  map<string, string> raw = 9;
+}
+
+message BulkFetchRequest {
+  repeated string symbols = 1;
+}
+
+message BulkFetchResponse {
+  repeated GetQuoteResponse quotes = 1;
+}
