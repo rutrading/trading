@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -7,11 +7,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY backend/pyproject.toml backend/uv.lock* ./
 COPY backend/lib/ lib/
 
-RUN uv sync --frozen --no-dev --package filter
+RUN uv sync --frozen --no-dev
+
+FROM base AS filter
 
 COPY backend/services/filter/ services/filter/
 
-RUN uv run --package filter python -m grpc_tools.protoc \
+RUN mkdir -p services/filter/generated && \
+    uv run python -m grpc_tools.protoc \
     -Ilib/proto \
     --python_out=services/filter/generated \
     --pyi_out=services/filter/generated \
@@ -31,4 +34,4 @@ RUN for f in services/filter/generated/*_pb2.py services/filter/generated/*_pb2_
 EXPOSE 50053
 
 WORKDIR /app/services/filter
-CMD ["uv", "run", "--package", "filter", "python", "-m", "app.server"]
+CMD ["uv", "run", "python", "-m", "app.server"]

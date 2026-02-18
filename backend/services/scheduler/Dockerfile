@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -7,11 +7,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY backend/pyproject.toml backend/uv.lock* ./
 COPY backend/lib/ lib/
 
-RUN uv sync --frozen --no-dev --package scheduler
+RUN uv sync --frozen --no-dev
+
+FROM base AS scheduler
 
 COPY backend/services/scheduler/ services/scheduler/
 
-RUN uv run --package scheduler python -m grpc_tools.protoc \
+RUN mkdir -p services/scheduler/generated && \
+    uv run python -m grpc_tools.protoc \
     -Ilib/proto \
     --python_out=services/scheduler/generated \
     --pyi_out=services/scheduler/generated \
@@ -29,4 +32,4 @@ RUN for f in services/scheduler/generated/*_pb2.py services/scheduler/generated/
     done
 
 WORKDIR /app/services/scheduler
-CMD ["uv", "run", "--package", "scheduler", "python", "-m", "app.server"]
+CMD ["uv", "run", "python", "-m", "app.server"]

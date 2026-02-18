@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -7,11 +7,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY backend/pyproject.toml backend/uv.lock* ./
 COPY backend/lib/ lib/
 
-RUN uv sync --frozen --no-dev --package market-data
+RUN uv sync --frozen --no-dev
+
+FROM base AS market-data
 
 COPY backend/services/market_data/ services/market_data/
 
-RUN uv run --package market-data python -m grpc_tools.protoc \
+RUN mkdir -p services/market_data/generated && \
+    uv run python -m grpc_tools.protoc \
     -Ilib/proto \
     --python_out=services/market_data/generated \
     --pyi_out=services/market_data/generated \
@@ -31,4 +34,4 @@ RUN for f in services/market_data/generated/*_pb2.py services/market_data/genera
 EXPOSE 50051
 
 WORKDIR /app/services/market_data
-CMD ["uv", "run", "--package", "market-data", "python", "-m", "app.server"]
+CMD ["uv", "run", "python", "-m", "app.server"]

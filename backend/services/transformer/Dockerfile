@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 
 WORKDIR /app
 
@@ -7,11 +7,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY backend/pyproject.toml backend/uv.lock* ./
 COPY backend/lib/ lib/
 
-RUN uv sync --frozen --no-dev --package transformer
+RUN uv sync --frozen --no-dev
+
+FROM base AS transformer
 
 COPY backend/services/transformer/ services/transformer/
 
-RUN uv run --package transformer python -m grpc_tools.protoc \
+RUN mkdir -p services/transformer/generated && \
+    uv run python -m grpc_tools.protoc \
     -Ilib/proto \
     --python_out=services/transformer/generated \
     --pyi_out=services/transformer/generated \
@@ -31,4 +34,4 @@ RUN for f in services/transformer/generated/*_pb2.py services/transformer/genera
 EXPOSE 50052
 
 WORKDIR /app/services/transformer
-CMD ["uv", "run", "--package", "transformer", "python", "-m", "app.server"]
+CMD ["uv", "run", "python", "-m", "app.server"]
