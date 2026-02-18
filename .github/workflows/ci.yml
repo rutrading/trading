@@ -15,9 +15,13 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
 
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen --package trading-api
+
       - name: Run tests
-        working-directory: api
-        run: uv run pytest
+        working-directory: backend
+        run: uv run --package trading-api pytest api/tests/ -v
 
   web:
     name: Web Check
@@ -38,21 +42,26 @@ jobs:
   grpc-services:
     name: gRPC Service Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service: [market_data, transformer, filter, scheduler]
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v6
 
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
       - name: Generate proto code
+        working-directory: backend
         run: uv run python scripts/gen_proto.py
-        working-directory: services/${{ matrix.service }}
 
       - name: Run tests
-        run: uv run pytest tests/ -v
-        working-directory: services/${{ matrix.service }}
+        working-directory: backend
+        run: |
+          uv run --package market-data pytest services/market_data/tests/ -v
+          uv run --package transformer pytest services/transformer/tests/ -v
+          uv run --package filter pytest services/filter/tests/ -v
+          uv run --package scheduler pytest services/scheduler/tests/ -v
 
   docker-build:
     needs: [api, web, grpc-services]
@@ -70,14 +79,14 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Generate proto code
-        run: uv run python scripts/gen_proto.py
-        working-directory: services/${{ matrix.service }}
+        working-directory: backend
+        run: uv sync --frozen && uv run python scripts/gen_proto.py
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: services/${{ matrix.service }}/Dockerfile
+          file: backend/services/${{ matrix.service }}/Dockerfile
           push: false
           tags: ru-trading/${{ matrix.service }}:latest
           cache-from: type=gha

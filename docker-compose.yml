@@ -13,7 +13,7 @@ services:
   market-data:
     build:
       context: .
-      dockerfile: services/market_data/Dockerfile
+      dockerfile: backend/services/market_data/Dockerfile
     ports:
       - "50051:50051"
     environment:
@@ -26,7 +26,7 @@ services:
   transformer:
     build:
       context: .
-      dockerfile: services/transformer/Dockerfile
+      dockerfile: backend/services/transformer/Dockerfile
     ports:
       - "50052:50052"
     environment:
@@ -36,7 +36,7 @@ services:
   filter:
     build:
       context: .
-      dockerfile: services/filter/Dockerfile
+      dockerfile: backend/services/filter/Dockerfile
     ports:
       - "50053:50053"
     environment:
@@ -49,7 +49,7 @@ services:
   scheduler:
     build:
       context: .
-      dockerfile: services/scheduler/Dockerfile
+      dockerfile: backend/services/scheduler/Dockerfile
     environment:
       MARKET_DATA_HOST: "market-data:50051"
       TRANSFORMER_HOST: "transformer:50052"
