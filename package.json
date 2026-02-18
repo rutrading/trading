@@ -4,6 +4,6 @@
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "dev": "bun run --cwd web dev",
-    "migrate": "bun run --cwd web --env-file .env.local bunx @better-auth/cli migrate"
+    "migrate": "bun run --cwd web --env-file .env.local bunx @better-auth/cli migrate && uv run --directory api python ../scripts/migrate_services.py"
   }
 }

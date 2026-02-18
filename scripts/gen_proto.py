@@ -1,8 +1,7 @@
 """Generate Python gRPC code from .proto definitions.
 
-Generates protobuf and gRPC stubs into each service's generated/ directory.
-Runs protoc via `uv run` inside each service so grpcio-tools is available.
-Run from the project root: python scripts/gen_proto.py
+Generates protobuf and gRPC stubs into each target's generated/ directory.
+Runs protoc via `uv run` inside each target so grpcio-tools is available.
 """
 
 import subprocess
@@ -11,12 +10,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROTO_DIR = ROOT / "proto"
-SERVICES = ["market_data", "transformer", "filter", "scheduler"]
+
+# All directories that need generated proto code
+TARGETS = [
+    ROOT / "services" / "market_data",
+    ROOT / "services" / "transformer",
+    ROOT / "services" / "filter",
+    ROOT / "services" / "scheduler",
+    ROOT / "api",
+]
 
 
-def generate(service: str) -> None:
-    service_dir = ROOT / "services" / service
-    out_dir = service_dir / "generated"
+def generate(target_dir: Path) -> None:
+    name = target_dir.name
+    out_dir = target_dir / "generated"
     out_dir.mkdir(exist_ok=True)
 
     # Write __init__.py so the generated dir is a package
@@ -42,10 +49,10 @@ def generate(service: str) -> None:
         *[str(p) for p in proto_files],
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=service_dir)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=target_dir)
     if result.returncode != 0:
         error = result.stderr or result.stdout
-        print(f"protoc failed for {service}:\n{error}")
+        print(f"protoc failed for {name}:\n{error}")
         sys.exit(1)
 
     # Fix imports in generated gRPC files to use relative imports
@@ -53,19 +60,18 @@ def generate(service: str) -> None:
         content = grpc_file.read_text()
         for proto_file in proto_files:
             module_name = proto_file.stem + "_pb2"
-            # Replace absolute import with relative import
             content = content.replace(
                 f"import {module_name} as {module_name}",
                 f"from . import {module_name} as {module_name}",
             )
         grpc_file.write_text(content)
 
-    print(f"Generated gRPC code for {service} -> {out_dir}")
+    print(f"Generated gRPC code for {name} -> {out_dir}")
 
 
 def main() -> None:
-    for service in SERVICES:
-        generate(service)
+    for target in TARGETS:
+        generate(target)
     print("Done.")
 
 
