@@ -55,7 +55,7 @@ def config():
 
 @pytest.mark.asyncio
 async def test_transformer_calculates_change():
-    """Transformer should correctly compute change and change_percent."""
+    """Transformer should use change/percent_change from raw TwelveData data."""
     from trading_lib.config import Config
 
     from services.transformer.app.service import TransformerServicer
@@ -71,6 +71,16 @@ async def test_transformer_calculates_change():
     request.raw_quote.low = 149.0
     request.raw_quote.volume = 60000000.0
     request.raw_quote.timestamp = int(time.time())
+    request.raw_quote.raw = {
+        "change": "5.0",
+        "percent_change": "3.3333",
+        "previous_close": "150.0",
+        "name": "Apple Inc.",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "is_market_open": "true",
+        "average_volume": "50000000",
+    }
 
     result = await servicer.Transform(request, context)
 
@@ -78,6 +88,8 @@ async def test_transformer_calculates_change():
     assert result.price == 155.0
     assert result.change == pytest.approx(5.0)
     assert result.change_percent == pytest.approx(3.3333, rel=1e-2)
+    assert result.name == "Apple Inc."
+    assert result.signal in ("bullish", "bearish", "neutral")
 
 
 @pytest.mark.asyncio
@@ -110,6 +122,14 @@ async def test_market_data_to_transformer_flow():
         "high": "252.00",
         "low": "243.00",
         "volume": "80000000",
+        "change": "5.00",
+        "percent_change": "2.0408",
+        "previous_close": "245.00",
+        "name": "Tesla Inc.",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "is_market_open": "false",
+        "average_volume": "70000000",
     }
 
     with patch.object(md_servicer.client, "get", return_value=mock_response):
@@ -199,6 +219,14 @@ async def test_full_pipeline_mock():
         "high": "176.00",
         "low": "172.00",
         "volume": "25000000",
+        "change": "2.50",
+        "percent_change": "1.4451",
+        "previous_close": "173.00",
+        "name": "Alphabet Inc.",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "is_market_open": "false",
+        "average_volume": "20000000",
     }
 
     # Mock DB

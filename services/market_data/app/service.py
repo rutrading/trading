@@ -51,9 +51,9 @@ class MarketDataServicer:
                 else:
                     context.set_code(grpc.StatusCode.UNAVAILABLE)
                     context.set_details(f"TwelveData error: {msg}")
-                return market_data_pb2.QuoteResponse()
+                return market_data_pb2.GetQuoteResponse()
 
-            return market_data_pb2.QuoteResponse(
+            return market_data_pb2.GetQuoteResponse(
                 symbol=symbol,
                 price=float(data.get("close", 0)),
                 open=float(data.get("open", 0)),
@@ -68,12 +68,12 @@ class MarketDataServicer:
             logger.error("TwelveData HTTP error: %s", e)
             context.set_code(grpc.StatusCode.UNAVAILABLE)
             context.set_details(f"TwelveData API error: {e.response.status_code}")
-            return market_data_pb2.QuoteResponse()
+            return market_data_pb2.GetQuoteResponse()
         except Exception as e:
             logger.error("Failed to fetch quote for %s: %s", symbol, e)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
-            return market_data_pb2.QuoteResponse()
+            return market_data_pb2.GetQuoteResponse()
 
     async def BulkFetch(self, request, context):
         """Fetch quotes for multiple symbols."""
@@ -81,7 +81,7 @@ class MarketDataServicer:
 
         quotes = []
         for symbol in request.symbols:
-            quote_request = market_data_pb2.QuoteRequest(symbol=symbol)
+            quote_request = market_data_pb2.GetQuoteRequest(symbol=symbol)
             quote = await self.GetQuote(quote_request, context)
             quotes.append(quote)
 

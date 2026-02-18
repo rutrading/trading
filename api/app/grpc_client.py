@@ -62,7 +62,7 @@ class PipelineClient:
 
         try:
             # Step 1: Fetch from MarketData
-            quote_request = market_data_pb2.QuoteRequest(symbol=symbol)
+            quote_request = market_data_pb2.GetQuoteRequest(symbol=symbol)
             raw_quote = await self._market_data_stub.GetQuote(quote_request, timeout=3)
 
             # Step 2: Transform
@@ -72,7 +72,7 @@ class PipelineClient:
             )
 
             # Step 3: Filter and persist
-            filter_request = filter_pb2.FilterRequest(quote=transformed)
+            filter_request = filter_pb2.ProcessRequest(quote=transformed)
             await self._filter_stub.Process(filter_request, timeout=2)
 
             return transformed

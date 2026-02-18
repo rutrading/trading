@@ -17,9 +17,9 @@ MARKET_CLOSE_HOUR = 21  # 4:00 PM ET = 21:00 UTC
 # Default symbols to track
 DEFAULT_SYMBOLS = ["AAPL", "GOOG", "MSFT", "TSLA", "AMZN"]
 
-# Polling intervals
-MARKET_HOURS_INTERVAL = 60  # seconds (slower to preserve API rate limits)
-OFF_MARKET_INTERVAL = 15  # seconds (faster to pre-cache)
+# Polling intervals (free tier = 8 calls/min, 5 symbols = 5 calls per cycle)
+MARKET_HOURS_INTERVAL = 60  # seconds during market hours
+OFF_MARKET_INTERVAL = 300  # 5 minutes when market is closed (prices don't change)
 
 
 def is_market_open() -> bool:
@@ -46,6 +46,10 @@ class Scheduler:
     async def run(self) -> None:
         """Main scheduler loop."""
         logger.info("Scheduler starting with symbols: %s", self.symbols)
+
+        # Wait for other services to start before first poll
+        logger.info("Waiting 5s for services to start...")
+        await asyncio.sleep(5)
 
         market_data_channel = create_channel(self.config.market_data_host)
         transformer_channel = create_channel(self.config.transformer_host)
@@ -96,7 +100,7 @@ class Scheduler:
                 )
 
                 # Step 3: Filter and persist
-                filter_request = filter_pb2.BulkFilterRequest(
+                filter_request = filter_pb2.BulkProcessRequest(
                     quotes=transform_response.quotes
                 )
                 filter_response = await filter_stub.BulkProcess(
@@ -109,7 +113,14 @@ class Scheduler:
                     len(filter_response.results),
                 )
 
+            except asyncio.CancelledError:
+                logger.info("Scheduler shutting down")
+                return
             except Exception as e:
                 logger.error("Scheduler pipeline error: %s", e)
 
-            await asyncio.sleep(interval)
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                logger.info("Scheduler shutting down")
+                return
