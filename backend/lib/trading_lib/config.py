@@ -6,14 +6,23 @@ from dataclasses import dataclass, fields
 
 @dataclass(frozen=True)
 class Config:
+    # Database connection
     database_url: str = "postgresql://postgres:postgres@localhost:5432/trading"
+
+    # Service hosts (host:port format)
     market_data_host: str = "localhost:50051"
     transformer_host: str = "localhost:50052"
-    filter_host: str = "localhost:50053"
-    scheduler_host: str = "localhost:50054"
+    persistence_host: str = "localhost:50053"
+
+    # External API config
     twelve_data_api_key: str = ""
     twelve_data_base_url: str = "https://api.twelvedata.com"
+    twelve_data_rate_limit: int = 8  # calls per minute (free tier)
+
+    # Caching
     quote_staleness_seconds: int = 60
+
+    # Logging
     log_level: str = "INFO"
 
 
