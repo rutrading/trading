@@ -24,10 +24,27 @@ bun dev
 cd api && uv run uvicorn app.main:app --reload
 ```
 
+**gRPC Services**
+```bash
+# Generate proto code
+python scripts/gen_proto.py
+
+# Start all services
+docker compose up -d
+
+# Or run one locally
+cd services/market_data && uv sync && python -m app.server
+```
+
 **Running Tests**
 ```bash
 # API
 cd api
+uv run pytest
+
+# Services
+cd services/transformer
+uv sync
 uv run pytest
 
 # Web
@@ -45,6 +62,7 @@ bun test
 
 - `feat(web): add portfolio chart`
 - `feat(api): add trade endpoint`
+- `feat(services): add news feed parser`
 - `fix(web): correct login redirect`
 - `fix(api): handle expired tokens`
 
