@@ -14,10 +14,7 @@ MARKET_OPEN_HOUR = 14  # 9:30 AM ET = 14:30 UTC
 MARKET_OPEN_MINUTE = 30
 MARKET_CLOSE_HOUR = 21  # 4:00 PM ET = 21:00 UTC
 
-# Default symbols to track
-DEFAULT_SYMBOLS = ["AAPL", "GOOG", "MSFT", "TSLA", "AMZN"]
-
-# Polling intervals (free tier = 8 calls/min, 5 symbols = 5 calls per cycle)
+# Polling intervals (free tier = 8 calls/min)
 MARKET_HOURS_INTERVAL = 60  # seconds during market hours
 OFF_MARKET_INTERVAL = 300  # 5 minutes when market is closed (prices don't change)
 
@@ -41,10 +38,19 @@ class Scheduler:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.symbols = DEFAULT_SYMBOLS
+        raw = config.scheduler_symbols.strip()
+        if not raw:
+            logger.error("SCHEDULER_SYMBOLS is empty, nothing to poll")
+        self.symbols = [s.strip().upper() for s in raw.split(",") if s.strip()]
 
     async def run(self) -> None:
         """Main scheduler loop."""
+        if not self.symbols:
+            logger.error(
+                "No symbols configured. Set SCHEDULER_SYMBOLS env var (comma-separated)."
+            )
+            return
+
         logger.info("Scheduler starting with symbols: %s", self.symbols)
 
         # Wait for other services to start before first poll

@@ -16,6 +16,7 @@ class Config:
     twelve_data_api_key: str = ""
     twelve_data_base_url: str = "https://api.twelvedata.com"
     quote_staleness_seconds: int = 60
+    scheduler_symbols: str = ""
     log_level: str = "INFO"
 
 
@@ -37,5 +38,6 @@ def get_config() -> Config:
         quote_staleness_seconds=int(
             os.getenv("QUOTE_STALENESS_SECONDS", str(Config.quote_staleness_seconds))
         ),
+        scheduler_symbols=os.getenv("SCHEDULER_SYMBOLS", Config.scheduler_symbols),
         log_level=os.getenv("LOG_LEVEL", Config.log_level),
     )
