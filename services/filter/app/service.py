@@ -1,7 +1,7 @@
 """FilterService gRPC servicer implementation."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from trading_lib.config import Config
 from trading_lib.db import get_db
@@ -57,7 +57,7 @@ class FilterServicer:
                 existing.volume_ratio = quote.volume_ratio
                 existing.intraday_range_pct = quote.intraday_range_pct
                 existing.signal = quote.signal
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = datetime.now(timezone.utc)
                 logger.info("Updated existing quote for %s", quote.symbol)
             else:
                 db.add(
