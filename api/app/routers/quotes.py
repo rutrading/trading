@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime, timezone
 
+import grpc
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import get_current_user
@@ -58,12 +59,23 @@ async def get_quote(
         logger.warning("DB check failed, falling through to pipeline: %s", e)
 
     # Cache miss: trigger gRPC pipeline
-    result = await pipeline.fetch_quote(symbol)
-    if result is None:
-        raise HTTPException(
-            status_code=503,
-            detail="gRPC services are unavailable.",
-        )
+    try:
+        result = await pipeline.fetch_quote(symbol)
+    except grpc.aio.AioRpcError as e:
+        status = e.code()
+        detail = e.details() or "Unknown gRPC error"
+        if status == grpc.StatusCode.UNAVAILABLE:
+            raise HTTPException(
+                status_code=503, detail="gRPC services are unavailable."
+            )
+        elif status == grpc.StatusCode.UNAUTHENTICATED:
+            raise HTTPException(status_code=502, detail=detail)
+        elif status == grpc.StatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail=detail)
+        else:
+            raise HTTPException(status_code=502, detail=detail)
+    except Exception:
+        raise HTTPException(status_code=503, detail="gRPC services are unavailable.")
 
     return {
         "symbol": result.symbol,

@@ -4,6 +4,8 @@ import logging
 import sys
 from pathlib import Path
 
+import grpc
+
 from trading_lib.channel import create_channel
 from trading_lib.config import Config, get_config
 
@@ -75,9 +77,12 @@ class PipelineClient:
 
             return transformed
 
+        except grpc.aio.AioRpcError as e:
+            logger.error("Pipeline gRPC error for %s: %s", symbol, e.details())
+            raise
         except Exception as e:
             logger.error("Pipeline error for %s: %s", symbol, e)
-            return None
+            raise
 
 
 _client: PipelineClient | None = None
