@@ -51,8 +51,6 @@ class TransformerServicer:
         raw_quote = request.raw_quote
         raw = dict(raw_quote.raw)  # map<string,string> from market_data
 
-        logger.info("Transforming %s", raw_quote.symbol)
-
         # --- Extract raw values from TwelveData ---
         change = _raw_float(raw, "change")
         change_percent = _raw_float(raw, "percent_change")

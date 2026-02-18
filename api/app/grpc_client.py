@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 import grpc
@@ -61,19 +62,37 @@ class PipelineClient:
         )
 
         try:
+            pipeline_start = time.perf_counter_ns()
+
             # Step 1: Fetch from MarketData
+            t0 = time.perf_counter_ns()
             quote_request = market_data_pb2.GetQuoteRequest(symbol=symbol)
             raw_quote = await self._market_data_stub.GetQuote(quote_request, timeout=3)
+            fetch_ms = (time.perf_counter_ns() - t0) / 1_000_000
 
             # Step 2: Transform
+            t0 = time.perf_counter_ns()
             transform_request = transformer_pb2.TransformRequest(raw_quote=raw_quote)
             transformed = await self._transformer_stub.Transform(
                 transform_request, timeout=2
             )
+            transform_ms = (time.perf_counter_ns() - t0) / 1_000_000
 
             # Step 3: Filter and persist
+            t0 = time.perf_counter_ns()
             filter_request = filter_pb2.ProcessRequest(quote=transformed)
             await self._filter_stub.Process(filter_request, timeout=2)
+            filter_ms = (time.perf_counter_ns() - t0) / 1_000_000
+
+            total_ms = (time.perf_counter_ns() - pipeline_start) / 1_000_000
+            logger.info(
+                "%s pipeline: %.1fms total | fetch=%.1fms transform=%.1fms filter=%.1fms",
+                symbol,
+                total_ms,
+                fetch_ms,
+                transform_ms,
+                filter_ms,
+            )
 
             return transformed
 

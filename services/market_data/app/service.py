@@ -26,7 +26,6 @@ class MarketDataServicer:
         from generated import market_data_pb2
 
         symbol = request.symbol.upper()
-        logger.info("Fetching quote for %s", symbol)
 
         try:
             response = await self.client.get(
