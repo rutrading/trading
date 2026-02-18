@@ -1,26 +1,14 @@
 """Filter gRPC server entrypoint."""
 
 import asyncio
-import logging
-from pathlib import Path
 
-from dotenv import load_dotenv
-
-from trading_lib import create_server, get_config
+from trading_lib import bootstrap, create_server
 
 from app.service import FilterServicer
 
-# Load .env from this service's directory, not cwd
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-
 
 async def main() -> None:
-    config = get_config()
-    logging.basicConfig(
-        level=config.log_level,
-        format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    config = bootstrap(__file__)
 
     from generated import filter_pb2_grpc
 

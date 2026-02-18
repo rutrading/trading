@@ -1,15 +1,11 @@
-import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from trading_lib import bootstrap
+
 from app.routers import health, quotes
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+bootstrap(__file__)
 
 app = FastAPI(title="R U Trading API")
 
