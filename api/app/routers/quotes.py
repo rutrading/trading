@@ -1,11 +1,14 @@
 """Quote endpoints that trigger the gRPC pipeline on cache miss."""
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import get_current_user
 from app.grpc_client import get_pipeline_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -23,38 +26,44 @@ async def get_quote(
         raise HTTPException(status_code=400, detail="Symbol is required")
 
     # Check DB for fresh quote
-    from trading_lib.db import get_db
-    from trading_lib.models import Quote
-
-    db = next(get_db())
     try:
-        existing = db.query(Quote).filter(Quote.symbol == symbol).first()
-        if existing and existing.updated_at:
-            age = (
-                datetime.now(timezone.utc)
-                - existing.updated_at.replace(tzinfo=timezone.utc)
-            ).total_seconds()
-            if age < pipeline.config.quote_staleness_seconds:
-                return {
-                    "symbol": existing.symbol,
-                    "price": existing.price,
-                    "open": existing.open,
-                    "high": existing.high,
-                    "low": existing.low,
-                    "volume": existing.volume,
-                    "change": existing.change,
-                    "change_percent": existing.change_percent,
-                    "timestamp": existing.timestamp,
-                    "cached": True,
-                    "age_seconds": round(age, 1),
-                }
-    finally:
-        db.close()
+        from trading_lib.db import get_db
+        from trading_lib.models import Quote
+
+        db = next(get_db())
+        try:
+            existing = db.query(Quote).filter(Quote.symbol == symbol).first()
+            if existing and existing.updated_at:
+                age = (
+                    datetime.now(timezone.utc)
+                    - existing.updated_at.replace(tzinfo=timezone.utc)
+                ).total_seconds()
+                if age < pipeline.config.quote_staleness_seconds:
+                    return {
+                        "symbol": existing.symbol,
+                        "price": existing.price,
+                        "open": existing.open,
+                        "high": existing.high,
+                        "low": existing.low,
+                        "volume": existing.volume,
+                        "change": existing.change,
+                        "change_percent": existing.change_percent,
+                        "timestamp": existing.timestamp,
+                        "cached": True,
+                        "age_seconds": round(age, 1),
+                    }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("DB check failed, falling through to pipeline: %s", e)
 
     # Cache miss: trigger gRPC pipeline
     result = await pipeline.fetch_quote(symbol)
     if result is None:
-        raise HTTPException(status_code=502, detail="Pipeline failed to fetch quote")
+        raise HTTPException(
+            status_code=503,
+            detail="gRPC services are unavailable. Start them with: docker compose up -d market-data transformer filter",
+        )
 
     return {
         "symbol": result.symbol,
