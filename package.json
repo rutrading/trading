@@ -2,12 +2,12 @@
   "name": "trading",
   "private": true,
   "scripts": {
-    "setup": "bun run scripts/setup.ts",
+    "setup": "bun run backend/scripts/setup.ts",
     "dev": "bun run --cwd web dev",
-    "dev:api": "uv run --directory api uvicorn app.main:app --reload",
-    "dev:services": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n md,tf,fl -c blue,green,yellow \"uv run --directory services/market_data python -m app.server\" \"uv run --directory services/transformer python -m app.server\" \"uv run --directory services/filter python -m app.server\"",
-    "dev:all": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n web,api,md,tf,fl -c cyan,red,blue,green,yellow \"bun run dev\" \"bun run dev:api\" \"uv run --directory services/market_data python -m app.server\" \"uv run --directory services/transformer python -m app.server\" \"uv run --directory services/filter python -m app.server\"",
-    "migrate": "bun run --cwd web --env-file .env.local bunx @better-auth/cli migrate && uv run --directory api python ../scripts/migrate_services.py"
+    "dev:api": "uv run --directory backend/api uvicorn app.main:app --reload",
+    "dev:services": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n md,tf,ps -c blue,green,yellow \"uv run --directory backend/services/market_data python -m app.server\" \"uv run --directory backend/services/transformer python -m app.server\" \"uv run --directory backend/services/persistence python -m app.server\"",
+    "dev:all": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n web,api,md,tf,ps -c cyan,red,blue,green,yellow \"bun run dev\" \"bun run dev:api\" \"uv run --directory backend/services/market_data python -m app.server\" \"uv run --directory backend/services/transformer python -m app.server\" \"uv run --directory backend/services/persistence python -m app.server\"",
+    "migrate": "bun run --cwd web --env-file .env.local bunx @better-auth/cli migrate && uv run --directory backend/api python ../scripts/migrate_services.py"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
