@@ -1,6 +1,5 @@
 """Unit tests for the MarketData servicer."""
 
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,23 +30,33 @@ def context():
     return ctx
 
 
+def _make_mock_response(data):
+    """Create a properly mocked httpx response."""
+    response = MagicMock()
+    response.status_code = 200
+    response.raise_for_status = MagicMock(return_value=None)
+    response.json = MagicMock(return_value=data)
+    return response
+
+
 @pytest.mark.asyncio
 async def test_get_quote_success(servicer, context):
     """GetQuote should return a valid QuoteResponse from TwelveData."""
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "symbol": "AAPL",
-        "close": "150.25",
-        "open": "148.50",
-        "high": "151.00",
-        "low": "147.75",
-        "volume": "50000000",
-    }
+    mock_response = _make_mock_response(
+        {
+            "symbol": "AAPL",
+            "close": "150.25",
+            "open": "148.50",
+            "high": "151.00",
+            "low": "147.75",
+            "volume": "50000000",
+        }
+    )
 
-    with patch.object(servicer.client, "get", return_value=mock_response):
-        # Create a mock request
+    async def mock_get(*args, **kwargs):
+        return mock_response
+
+    with patch.object(servicer.client, "get", side_effect=mock_get):
         request = MagicMock()
         request.symbol = "AAPL"
 
@@ -66,15 +75,17 @@ async def test_get_quote_success(servicer, context):
 @pytest.mark.asyncio
 async def test_get_quote_symbol_not_found(servicer, context):
     """GetQuote should set NOT_FOUND when TwelveData returns an error code."""
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "code": 400,
-        "message": "Symbol not found",
-    }
+    mock_response = _make_mock_response(
+        {
+            "code": 400,
+            "message": "Symbol not found",
+        }
+    )
 
-    with patch.object(servicer.client, "get", return_value=mock_response):
+    async def mock_get(*args, **kwargs):
+        return mock_response
+
+    with patch.object(servicer.client, "get", side_effect=mock_get):
         request = MagicMock()
         request.symbol = "INVALID"
 
@@ -89,16 +100,15 @@ async def test_get_quote_api_error(servicer, context):
     """GetQuote should handle HTTP errors gracefully."""
     import httpx
 
-    mock_response = MagicMock()
-    mock_response.status_code = 500
+    mock_error_response = MagicMock()
+    mock_error_response.status_code = 500
 
-    with patch.object(
-        servicer.client,
-        "get",
-        side_effect=httpx.HTTPStatusError(
-            "Server Error", request=MagicMock(), response=mock_response
-        ),
-    ):
+    async def mock_get(*args, **kwargs):
+        raise httpx.HTTPStatusError(
+            "Server Error", request=MagicMock(), response=mock_error_response
+        )
+
+    with patch.object(servicer.client, "get", side_effect=mock_get):
         request = MagicMock()
         request.symbol = "AAPL"
 
@@ -110,19 +120,21 @@ async def test_get_quote_api_error(servicer, context):
 @pytest.mark.asyncio
 async def test_bulk_fetch(servicer, context):
     """BulkFetch should call GetQuote for each symbol."""
-    mock_response = AsyncMock()
-    mock_response.status_code = 200
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {
-        "symbol": "AAPL",
-        "close": "150.00",
-        "open": "148.00",
-        "high": "151.00",
-        "low": "147.00",
-        "volume": "1000000",
-    }
+    mock_response = _make_mock_response(
+        {
+            "symbol": "AAPL",
+            "close": "150.00",
+            "open": "148.00",
+            "high": "151.00",
+            "low": "147.00",
+            "volume": "1000000",
+        }
+    )
 
-    with patch.object(servicer.client, "get", return_value=mock_response):
+    async def mock_get(*args, **kwargs):
+        return mock_response
+
+    with patch.object(servicer.client, "get", side_effect=mock_get):
         request = MagicMock()
         request.symbols = ["AAPL", "GOOG"]
 

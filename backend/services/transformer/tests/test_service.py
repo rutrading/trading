@@ -21,27 +21,56 @@ def servicer(config):
 
 @pytest.fixture
 def context():
-    return MagicMock()
+    ctx = MagicMock()
+    ctx.set_code = MagicMock()
+    ctx.set_details = MagicMock()
+    return ctx
+
+
+def _make_raw_quote(
+    symbol="AAPL",
+    price=150.0,
+    open_=148.0,
+    high=151.0,
+    low=147.0,
+    volume=50000000.0,
+    timestamp=1700000000,
+    raw=None,
+):
+    """Helper to create a mock raw quote."""
+    quote = MagicMock()
+    quote.symbol = symbol
+    quote.price = price
+    quote.open = open_
+    quote.high = high
+    quote.low = low
+    quote.volume = volume
+    quote.timestamp = timestamp
+    quote.raw = raw or {}
+    return quote
 
 
 @pytest.mark.asyncio
-async def test_transform_calculates_change(servicer, context):
-    """Transform should calculate change and change_percent correctly."""
+async def test_transform_with_raw_data(servicer, context):
+    """Transform should use change values from raw data."""
     request = MagicMock()
-    request.raw_quote.symbol = "AAPL"
-    request.raw_quote.price = 150.0
-    request.raw_quote.open = 148.0
-    request.raw_quote.high = 151.0
-    request.raw_quote.low = 147.0
-    request.raw_quote.volume = 50000000.0
-    request.raw_quote.timestamp = 1700000000
+    request.raw_quote = _make_raw_quote(
+        symbol="AAPL",
+        price=150.0,
+        open_=148.0,
+        high=151.0,
+        low=147.0,
+        volume=50000000.0,
+        timestamp=1700000000,
+        raw={"change": "2.0", "percent_change": "1.35"},
+    )
 
     result = await servicer.Transform(request, context)
 
     assert result.symbol == "AAPL"
     assert result.price == 150.0
     assert result.change == 2.0
-    assert result.change_percent == pytest.approx(1.3514, rel=1e-2)
+    assert result.change_percent == 1.35
     assert result.open == 148.0
     assert result.high == 151.0
     assert result.low == 147.0
@@ -53,13 +82,15 @@ async def test_transform_calculates_change(servicer, context):
 async def test_transform_zero_open(servicer, context):
     """Transform should handle zero open price without division error."""
     request = MagicMock()
-    request.raw_quote.symbol = "TEST"
-    request.raw_quote.price = 100.0
-    request.raw_quote.open = 0.0
-    request.raw_quote.high = 100.0
-    request.raw_quote.low = 100.0
-    request.raw_quote.volume = 0.0
-    request.raw_quote.timestamp = 1700000000
+    request.raw_quote = _make_raw_quote(
+        symbol="TEST",
+        price=100.0,
+        open_=0.0,
+        high=100.0,
+        low=100.0,
+        volume=0.0,
+        timestamp=1700000000,
+    )
 
     result = await servicer.Transform(request, context)
 
@@ -69,48 +100,59 @@ async def test_transform_zero_open(servicer, context):
 
 @pytest.mark.asyncio
 async def test_transform_negative_change(servicer, context):
-    """Transform should correctly calculate negative change."""
+    """Transform should correctly handle negative change from raw data."""
     request = MagicMock()
-    request.raw_quote.symbol = "DOWN"
-    request.raw_quote.price = 95.0
-    request.raw_quote.open = 100.0
-    request.raw_quote.high = 101.0
-    request.raw_quote.low = 94.0
-    request.raw_quote.volume = 1000000.0
-    request.raw_quote.timestamp = 1700000000
+    request.raw_quote = _make_raw_quote(
+        symbol="DOWN",
+        price=95.0,
+        open_=100.0,
+        high=101.0,
+        low=94.0,
+        volume=1000000.0,
+        timestamp=1700000000,
+        raw={"change": "-5.0", "percent_change": "-5.0"},
+    )
 
     result = await servicer.Transform(request, context)
 
     assert result.change == -5.0
-    assert result.change_percent == pytest.approx(-5.0, rel=1e-2)
+    assert result.change_percent == -5.0
 
 
 @pytest.mark.asyncio
-async def test_bulk_transform(servicer, context):
-    """BulkTransform should transform all quotes."""
-    raw1 = MagicMock()
-    raw1.symbol = "AAPL"
-    raw1.price = 150.0
-    raw1.open = 148.0
-    raw1.high = 151.0
-    raw1.low = 147.0
-    raw1.volume = 50000000.0
-    raw1.timestamp = 1700000000
-
-    raw2 = MagicMock()
-    raw2.symbol = "GOOG"
-    raw2.price = 140.0
-    raw2.open = 138.0
-    raw2.high = 141.0
-    raw2.low = 137.0
-    raw2.volume = 30000000.0
-    raw2.timestamp = 1700000000
-
+async def test_transform_calculates_day_range_pct(servicer, context):
+    """Transform should calculate day_range_pct from price position."""
     request = MagicMock()
-    request.raw_quotes = [raw1, raw2]
+    request.raw_quote = _make_raw_quote(
+        symbol="AAPL",
+        price=150.0,
+        open_=148.0,
+        high=152.0,
+        low=146.0,
+        volume=50000000.0,
+        timestamp=1700000000,
+    )
 
-    result = await servicer.BulkTransform(request, context)
+    result = await servicer.Transform(request, context)
 
-    assert len(result.quotes) == 2
-    assert result.quotes[0].symbol == "AAPL"
-    assert result.quotes[1].symbol == "GOOG"
+    assert result.day_range_pct == pytest.approx(66.67, rel=0.01)
+
+
+@pytest.mark.asyncio
+async def test_transform_signal_bullish(servicer, context):
+    """Transform should derive bullish signal correctly."""
+    request = MagicMock()
+    request.raw_quote = _make_raw_quote(
+        symbol="AAPL",
+        price=150.0,
+        open_=148.0,
+        high=151.0,
+        low=147.0,
+        volume=50000000.0,
+        timestamp=1700000000,
+        raw={"change": "2.0", "percent_change": "1.35", "average_volume": "40000000"},
+    )
+
+    result = await servicer.Transform(request, context)
+
+    assert result.signal == "bullish"

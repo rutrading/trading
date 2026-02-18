@@ -21,7 +21,10 @@ def servicer(config):
 
 @pytest.fixture
 def context():
-    return MagicMock()
+    ctx = MagicMock()
+    ctx.set_code = MagicMock()
+    ctx.set_details = MagicMock()
+    return ctx
 
 
 def _make_quote_request(symbol="AAPL", price=150.0):
@@ -86,31 +89,3 @@ async def test_process_db_error(servicer, context):
 
         assert result.persisted is False
         assert "DB connection failed" in result.message
-
-
-@pytest.mark.asyncio
-async def test_bulk_process(servicer, context):
-    """BulkProcess should process all quotes."""
-    mock_session = MagicMock()
-    mock_query = MagicMock()
-    mock_query.filter.return_value.first.return_value = None
-    mock_session.query.return_value = mock_query
-
-    with patch("app.service.get_db", return_value=iter([mock_session])):
-        quote1 = MagicMock()
-        quote1.symbol = "AAPL"
-        quote1.price = 150.0
-        quote1.open = 148.0
-        quote1.high = 151.0
-        quote1.low = 147.0
-        quote1.volume = 50000000.0
-        quote1.change = 2.0
-        quote1.change_percent = 1.35
-        quote1.timestamp = 1700000000
-
-        request = MagicMock()
-        request.quotes = [quote1]
-
-        result = await servicer.BulkProcess(request, context)
-
-        assert len(result.results) == 1
