@@ -39,9 +39,18 @@ class MarketDataServicer:
             response.raise_for_status()
             data = response.json()
 
-            if "code" in data and data["code"] != 200:
-                context.set_code(grpc.StatusCode.NOT_FOUND)
-                context.set_details(f"Symbol {symbol} not found")
+            if "code" in data:
+                msg = data.get("message", "Unknown error")
+                logger.error("TwelveData error for %s: %s", symbol, msg)
+                if data["code"] == 401:
+                    context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+                    context.set_details(f"TwelveData API key missing or invalid: {msg}")
+                elif data["code"] == 404:
+                    context.set_code(grpc.StatusCode.NOT_FOUND)
+                    context.set_details(f"Symbol {symbol} not found")
+                else:
+                    context.set_code(grpc.StatusCode.UNAVAILABLE)
+                    context.set_details(f"TwelveData error: {msg}")
                 return market_data_pb2.QuoteResponse()
 
             return market_data_pb2.QuoteResponse(

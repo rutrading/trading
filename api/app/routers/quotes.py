@@ -62,7 +62,7 @@ async def get_quote(
     if result is None:
         raise HTTPException(
             status_code=503,
-            detail="gRPC services are unavailable. Start them with: docker compose up -d market-data transformer filter",
+            detail="gRPC services are unavailable.",
         )
 
     return {
