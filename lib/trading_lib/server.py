@@ -76,7 +76,11 @@ async def create_server(
             # Windows doesn't support add_signal_handler
             pass
 
-    await shutdown_event.wait()
+    try:
+        await shutdown_event.wait()
+    except asyncio.CancelledError:
+        pass
+
     logger.info("Shutting down gRPC server (5s grace period)")
     await server.stop(5)
     logger.info("Server stopped")
