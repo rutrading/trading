@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, func
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from trading_lib.db import Base
