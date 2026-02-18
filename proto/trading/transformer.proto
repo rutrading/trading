@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package trading;
 
-import "market_data.proto";
+import "trading/market_data.proto";
 
 service TransformerService {
   rpc Transform(TransformRequest) returns (TransformResponse);
@@ -10,7 +10,7 @@ service TransformerService {
 }
 
 message TransformRequest {
-  QuoteResponse raw_quote = 1;
+  GetQuoteResponse raw_quote = 1;
 }
 
 message TransformResponse {
@@ -23,10 +23,26 @@ message TransformResponse {
   double low = 7;
   double volume = 8;
   int64 timestamp = 9;
+  string name = 10;
+  string exchange = 11;
+  string currency = 12;
+  double previous_close = 13;
+  bool is_market_open = 14;
+  double average_volume = 15;
+  double fifty_two_week_low = 16;
+  double fifty_two_week_high = 17;
+
+  // Computed by transformer
+  double day_range_pct = 18;
+  double fifty_two_week_pct = 19;
+  double gap_pct = 20;
+  double volume_ratio = 21;
+  double intraday_range_pct = 22;
+  string signal = 23;
 }
 
 message BulkTransformRequest {
-  repeated QuoteResponse raw_quotes = 1;
+  repeated GetQuoteResponse raw_quotes = 1;
 }
 
 message BulkTransformResponse {

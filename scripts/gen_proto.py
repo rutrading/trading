@@ -4,12 +4,14 @@ Generates protobuf and gRPC stubs into each target's generated/ directory.
 Runs protoc via `uv run` inside each target so grpcio-tools is available.
 """
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROTO_DIR = ROOT / "proto"
+PROTO_PACKAGE_DIR = PROTO_DIR / "trading"
 
 # All directories that need generated proto code
 TARGETS = [
@@ -24,16 +26,18 @@ TARGETS = [
 def generate(target_dir: Path) -> None:
     name = target_dir.name
     out_dir = target_dir / "generated"
+
+    # Clean old generated files (keep the directory itself)
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
     out_dir.mkdir(exist_ok=True)
 
     # Write __init__.py so the generated dir is a package
-    init_file = out_dir / "__init__.py"
-    if not init_file.exists():
-        init_file.write_text("")
+    (out_dir / "__init__.py").write_text("")
 
-    proto_files = list(PROTO_DIR.glob("*.proto"))
+    proto_files = list(PROTO_PACKAGE_DIR.glob("*.proto"))
     if not proto_files:
-        print(f"No .proto files found in {PROTO_DIR}")
+        print(f"No .proto files found in {PROTO_PACKAGE_DIR}")
         sys.exit(1)
 
     cmd = [
@@ -55,7 +59,20 @@ def generate(target_dir: Path) -> None:
         print(f"protoc failed for {name}:\n{error}")
         sys.exit(1)
 
-    # Fix imports in all generated files to use relative imports
+    # protoc puts files in generated/trading/ because of the package path.
+    # Move them up to generated/ so imports stay simple (from generated import ...).
+    pkg_dir = out_dir / "trading"
+    if pkg_dir.exists():
+        for f in pkg_dir.iterdir():
+            dest = out_dir / f.name
+            if dest.exists():
+                dest.unlink()
+            f.rename(dest)
+        pkg_dir.rmdir()
+
+    # Fix imports in all generated files to use relative imports.
+    # protoc generates "from trading import X_pb2 as ..." because protos
+    # are in the trading/ package dir. We rewrite to "from . import X_pb2 as ...".
     for gen_file in list(out_dir.glob("*_pb2.py")) + list(
         out_dir.glob("*_pb2_grpc.py")
     ):
@@ -63,8 +80,8 @@ def generate(target_dir: Path) -> None:
         for proto_file in proto_files:
             module_name = proto_file.stem + "_pb2"
             content = content.replace(
-                f"import {module_name} as ",
-                f"from . import {module_name} as ",
+                f"from trading import {module_name}",
+                f"from . import {module_name}",
             )
         gen_file.write_text(content)
 
