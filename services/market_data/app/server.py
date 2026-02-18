@@ -16,7 +16,11 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 async def main() -> None:
     config = get_config()
-    logging.basicConfig(level=config.log_level)
+    logging.basicConfig(
+        level=config.log_level,
+        format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
     # Import generated code
     from generated import market_data_pb2_grpc
