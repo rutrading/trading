@@ -1,0 +1,8 @@
+[project]
+name = "filter"
+version = "0.1.0"
+description = "Data filtering and persistence gRPC service"
+dependencies = ["trading-lib"]
+
+[tool.uv.sources]
+trading-lib = { workspace = true }

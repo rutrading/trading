@@ -1,0 +1,8 @@
+[project]
+name = "scheduler"
+version = "0.1.0"
+description = "Background scheduler for periodic data fetching"
+dependencies = ["trading-lib"]
+
+[tool.uv.sources]
+trading-lib = { workspace = true }
