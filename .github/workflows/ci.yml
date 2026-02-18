@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, grpc]
 
+env:
+  REGISTRY: ghcr.io
+
 jobs:
   api:
     name: API Tests
@@ -93,15 +96,55 @@ jobs:
           uv run --package filter pytest services/filter/tests/ -v
           uv run --package scheduler pytest services/scheduler/tests/ -v
 
-  docker-build:
+  base-image:
     needs: [api, web, grpc-services]
+    name: Build Base Image
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: useblacksmith/setup-docker-builder@v1
+
+      - name: Build and push base image
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: backend/Dockerfile.base
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository }}/base:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/base:cache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/base:cache,mode=max
+
+  docker-build:
+    needs: [base-image]
     name: Build Docker Images
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix:
         service: [market_data, transformer, filter, scheduler]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: useblacksmith/setup-docker-builder@v1
@@ -113,3 +156,4 @@ jobs:
           file: backend/services/${{ matrix.service }}/Dockerfile
           push: false
           tags: ru-trading/${{ matrix.service }}:latest
+          build-args: BASE_IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/base:latest

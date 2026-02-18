@@ -1,15 +1,5 @@
-FROM python:3.13-slim AS base
-
-WORKDIR /app
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-COPY backend/pyproject.toml backend/uv.lock* ./
-COPY backend/lib/ lib/
-
-RUN uv sync --frozen --no-dev
-
-FROM base AS market-data
+ARG BASE_IMAGE=python:3.13-slim
+FROM ${BASE_IMAGE}
 
 COPY backend/services/market_data/ services/market_data/
 
