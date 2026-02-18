@@ -25,5 +25,9 @@ Thumbs.db
 *.egg-info/
 .pytest_cache/
 
+# gRPC generated code
+**/generated/
+!**/generated/.gitkeep
+
 # Docker
 postgres_data/

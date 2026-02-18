@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package trading;
+
+import "market_data.proto";
+
+service TransformerService {
+  rpc Transform(TransformRequest) returns (TransformResponse);
+  rpc BulkTransform(BulkTransformRequest) returns (BulkTransformResponse);
+}
+
+message TransformRequest {
+  QuoteResponse raw_quote = 1;
+}
+
+message TransformResponse {
+  string symbol = 1;
+  double price = 2;
+  double change = 3;
+  double change_percent = 4;
+  double open = 5;
+  double high = 6;
+  double low = 7;
+  double volume = 8;
+  int64 timestamp = 9;
+}
+
+message BulkTransformRequest {
+  repeated QuoteResponse raw_quotes = 1;
+}
+
+message BulkTransformResponse {
+  repeated TransformResponse quotes = 1;
+}

@@ -1,0 +1,27 @@
+"""Shared SQLAlchemy models for all services."""
+
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+
+from trading_lib.db import Base
+
+
+class Quote(Base):
+    """Cached stock quote, written by the filter service."""
+
+    __tablename__ = "quotes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String, nullable=False, index=True)
+    price = Column(Float, nullable=False)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    volume = Column(Float)
+    change = Column(Float)
+    change_percent = Column(Float)
+    source = Column(String)
+    timestamp = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package trading;
+
+import "transformer.proto";
+
+service FilterService {
+  rpc Process(FilterRequest) returns (FilterResponse);
+  rpc BulkProcess(BulkFilterRequest) returns (BulkFilterResponse);
+}
+
+message FilterRequest {
+  TransformResponse quote = 1;
+}
+
+message FilterResponse {
+  bool persisted = 1;
+  string symbol = 2;
+  string message = 3;
+}
+
+message BulkFilterRequest {
+  repeated TransformResponse quotes = 1;
+}
+
+message BulkFilterResponse {
+  repeated FilterResponse results = 1;
+}
