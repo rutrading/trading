@@ -24,89 +24,117 @@ The setup script will:
 - Start Postgres via Docker Compose
 - Copy `.env.example` files and generate a `BETTER_AUTH_SECRET`
 - Install web dependencies (`bun install`)
-- Install API dependencies (`uv sync`)
-- Install gRPC service dependencies (`uv sync` per service)
-- Generate proto code (`python scripts/gen_proto.py`)
+- Install Python dependencies (`uv sync`)
+- Generate gRPC proto code
 
-Then run the database migration and start the servers:
+Then run the database migration and start:
 
 ```bash
-# Run database migration
+# Push database schema (Drizzle)
 bun migrate
 
-# Everything (web + API + gRPC services) in one terminal
-bun run dev:all
-
-# Or start pieces individually:
-bun dev              # Web (Next.js)
-bun run dev:api      # API (FastAPI) with hot reload
-bun run dev:services # All 4 gRPC services locally
-```
-
-To run gRPC services via Docker instead:
-
-```bash
-docker compose up -d market-data transformer filter scheduler
+# Start everything (web + API + gRPC services)
+bun dev
 ```
 
 Then go to http://localhost:3000/login, create an account, and you'll see the dashboard.
 
+## Architecture
+
+```
+Frontend (Next.js) --REST--> FastAPI --gRPC--> MarketData -> Transformer -> Persistence -> DB
+                                                    |
+                                               Scheduler (background, interval-based)
+```
+
+The frontend talks to a FastAPI gateway over REST. The gateway fans out to gRPC microservices for market data processing. All services share a single Postgres database.
+
+### Database
+
+Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python services use SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun migrate` runs `drizzle-kit push`).
+
+[Better Auth](https://www.better-auth.com/) handles authentication using the Drizzle adapter (`better-auth/minimal` for smaller bundles) with experimental joins enabled for 2-3x faster session lookups.
+
 ## gRPC Services
-
-The backend uses a gRPC pipeline for market data processing. Services communicate over protobuf and run as separate Docker containers.
-
-**Architecture**
-
-```
-Frontend --REST--> FastAPI --gRPC--> MarketData -> Transformer -> Filter -> DB
-                                         |
-                                    Scheduler (background, interval-based)
-```
-
-**Services**
 
 | Service | Port | Description |
 |---|---|---|
 | market-data | 50051 | Fetches quotes from TwelveData |
 | transformer | 50052 | Normalizes and enriches raw data |
-| filter | 50053 | Filters relevant data, persists to DB |
+| persistence | 50053 | Persists transformed data to DB |
 | scheduler | - | Polls pipeline on an interval, adjusts by market hours |
 
-**Running the services**
+Proto definitions live in `backend/lib/proto/`. Shared Python library code lives in `backend/lib/trading_lib/`.
 
-Proto code and dependencies are already set up by `bun setup`. To start:
+If you edit `.proto` files, regenerate code:
 
 ```bash
-# All services locally (color-coded output)
-bun run dev:services
-
-# All services via Docker Compose
-docker compose up -d market-data transformer filter scheduler
-
-# Or run a single service locally
-cd services/market_data
-uv run python -m app.server
+bun dev:gen
 ```
 
-If you edit `.proto` files, regenerate code with `python scripts/gen_proto.py`.
+## Scripts
 
-Proto definitions live in `proto/`. Shared library code lives in `lib/`.
+| Script | Description |
+|---|---|
+| `bun dev` | Start everything (web + API + all gRPC services) |
+| `bun dev:gen` | Regenerate gRPC proto code |
+| `bun migrate` | Push schema changes to database |
+| `bun setup` | First-time project setup |
+
+## Project Structure
+
+```
+trading/
+  web/                          # Next.js frontend
+    src/
+      db/
+        schema.ts               # Drizzle schema (source of truth)
+        index.ts                # Drizzle client
+      lib/
+        auth.ts                 # Better Auth config
+        auth-client.ts          # Client-side auth
+    drizzle.config.ts           # Drizzle Kit config
+  backend/
+    api/                        # FastAPI gateway
+    lib/
+      proto/trading/            # Protobuf definitions
+      trading_lib/              # Shared Python library
+        models.py               # SQLAlchemy models (read/write mapping)
+        config.py               # Shared config
+    services/
+      market_data/              # gRPC: TwelveData fetcher
+      transformer/              # gRPC: data enrichment
+      persistence/              # gRPC: DB writer
+      scheduler/                # gRPC: background polling
+    scripts/
+      gen_proto.py              # Proto code generator
+      setup.ts                  # Setup script
+  docker-compose.yml
+  package.json
+```
 
 ## Testing
 
 ```bash
-# API tests
-cd api
+# Service tests (example: transformer)
+cd backend/services/transformer
 uv run pytest
 
-# Service tests (example: transformer)
-cd services/transformer
-uv sync
-uv run pytest
+# Integration tests
+cd backend
+uv run pytest tests/
 
 # Web tests
 cd web
 bun test
+```
+
+## Docker
+
+To run gRPC services via Docker instead of locally:
+
+```bash
+docker compose up -d market-data transformer persistence scheduler
 ```
 
 ## Contributing

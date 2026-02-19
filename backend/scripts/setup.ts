@@ -28,8 +28,8 @@ try {
 console.log("Starting Postgres...");
 await $`docker compose up -d db`.cwd(root);
 
-// Copy web/.env.example → web/.env.local (if not exists)
-const webEnv = join(root, "web", ".env.local");
+// Copy web/.env.example → web/.env (if not exists)
+const webEnv = join(root, "web", ".env");
 if (!existsSync(webEnv)) {
   copyFileSync(join(root, "web", ".env.example"), webEnv);
 
@@ -38,9 +38,9 @@ if (!existsSync(webEnv)) {
   const content = readFileSync(webEnv, "utf-8");
   writeFileSync(webEnv, content.replace("change-me-to-a-random-string", secret));
 
-  console.log("Created web/.env.local with generated BETTER_AUTH_SECRET");
+  console.log("Created web/.env with generated BETTER_AUTH_SECRET");
 } else {
-  console.log("web/.env.local already exists, skipping");
+  console.log("web/.env already exists, skipping");
 }
 
 // Copy api/.env.example → api/.env (if not exists)
@@ -67,17 +67,12 @@ for (const service of services) {
 console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
 
-console.log("Installing API dependencies...");
-await $`uv sync`.cwd(join(backend, "api"));
+console.log("Installing Python dependencies...");
+await $`uv sync`.cwd(backend);
 
-// Install service dependencies and generate proto code
-console.log("Installing service dependencies...");
-for (const service of services) {
-  await $`uv sync`.cwd(join(backend, "services", service));
-}
-
+// Generate proto code
 console.log("Generating gRPC proto code...");
-await $`uv run python ${join(backend, "scripts", "gen_proto.py")}`.cwd(join(backend, "services", "market_data"));
+await $`uv run python scripts/gen_proto.py`.cwd(backend);
 
 console.log(`
 Setup complete! Next steps:
@@ -85,15 +80,8 @@ Setup complete! Next steps:
   # Run database migrations
   bun migrate
 
-  # Start the web app
+  # Start everything (web + api + gRPC services)
   bun dev
-
-  # Start the API (separate terminal)
-  cd backend/api && uv run uvicorn app.main:app --reload
-
-  # Start gRPC services (separate terminal)
-  docker compose up -d market-data transformer persistence scheduler
-  # Or run one locally: cd backend/services/market_data && uv run python -m app.server
 
 Then visit http://localhost:3000/login
 `);
