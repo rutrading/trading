@@ -1,0 +1,8 @@
+[project]
+name = "persistence"
+version = "0.1.0"
+description = "Persistence gRPC service - saves quotes to the database"
+dependencies = ["trading-lib"]
+
+[tool.uv.sources]
+trading-lib = { workspace = true }

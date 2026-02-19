@@ -1,0 +1,8 @@
+[project]
+name = "market-data"
+version = "0.1.0"
+description = "Market data ingestion gRPC service"
+dependencies = ["httpx>=0.28.1", "trading-lib"]
+
+[tool.uv.sources]
+trading-lib = { workspace = true }

@@ -1,6 +1,6 @@
 # R U Trading
 
-Paper trading web app built with Next.js and FastAPI.
+Paper trading web app built with Next.js, FastAPI, and gRPC.
 
 Senior project for Rowan University, advised by Professor McKee.
 
@@ -25,27 +25,83 @@ The setup script will:
 - Copy `.env.example` files and generate a `BETTER_AUTH_SECRET`
 - Install web dependencies (`bun install`)
 - Install API dependencies (`uv sync`)
+- Install gRPC service dependencies (`uv sync` per service)
+- Generate proto code (`python scripts/gen_proto.py`)
 
-Then run the database migration and start both servers:
+Then run the database migration and start the servers:
 
 ```bash
 # Run database migration
 bun migrate
 
-# Web (Next.js)
-bun dev
+# Everything (web + API + gRPC services) in one terminal
+bun run dev:all
 
-# API (FastAPI) — in a separate terminal
-cd api && uv run uvicorn app.main:app --reload
+# Or start pieces individually:
+bun dev              # Web (Next.js)
+bun run dev:api      # API (FastAPI) with hot reload
+bun run dev:services # All 4 gRPC services locally
+```
+
+To run gRPC services via Docker instead:
+
+```bash
+docker compose up -d market-data transformer filter scheduler
 ```
 
 Then go to http://localhost:3000/login, create an account, and you'll see the dashboard.
+
+## gRPC Services
+
+The backend uses a gRPC pipeline for market data processing. Services communicate over protobuf and run as separate Docker containers.
+
+**Architecture**
+
+```
+Frontend --REST--> FastAPI --gRPC--> MarketData -> Transformer -> Filter -> DB
+                                         |
+                                    Scheduler (background, interval-based)
+```
+
+**Services**
+
+| Service | Port | Description |
+|---|---|---|
+| market-data | 50051 | Fetches quotes from TwelveData |
+| transformer | 50052 | Normalizes and enriches raw data |
+| filter | 50053 | Filters relevant data, persists to DB |
+| scheduler | - | Polls pipeline on an interval, adjusts by market hours |
+
+**Running the services**
+
+Proto code and dependencies are already set up by `bun setup`. To start:
+
+```bash
+# All services locally (color-coded output)
+bun run dev:services
+
+# All services via Docker Compose
+docker compose up -d market-data transformer filter scheduler
+
+# Or run a single service locally
+cd services/market_data
+uv run python -m app.server
+```
+
+If you edit `.proto` files, regenerate code with `python scripts/gen_proto.py`.
+
+Proto definitions live in `proto/`. Shared library code lives in `lib/`.
 
 ## Testing
 
 ```bash
 # API tests
 cd api
+uv run pytest
+
+# Service tests (example: transformer)
+cd services/transformer
+uv sync
 uv run pytest
 
 # Web tests

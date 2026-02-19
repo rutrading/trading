@@ -15,15 +15,22 @@ dist/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Python
 *.pyc
 *.egg-info/
 .pytest_cache/
 
+# gRPC generated code
+**/generated/
+!**/generated/.gitkeep
+
 # Docker
 postgres_data/
+.ruff_cache/

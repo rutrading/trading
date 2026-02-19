@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+__pycache__
+node_modules
+.next
+web
+*.pyc
+.pytest_cache
+*.egg-info
+**/generated
+**/.venv
