@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package trading;
+
+import "market_data.proto";
+
+service TransformerService {
+  rpc Transform (TransformRequest) returns (TransformResponse);
+  rpc Personalize (PersonalizeRequest) returns (PersonalizeResponse);
+}
+
+message TransformRequest {
+  FetchResponse raw_quote = 1;
+}
+
+message TransformResponse {
+  string symbol = 1;
+  double price = 2;
+  double change = 3;
+  double change_percent = 4;
+}
+
+message PersonalizeRequest {
+  string message = 1;
+  string name = 2;
+}
+
+message PersonalizeResponse {
+  string message = 1;
+}

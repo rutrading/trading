@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package trading;
+
+service MarketDataService {
+  rpc Fetch (FetchRequest) returns (FetchResponse);
+  rpc Greet (GreetRequest) returns (GreetResponse);
+}
+
+message FetchRequest {
+  string symbol = 1;
+}
+
+message FetchResponse {
+  string symbol = 1;
+  double price = 2;
+  double open = 3;
+  double volume = 4;
+}
+
+message GreetRequest {}
+
+message GreetResponse {
+  string message = 1;
+}
