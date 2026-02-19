@@ -39,6 +39,7 @@ QUOTE_FIELDS: list[str] = [
     "volume_ratio",
     "intraday_range_pct",
     "signal",
+    "example",
     "timestamp",
 ]
 

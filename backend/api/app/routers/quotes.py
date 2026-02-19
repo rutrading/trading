@@ -36,9 +36,13 @@ async def get_quote(
         db = next(get_db())
         try:
             existing = db.query(Quote).filter(Quote.symbol == symbol).first()
-            if existing and is_quote_fresh(
-                existing.updated_at,
-                pipeline.config.quote_staleness_seconds,
+            if (
+                existing
+                and existing.updated_at
+                and is_quote_fresh(
+                    existing.updated_at,
+                    pipeline.config.quote_staleness_seconds,
+                )
             ):
                 age = (
                     datetime.now(timezone.utc)
@@ -66,7 +70,8 @@ async def get_quote(
             raise HTTPException(status_code=404, detail=detail)
         else:
             raise HTTPException(status_code=502, detail=detail)
-    except Exception:
-        raise HTTPException(status_code=503, detail="gRPC services are unavailable.")
+    except Exception as e:
+        logger.exception("Pipeline failed for %s: %s", symbol, e)
+        raise HTTPException(status_code=503, detail=f"Pipeline error: {e}")
 
     return quote_to_dict(result, cached=False)
