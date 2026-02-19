@@ -47,7 +47,7 @@ class MarketDataServicer:
         # Rate limiter to respect TwelveData's free tier limits
         self.rate_limiter = RateLimiter(config.twelve_data_rate_limit)
 
-    async def GetQuote(self, request, context):
+    async def Fetch(self, request, context):
         """Fetch a single stock quote from TwelveData."""
         from generated import market_data_pb2
 
@@ -81,7 +81,7 @@ class MarketDataServicer:
                 else:
                     context.set_code(grpc.StatusCode.UNAVAILABLE)
                     context.set_details(msg)
-                return market_data_pb2.GetQuoteResponse()
+                return market_data_pb2.FetchResponse()
 
             # Convert nested dicts to JSON strings for the raw field
             raw = {
@@ -91,7 +91,7 @@ class MarketDataServicer:
 
             logger.info("Fetched %s: $%.2f", symbol, float(data.get("close", 0)))
 
-            return market_data_pb2.GetQuoteResponse(
+            return market_data_pb2.FetchResponse(
                 symbol=symbol,
                 price=float(data.get("close", 0)),
                 open=float(data.get("open", 0)),
@@ -107,13 +107,13 @@ class MarketDataServicer:
             logger.error("HTTP error for %s: %s", symbol, e)
             context.set_code(grpc.StatusCode.UNAVAILABLE)
             context.set_details(f"API error: {e.response.status_code}")
-            return market_data_pb2.GetQuoteResponse()
+            return market_data_pb2.FetchResponse()
 
         except Exception as e:
             logger.error("Failed to fetch %s: %s", symbol, e)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
-            return market_data_pb2.GetQuoteResponse()
+            return market_data_pb2.FetchResponse()
 
     async def BulkFetch(self, request, context):
         """Fetch quotes for multiple symbols.
@@ -124,8 +124,8 @@ class MarketDataServicer:
 
         quotes = []
         for symbol in request.symbols:
-            quote = await self.GetQuote(
-                market_data_pb2.GetQuoteRequest(symbol=symbol),
+            quote = await self.Fetch(
+                market_data_pb2.FetchRequest(symbol=symbol),
                 context,
             )
             quotes.append(quote)

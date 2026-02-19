@@ -49,7 +49,7 @@ class PipelineClient:
         )
 
     async def fetch_quote(self, symbol: str):
-        """Run a symbol through the full pipeline: fetch -> transform -> filter.
+        """Run a symbol through the full pipeline: fetch -> transform -> persist.
 
         Returns the TransformResponse on success, or None on failure.
         """
@@ -66,8 +66,8 @@ class PipelineClient:
 
             # Step 1: Fetch from MarketData
             t0 = time.perf_counter_ns()
-            quote_request = market_data_pb2.GetQuoteRequest(symbol=symbol)
-            raw_quote = await self._market_data_stub.GetQuote(quote_request, timeout=3)
+            quote_request = market_data_pb2.FetchRequest(symbol=symbol)
+            raw_quote = await self._market_data_stub.Fetch(quote_request, timeout=3)
             fetch_ms = (time.perf_counter_ns() - t0) / 1_000_000
 
             # Step 2: Transform

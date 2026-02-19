@@ -3,15 +3,15 @@ syntax = "proto3";
 package trading;
 
 service MarketDataService {
-  rpc GetQuote(GetQuoteRequest) returns (GetQuoteResponse);
+  rpc Fetch(FetchRequest) returns (FetchResponse);
   rpc BulkFetch(BulkFetchRequest) returns (BulkFetchResponse);
 }
 
-message GetQuoteRequest {
+message FetchRequest {
   string symbol = 1;
 }
 
-message GetQuoteResponse {
+message FetchResponse {
   string symbol = 1;
   double price = 2;
   double open = 3;
@@ -28,5 +28,5 @@ message BulkFetchRequest {
 }
 
 message BulkFetchResponse {
-  repeated GetQuoteResponse quotes = 1;
+  repeated FetchResponse quotes = 1;
 }

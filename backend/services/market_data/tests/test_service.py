@@ -1,6 +1,6 @@
 """Unit tests for the MarketData servicer."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -40,8 +40,8 @@ def _make_mock_response(data):
 
 
 @pytest.mark.asyncio
-async def test_get_quote_success(servicer, context):
-    """GetQuote should return a valid QuoteResponse from TwelveData."""
+async def test_fetch_success(servicer, context):
+    """Fetch should return a valid response from TwelveData."""
     mock_response = _make_mock_response(
         {
             "symbol": "AAPL",
@@ -60,7 +60,7 @@ async def test_get_quote_success(servicer, context):
         request = MagicMock()
         request.symbol = "AAPL"
 
-        result = await servicer.GetQuote(request, context)
+        result = await servicer.Fetch(request, context)
 
         assert result.symbol == "AAPL"
         assert result.price == 150.25
@@ -73,8 +73,8 @@ async def test_get_quote_success(servicer, context):
 
 
 @pytest.mark.asyncio
-async def test_get_quote_symbol_not_found(servicer, context):
-    """GetQuote should set NOT_FOUND when TwelveData returns an error code."""
+async def test_fetch_symbol_not_found(servicer, context):
+    """Fetch should set NOT_FOUND when TwelveData returns an error code."""
     mock_response = _make_mock_response(
         {
             "code": 400,
@@ -89,15 +89,15 @@ async def test_get_quote_symbol_not_found(servicer, context):
         request = MagicMock()
         request.symbol = "INVALID"
 
-        result = await servicer.GetQuote(request, context)
+        await servicer.Fetch(request, context)
 
         context.set_code.assert_called_once()
         context.set_details.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_get_quote_api_error(servicer, context):
-    """GetQuote should handle HTTP errors gracefully."""
+async def test_fetch_api_error(servicer, context):
+    """Fetch should handle HTTP errors gracefully."""
     import httpx
 
     mock_error_response = MagicMock()
@@ -112,14 +112,14 @@ async def test_get_quote_api_error(servicer, context):
         request = MagicMock()
         request.symbol = "AAPL"
 
-        result = await servicer.GetQuote(request, context)
+        await servicer.Fetch(request, context)
 
         context.set_code.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_bulk_fetch(servicer, context):
-    """BulkFetch should call GetQuote for each symbol."""
+    """BulkFetch should call Fetch for each symbol."""
     mock_response = _make_mock_response(
         {
             "symbol": "AAPL",

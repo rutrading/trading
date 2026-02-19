@@ -5,7 +5,6 @@ import json
 import logging
 
 import grpc
-
 from trading_lib.config import Config
 from trading_lib.utils import safe_float
 
@@ -129,6 +128,7 @@ class TransformerServicer:
                 volume_ratio=volume_ratio,
                 intraday_range_pct=intraday_range_pct,
                 signal=signal,
+                example="test",
             )
 
         except Exception as e:

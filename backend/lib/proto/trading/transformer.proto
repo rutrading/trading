@@ -10,7 +10,7 @@ service TransformerService {
 }
 
 message TransformRequest {
-  GetQuoteResponse raw_quote = 1;
+  FetchResponse raw_quote = 1;
 }
 
 message TransformResponse {
@@ -39,10 +39,11 @@ message TransformResponse {
   double volume_ratio = 21;
   double intraday_range_pct = 22;
   string signal = 23;
+  string example = 24;
 }
 
 message BulkTransformRequest {
-  repeated GetQuoteResponse raw_quotes = 1;
+  repeated FetchResponse raw_quotes = 1;
 }
 
 message BulkTransformResponse {
