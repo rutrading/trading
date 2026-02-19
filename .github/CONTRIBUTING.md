@@ -17,35 +17,35 @@ bun setup
 # Run database migration
 bun migrate
 
-# Web
+# Start everything (web + API + gRPC services)
 bun dev
-
-# API (separate terminal)
-cd api && uv run uvicorn app.main:app --reload
 ```
 
 **gRPC Services**
 ```bash
 # Generate proto code
-python scripts/gen_proto.py
+bun dev:gen
 
-# Start all services
+# Start all services via Docker
 docker compose up -d
 
 # Or run one locally
-cd services/market_data && uv sync && python -m app.server
+cd backend/services/market_data && uv sync && uv run python -m app.server
 ```
 
 **Running Tests**
 ```bash
 # API
-cd api
+cd backend/api
 uv run pytest
 
 # Services
-cd services/transformer
-uv sync
+cd backend/services/transformer
 uv run pytest
+
+# Integration
+cd backend
+uv run pytest tests/
 
 # Web
 cd web
@@ -65,6 +65,9 @@ bun test
 - `feat(services): add news feed parser`
 - `fix(web): correct login redirect`
 - `fix(api): handle expired tokens`
+- `refactor(services): rename GetQuote to Fetch`
+- `chore: clean up env files`
+- `ci: update workflow triggers`
 
 ## License
 
