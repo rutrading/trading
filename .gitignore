@@ -1,36 +1,8 @@
-# Dependencies
-node_modules/
 .venv/
 __pycache__/
-
-# Environment
-.env
-.env.local
-
-# Build
-.next/
-out/
-dist/
-
-# IDE
-.vscode/
-.idea/
-.claude/
-
-# OS
-.DS_Store
-Thumbs.db
-nul
-
-# Python
 *.pyc
-*.egg-info/
+.env
+generated/
 .pytest_cache/
-
-# gRPC generated code
-**/generated/
-!**/generated/.gitkeep
-
-# Docker
-postgres_data/
+*.egg-info/
 .ruff_cache/
