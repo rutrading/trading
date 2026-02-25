@@ -1,12 +1,22 @@
+/* Uses proto3 syntax, the latest version of Protocol Buffers */
 syntax = "proto3";
 
 package trading;
 
+/*
+  Defines the RPCs that the MarketData server must implement
+  and that clients (the gateway) can call
+*/
 service MarketDataService {
   rpc Fetch (FetchRequest) returns (FetchResponse);
   rpc Greet (GreetRequest) returns (GreetResponse);
 }
 
+/*
+  Messages are the data structures sent over the wire as compact binary, not JSON.
+  Field numbers (= 1, = 2) are unique tags used in the binary encoding.
+  They start at 1 because 0 is reserved, and they must never change once in use.
+*/
 message FetchRequest {
   string symbol = 1;
 }
@@ -18,6 +28,7 @@ message FetchResponse {
   double volume = 4;
 }
 
+/* Empty message, no fields needed to make this call */
 message GreetRequest {}
 
 message GreetResponse {

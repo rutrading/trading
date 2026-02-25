@@ -2,17 +2,32 @@ syntax = "proto3";
 
 package trading;
 
+/* Proto files can import other proto files to reuse their messages */
 import "market_data.proto";
 
+/*
+  Defines the RPCs the Transformer server must implement.
+  Transform takes raw market data and computes derived values.
+  Personalize takes a greeting and swaps in a name.
+*/
 service TransformerService {
   rpc Transform (TransformRequest) returns (TransformResponse);
   rpc Personalize (PersonalizeRequest) returns (PersonalizeResponse);
 }
 
+/*
+  FetchResponse is defined in market_data.proto.
+  This lets us pass the output of one service directly into another.
+  The gateway gets a FetchResponse from MarketData and forwards it here.
+*/
 message TransformRequest {
   FetchResponse raw_quote = 1;
 }
 
+/*
+  The computed result after transformation.
+  change and change_percent are derived from price and open.
+*/
 message TransformResponse {
   string symbol = 1;
   double price = 2;
@@ -20,11 +35,13 @@ message TransformResponse {
   double change_percent = 4;
 }
 
+/* Takes a message and a name to substitute into it */
 message PersonalizeRequest {
   string message = 1;
   string name = 2;
 }
 
+/* Returns the modified message with the name swapped in */
 message PersonalizeResponse {
   string message = 1;
 }
