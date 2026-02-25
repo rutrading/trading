@@ -4,13 +4,15 @@ A [gRPC](https://grpc.io/docs/what-is-grpc/introduction/) microservice pipeline 
 
 Services are defined using [Protocol Buffers](https://protobuf.dev/overview) in the `proto/` directory. Python stubs are auto-generated from those `.proto` files using [grpc_tools](https://grpc.io/docs/languages/python/quickstart/#grpc-tools) and output to `generated/`. The gateway creates a [stub](https://grpc.io/docs/what-is-grpc/core-concepts/#using-the-api) (client) for each service over a [channel](https://grpc.io/docs/what-is-grpc/core-concepts/#channels) and orchestrates calls in sequence.
 
+Every route exists twice, once using gRPC services and once without, so you can compare the same functionality side by side.
+
 ## Routes
 
-| Route | Services Used | Description |
+| gRPC Route | No-gRPC Route | Description |
 |---|---|---|
-| `GET /hello` | Market Data | Returns `"Hello World"` from the Market Data service |
-| `GET /hello/{name}` | Market Data, Transformer | Fetches `"Hello World"` from Market Data, passes it to Transformer which replaces `"World"` with the given name |
-| `GET /quote/{symbol}` | Market Data, Transformer | Fetches a live stock quote from [TwelveData](https://twelvedata.com/) via Market Data, passes it to Transformer which computes change and change percent |
+| `GET /api/grpc/hello` | `GET /api/no-grpc/hello` | Returns `"Hello World"` from the Market Data service |
+| `GET /api/grpc/hello/{name}` | `GET /api/no-grpc/hello/{name}` | Fetches `"Hello World"` from Market Data, passes it to Transformer which replaces `"World"` with the given name |
+| `GET /api/grpc/quote/{symbol}` | `GET /api/no-grpc/quote/{symbol}` | Fetches a live stock quote from [TwelveData](https://twelvedata.com/) via Market Data, passes it to Transformer which computes change and change percent |
 
 ## Services
 
@@ -34,20 +36,23 @@ uv sync
 uv run python gen_proto.py
 ```
 
-Run each gRPC service in its own terminal:
+Start everything (Market Data, Transformer, and Gateway):
+
+```bash
+uv run python start.py
+```
+
+Or run each service separately:
 
 ```bash
 uv run python services/market_data.py
 uv run python services/transformer.py
-```
-
-Run the gateway:
-
-```bash
 uv run uvicorn api.main:app --reload
 ```
 
-Try `http://localhost:8000/hello`, `http://localhost:8000/hello/Kyle`, or `http://localhost:8000/quote/AAPL`.
+Try `http://localhost:8000/api/grpc/hello`, `http://localhost:8000/api/grpc/hello/Kyle`, or `http://localhost:8000/api/grpc/quote/AAPL`.
+
+The no-grpc routes (`/api/no-grpc/...`) only need the gateway running, no separate services required.
 
 After editing any `.proto` files, run `uv run python gen_proto.py` to regenerate the `generated/` directory.
 
