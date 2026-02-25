@@ -1,16 +1,7 @@
-"""Transformer gRPC service."""
-
-import sys
 from concurrent import futures
-from pathlib import Path
 
 import grpc
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "generated"))
-
-import market_data_pb2  # noqa: F401
-import transformer_pb2
-import transformer_pb2_grpc
+from generated import transformer_pb2, transformer_pb2_grpc
 
 
 class TransformerServicer(transformer_pb2_grpc.TransformerServiceServicer):
