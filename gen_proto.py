@@ -57,6 +57,12 @@ def main():
     fix_imports()
     print(f"Generated gRPC code for: {', '.join(f.name for f in proto_files)}")
 
+    subprocess.run(
+        ["uv", "sync", "--reinstall-package", "grpc-demo"],
+        capture_output=True,
+    )
+    print("Reinstalled package with updated generated code.")
+
 
 if __name__ == "__main__":
     main()
