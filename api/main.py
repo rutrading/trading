@@ -1,14 +1,10 @@
-"""FastAPI gateway that routes HTTP requests to gRPC services."""
-
-import sys
-from pathlib import Path
-
 from fastapi import FastAPI
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "generated"))
-
-from api.routers import hello, quotes  # noqa: E402
+from api.routers.grpc import hello as grpc_hello, quotes as grpc_quotes
+from api.routers.no_grpc import hello as no_grpc_hello, quotes as no_grpc_quotes
 
 app = FastAPI()
-app.include_router(hello.router)
-app.include_router(quotes.router)
+
+app.include_router(grpc_hello.router, prefix="/api/grpc")
+app.include_router(grpc_quotes.router, prefix="/api/grpc")
+app.include_router(no_grpc_hello.router, prefix="/api/no-grpc")
+app.include_router(no_grpc_quotes.router, prefix="/api/no-grpc")
