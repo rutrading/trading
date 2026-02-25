@@ -1,5 +1,4 @@
-"""Generate Python gRPC code from .proto definitions."""
-
+import re
 import shutil
 import subprocess
 import sys
@@ -8,6 +7,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROTO_DIR = ROOT / "proto"
 OUT_DIR = ROOT / "generated"
+
+# Matches bare imports like: import market_data_pb2 as market__data__pb2
+BARE_IMPORT = re.compile(r"^(import\s+\w+_pb2\w*)", re.MULTILINE)
+
+
+def fix_imports():
+    """Convert bare imports to relative so generated/ works as a package."""
+    for path in OUT_DIR.glob("*.py*"):
+        if path.name == "__init__.py":
+            continue
+        text = path.read_text()
+        fixed = BARE_IMPORT.sub(r"from . \1", text)
+        if fixed != text:
+            path.write_text(fixed)
 
 
 def main():
@@ -28,8 +41,9 @@ def main():
             "grpc_tools.protoc",
             f"-I{PROTO_DIR}",
             f"--python_out={OUT_DIR}",
-            f"--pyi_out={OUT_DIR}",
             f"--grpc_python_out={OUT_DIR}",
+            f"--mypy_out={OUT_DIR}",
+            f"--mypy_grpc_out={OUT_DIR}",
             *[str(f) for f in proto_files],
         ],
         capture_output=True,
@@ -40,6 +54,7 @@ def main():
         print(f"protoc failed:\n{result.stderr or result.stdout}")
         sys.exit(1)
 
+    fix_imports()
     print(f"Generated gRPC code for: {', '.join(f.name for f in proto_files)}")
 
 
