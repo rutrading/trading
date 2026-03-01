@@ -18,6 +18,10 @@ class Config:
     twelve_data_api_key: str = ""
     twelve_data_base_url: str = "https://api.twelvedata.com"
     twelve_data_rate_limit: int = 8  # calls per minute (free tier)
+    alpaca_api_key: str = ""
+    alpaca_secret_key: str = ""
+    alpaca_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_feed: str = "iex"
 
     # Caching
     quote_staleness_seconds: int = 60

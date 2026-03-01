@@ -4,10 +4,10 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime, timezone
 
 import grpc
 import httpx
-
 from trading_lib.config import Config
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,10 @@ class MarketDataServicer:
         self.client = httpx.AsyncClient(
             base_url=config.twelve_data_base_url,
             timeout=10.0,
+        )
+        self.alpaca_client = httpx.AsyncClient(
+            base_url=config.alpaca_data_base_url,
+            timeout=20.0,
         )
         # Rate limiter to respect TwelveData's free tier limits
         self.rate_limiter = RateLimiter(config.twelve_data_rate_limit)
@@ -131,3 +135,116 @@ class MarketDataServicer:
             quotes.append(quote)
 
         return market_data_pb2.BulkFetchResponse(quotes=quotes)
+
+    async def FetchHistoricalBars(self, request, context):
+        """Fetch historical bars for a single symbol from Alpaca."""
+        from generated import market_data_pb2
+
+        symbol = request.symbol.upper().strip()
+        timeframe = request.timeframe.strip()
+        start = request.start.strip()
+        end = request.end.strip()
+
+        if not symbol or not timeframe or not start or not end:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("symbol, timeframe, start, and end are required")
+            return market_data_pb2.HistoricalBarsResponse()
+
+        if not self.config.alpaca_api_key or not self.config.alpaca_secret_key:
+            context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+            context.set_details("Missing Alpaca API credentials")
+            return market_data_pb2.HistoricalBarsResponse()
+
+        try:
+            start_dt = _parse_iso_utc(start)
+            end_dt = _parse_iso_utc(end)
+        except ValueError:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("start and end must be valid ISO-8601 datetimes")
+            return market_data_pb2.HistoricalBarsResponse()
+
+        if start_dt >= end_dt:
+            context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+            context.set_details("start must be before end")
+            return market_data_pb2.HistoricalBarsResponse()
+
+        try:
+            response = await self.alpaca_client.get(
+                f"/v2/stocks/{symbol}/bars",
+                params={
+                    "timeframe": timeframe,
+                    "start": start,
+                    "end": end,
+                    "feed": self.config.alpaca_feed,
+                    "adjustment": "raw",
+                    "sort": "asc",
+                    "limit": 10000,
+                },
+                headers={
+                    "APCA-API-KEY-ID": self.config.alpaca_api_key,
+                    "APCA-API-SECRET-KEY": self.config.alpaca_secret_key,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            bars = payload.get("bars", [])
+
+            transformed = []
+            for bar in bars:
+                # Alpaca uses ISO-8601 under "t". Lightweight Charts accepts
+                # epoch seconds for candle time.
+                ts = _parse_iso_utc(bar.get("t", "")).timestamp()
+                transformed.append(
+                    market_data_pb2.HistoricalBar(
+                        timestamp=int(ts),
+                        open=float(bar.get("o", 0)),
+                        high=float(bar.get("h", 0)),
+                        low=float(bar.get("l", 0)),
+                        close=float(bar.get("c", 0)),
+                        volume=float(bar.get("v", 0)),
+                        vwap=float(bar.get("vw", 0)),
+                        trade_count=int(bar.get("n", 0)),
+                    )
+                )
+
+            return market_data_pb2.HistoricalBarsResponse(
+                symbol=symbol,
+                timeframe=timeframe,
+                bars=transformed,
+                source="alpaca",
+            )
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            if status_code in (401, 403):
+                context.set_code(grpc.StatusCode.UNAUTHENTICATED)
+                context.set_details("Alpaca authentication failed")
+            elif status_code == 404:
+                context.set_code(grpc.StatusCode.NOT_FOUND)
+                context.set_details(f"Symbol {symbol} not found")
+            elif status_code == 422:
+                context.set_code(grpc.StatusCode.INVALID_ARGUMENT)
+                context.set_details("Invalid historical bars request parameters")
+            else:
+                context.set_code(grpc.StatusCode.UNAVAILABLE)
+                context.set_details(f"Alpaca request failed ({status_code})")
+            return market_data_pb2.HistoricalBarsResponse()
+        except ValueError as e:
+            logger.error("Invalid Alpaca bar payload for %s: %s", symbol, e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details("Invalid data returned by Alpaca")
+            return market_data_pb2.HistoricalBarsResponse()
+        except Exception as e:
+            logger.exception("Failed to fetch historical bars for %s: %s", symbol, e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return market_data_pb2.HistoricalBarsResponse()
+
+
+def _parse_iso_utc(value: str) -> datetime:
+    if not value:
+        raise ValueError("missing ISO datetime")
+    normalized = value.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(normalized)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
