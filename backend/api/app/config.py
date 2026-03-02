@@ -8,6 +8,11 @@ class Config:
     twelve_data_api_key: str = ""
     twelve_data_base_url: str = "https://api.twelvedata.com"
     twelve_data_rate_limit: int = 8
+    alpaca_api_key: str = ""
+    alpaca_secret_key: str = ""
+    alpaca_data_base_url: str = "https://data.alpaca.markets"
+    alpaca_feed: str = "iex"
+    alpaca_rate_limit: int = 200
     quote_staleness_seconds: int = 60
     log_level: str = "INFO"
 
