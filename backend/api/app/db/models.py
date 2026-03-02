@@ -1,20 +1,12 @@
-"""Shared SQLAlchemy models for all services.
-
-Schema is managed by Drizzle (web/src/db/schema.ts).
-This model is a read/write mapping only — do not use for migrations.
-"""
-
 from datetime import datetime, timezone
 
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from trading_lib.db import Base
+from app.db.session import Base
 
 
 class Quote(Base):
-    """Cached stock quote, written by the persistence service."""
-
     __tablename__ = "quotes"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -42,7 +34,6 @@ class Quote(Base):
     volume_ratio: Mapped[float | None] = mapped_column(default=None)
     intraday_range_pct: Mapped[float | None] = mapped_column(default=None)
     signal: Mapped[str | None] = mapped_column(default=None)
-    example: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime | None] = mapped_column(
         default=lambda: datetime.now(timezone.utc),
     )

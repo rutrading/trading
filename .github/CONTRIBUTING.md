@@ -17,20 +17,13 @@ bun setup
 # Run database migration
 bun migrate
 
-# Start everything (web + API + gRPC services)
+# Start everything (web + API)
 bun dev
 ```
 
-**gRPC Services**
+**Database**
 ```bash
-# Generate proto code
-bun dev:gen
-
-# Start all services via Docker
-docker compose up -d
-
-# Or run one locally
-cd backend/services/market_data && uv sync && uv run python -m app.server
+docker compose up -d db
 ```
 
 **Running Tests**
@@ -39,13 +32,9 @@ cd backend/services/market_data && uv sync && uv run python -m app.server
 cd backend/api
 uv run pytest
 
-# Services
-cd backend/services/transformer
-uv run pytest
-
-# Integration
+# API
 cd backend
-uv run pytest tests/
+uv run --package trading-api pytest api/tests/
 
 # Web
 cd web
@@ -60,12 +49,10 @@ bun test
 
 ## Commit Message Format
 
-- `feat(web): add portfolio chart`
-- `feat(api): add trade endpoint`
-- `feat(services): add news feed parser`
-- `fix(web): correct login redirect`
-- `fix(api): handle expired tokens`
-- `refactor(services): rename GetQuote to Fetch`
+- `feat(frontend): add webhook dashboard`
+- `feat(backend): add retry mechanism`
+- `fix(frontend): correct login redirect`
+- `fix(backend): handle expired tokens`
 - `chore: clean up env files`
 - `ci: update workflow triggers`
 
