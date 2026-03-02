@@ -84,15 +84,18 @@ async def get_historical_bars(
     if not config.alpaca_api_key or not config.alpaca_secret_key:
         raise HTTPException(status_code=502, detail="Missing Alpaca API credentials")
 
-    await _get_alpaca_rate_limiter(config.alpaca_rate_limit).acquire()
+    rate_limiter = _get_alpaca_rate_limiter(config.alpaca_rate_limit)
 
     try:
         async with httpx.AsyncClient(
             base_url=config.alpaca_data_base_url, timeout=20.0
         ) as client:
-            response = await client.get(
-                f"/v2/stocks/{payload.symbol}/bars",
-                params={
+            all_bars = []
+            page_token: str | None = None
+            seen_tokens = set()
+
+            while True:
+                params = {
                     "timeframe": payload.timeframe,
                     "start": payload.start,
                     "end": payload.end,
@@ -100,13 +103,36 @@ async def get_historical_bars(
                     "adjustment": "raw",
                     "sort": "asc",
                     "limit": 10000,
-                },
-                headers={
-                    "APCA-API-KEY-ID": config.alpaca_api_key,
-                    "APCA-API-SECRET-KEY": config.alpaca_secret_key,
-                },
-            )
-            response.raise_for_status()
+                }
+                if page_token:
+                    params["page_token"] = page_token
+
+                await rate_limiter.acquire()
+                response = await client.get(
+                    f"/v2/stocks/{payload.symbol}/bars",
+                    params=params,
+                    headers={
+                        "APCA-API-KEY-ID": config.alpaca_api_key,
+                        "APCA-API-SECRET-KEY": config.alpaca_secret_key,
+                    },
+                )
+                response.raise_for_status()
+
+                body = response.json()
+                all_bars.extend(body.get("bars", []))
+
+                next_page_token = body.get("next_page_token")
+                if not next_page_token:
+                    break
+                if next_page_token in seen_tokens:
+                    logger.warning(
+                        "Detected repeating Alpaca page token for %s; stopping pagination",
+                        payload.symbol,
+                    )
+                    break
+
+                seen_tokens.add(next_page_token)
+                page_token = next_page_token
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code
         if status_code in (401, 403):
@@ -130,11 +156,9 @@ async def get_historical_bars(
         )
         raise HTTPException(status_code=503, detail=f"Alpaca request failed: {exc}")
 
-    body = response.json()
-    bars = body.get("bars", [])
     transformed = []
 
-    for bar in bars:
+    for bar in all_bars:
         try:
             ts = int(_parse_iso_utc(str(bar.get("t", ""))).timestamp())
         except ValueError:
