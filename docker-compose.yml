@@ -21,6 +21,10 @@ services:
       TWELVE_DATA_API_KEY: ${TWELVE_DATA_API_KEY:-}
       TWELVE_DATA_BASE_URL: "https://api.twelvedata.com"
       TWELVE_DATA_RATE_LIMIT: 8
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY:-}
+      ALPACA_DATA_BASE_URL: "https://data.alpaca.markets"
+      ALPACA_FEED: ${ALPACA_FEED:-iex}
       LOG_LEVEL: INFO
 
   transformer:

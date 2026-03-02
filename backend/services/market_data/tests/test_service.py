@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from trading_lib.config import Config
 
 
@@ -12,6 +11,9 @@ def config():
     return Config(
         twelve_data_api_key="test_key",
         twelve_data_base_url="https://api.twelvedata.com",
+        alpaca_api_key="alpaca_key",
+        alpaca_secret_key="alpaca_secret",
+        alpaca_data_base_url="https://data.alpaca.markets",
     )
 
 
@@ -37,6 +39,20 @@ def _make_mock_response(data):
     response.raise_for_status = MagicMock(return_value=None)
     response.json = MagicMock(return_value=data)
     return response
+
+
+def _make_historical_request(
+    symbol: str = "AAPL",
+    timeframe: str = "1Day",
+    start: str = "2025-01-01T00:00:00Z",
+    end: str = "2025-01-10T00:00:00Z",
+):
+    request = MagicMock()
+    request.symbol = symbol
+    request.timeframe = timeframe
+    request.start = start
+    request.end = end
+    return request
 
 
 @pytest.mark.asyncio
@@ -141,3 +157,56 @@ async def test_bulk_fetch(servicer, context):
         result = await servicer.BulkFetch(request, context)
 
         assert len(result.quotes) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_historical_bars_success(servicer, context):
+    """FetchHistoricalBars should transform Alpaca bars for charting."""
+    mock_response = _make_mock_response(
+        {
+            "symbol": "AAPL",
+            "bars": [
+                {
+                    "t": "2025-01-02T14:30:00Z",
+                    "o": 187.2,
+                    "h": 188.1,
+                    "l": 186.9,
+                    "c": 187.8,
+                    "v": 1000,
+                    "vw": 187.5,
+                    "n": 80,
+                }
+            ],
+        }
+    )
+
+    async def mock_get(*args, **kwargs):
+        return mock_response
+
+    with patch.object(servicer.alpaca_client, "get", side_effect=mock_get):
+        result = await servicer.FetchHistoricalBars(
+            _make_historical_request(),
+            context,
+        )
+
+        assert result.symbol == "AAPL"
+        assert result.timeframe == "1Day"
+        assert result.source == "alpaca"
+        assert len(result.bars) == 1
+        assert result.bars[0].open == 187.2
+        assert result.bars[0].close == 187.8
+
+
+@pytest.mark.asyncio
+async def test_fetch_historical_bars_invalid_range(servicer, context):
+    """FetchHistoricalBars should reject start >= end."""
+    await servicer.FetchHistoricalBars(
+        _make_historical_request(
+            start="2025-01-10T00:00:00Z",
+            end="2025-01-01T00:00:00Z",
+        ),
+        context,
+    )
+
+    context.set_code.assert_called_once()
+    context.set_details.assert_called_once()

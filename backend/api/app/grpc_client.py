@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 import grpc
-
 from trading_lib.channel import create_channel
 from trading_lib.config import Config, get_config
 
@@ -33,8 +32,8 @@ class PipelineClient:
             return
 
         from generated import (
-            persistence_pb2_grpc,
             market_data_pb2_grpc,
+            persistence_pb2_grpc,
             transformer_pb2_grpc,
         )
 
@@ -56,8 +55,8 @@ class PipelineClient:
         self._ensure_stubs()
 
         from generated import (
-            persistence_pb2,
             market_data_pb2,
+            persistence_pb2,
             transformer_pb2,
         )
 
@@ -102,6 +101,26 @@ class PipelineClient:
         except Exception as e:
             logger.error("Pipeline error for %s: %s", symbol, e)
             raise
+
+    async def fetch_historical_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: str,
+        end: str,
+    ):
+        """Fetch historical bars from the MarketData gRPC service."""
+        self._ensure_stubs()
+
+        from generated import market_data_pb2
+
+        request = market_data_pb2.HistoricalBarsRequest(
+            symbol=symbol,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+        )
+        return await self._market_data_stub.FetchHistoricalBars(request, timeout=12)
 
 
 _client: PipelineClient | None = None

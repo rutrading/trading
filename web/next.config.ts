@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   experimental: {
     turbopackFileSystemCacheForDev: true,
   },
+  allowedDevOrigins: ["10.0.0.104"],
 };
 
 export default nextConfig;

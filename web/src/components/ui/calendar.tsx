@@ -61,9 +61,9 @@ function Calendar({
       const baseClass =
         defaultClassNames[key as keyof typeof defaultClassNames];
 
-      acc[key as keyof typeof defaultClassNames] = (userClass
-        ? cn(baseClass, userClass)
-        : baseClass) as string;
+      acc[key as keyof typeof defaultClassNames] = (
+        userClass ? cn(baseClass, userClass) : baseClass
+      ) as string;
 
       return acc;
     },
@@ -100,11 +100,7 @@ function Calendar({
       }
 
       return (
-        <CaretUpDownIcon
-          className={className}
-          {...props}
-          aria-hidden="true"
-        />
+        <CaretUpDownIcon className={className} {...props} aria-hidden="true" />
       );
     },
   };
