@@ -9,7 +9,7 @@ Senior project for Rowan University, advised by Professor McKee.
 ## Overview
 
 - Authentication with account registration and session management
-- Single quote endpoint that fetches real-time market data through the gRPC pipeline
+- Single quote endpoint that fetches real-time market data through the API pipeline
 
 **Planned:**
 
@@ -26,22 +26,19 @@ Senior project for Rowan University, advised by Professor McKee.
 
 *Last updated: February 19, 2026*
 
-The Next.js frontend communicates with a FastAPI gateway over REST, which orchestrates a sequence of [unary RPCs](https://grpc.io/docs/what-is-grpc/core-concepts/#unary-rpc) across gRPC microservices where each service processes the data before the result returns in one round trip. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server, and all services share a single Postgres database.
+The Next.js frontend communicates with a FastAPI backend over REST. The backend fetches market data from [TwelveData](https://twelvedata.com/), computes derived fields, and stores normalized quotes in Postgres for caching. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server.
 
-### Services
+### Backend Flow
 
-| Service | Port | Description |
-|---|---|---|
-| [Market Data](backend/services/market_data) | 50051 | Fetches live quotes from [TwelveData](https://twelvedata.com/) |
-| [Transformer](backend/services/transformer) | 50052 | Computes derived values and normalizes raw market data |
-| [Persistence](backend/services/persistence) | 50053 | Persists processed data to Postgres |
-| [Scheduler](backend/services/scheduler) | — | Polls the pipeline on an interval, adjusts by market hours |
-
-The gRPC architecture is designed to be extensible, allowing new services to be added to the pipeline by defining a .proto file and wiring it in. Proto definitions live in [`backend/lib/proto/`](backend/lib/proto/) and shared Python library code lives in [`backend/lib/trading_lib/`](backend/lib/trading_lib/).
+1. API receives `/api/quote?symbol=...`
+2. Checks Postgres cache freshness
+3. Fetches from TwelveData on cache miss
+4. Computes indicators and signal
+5. Upserts the quote into Postgres
 
 ### Database
 
-Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python services use SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun migrate` runs `drizzle-kit push`).
+Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python backend code uses SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun migrate` runs `drizzle-kit push`).
 
 ## Getting Started
 
@@ -52,7 +49,7 @@ bun install
 bun setup
 ```
 
-The setup script will start Postgres via Docker Compose, copy `.env.example` files, generate a `BETTER_AUTH_SECRET`, install all dependencies, and generate gRPC proto code.
+The setup script will start Postgres via Docker Compose, copy `.env.example` files, generate a `BETTER_AUTH_SECRET`, and install dependencies.
 
 Then run the database migration and start:
 
@@ -63,18 +60,12 @@ bun dev
 
 Open http://localhost:3000/login, create an account, and you'll see the dashboard.
 
-If you edit `.proto` files, regenerate code with `bun dev:gen`.
-
 ## Testing
 
 ```bash
-# Service tests (example: transformer)
-cd backend/services/transformer
-uv run pytest
-
-# Integration tests
+# API tests
 cd backend
-uv run pytest tests/
+uv run --package trading-api pytest api/tests/
 
 # Web tests
 cd web
@@ -83,10 +74,10 @@ bun test
 
 ## Docker
 
-To run gRPC services via Docker instead of locally:
+For local database only:
 
 ```bash
-docker compose up -d market-data transformer persistence scheduler
+docker compose up -d db
 ```
 
 ## Contributing

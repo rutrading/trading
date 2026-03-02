@@ -52,17 +52,6 @@ if (!existsSync(apiEnv)) {
   console.log("backend/api/.env already exists, skipping");
 }
 
-// Copy service .env.example files
-const services = ["market_data", "transformer", "persistence", "scheduler"];
-for (const service of services) {
-  const envFile = join(backend, "services", service, ".env");
-  const envExample = join(backend, "services", service, ".env.example");
-  if (existsSync(envExample) && !existsSync(envFile)) {
-    copyFileSync(envExample, envFile);
-    console.log(`Created backend/services/${service}/.env`);
-  }
-}
-
 // Install dependencies
 console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
@@ -70,17 +59,13 @@ await $`bun install`.cwd(join(root, "web"));
 console.log("Installing Python dependencies...");
 await $`uv sync`.cwd(backend);
 
-// Generate proto code
-console.log("Generating gRPC proto code...");
-await $`uv run python scripts/gen_proto.py`.cwd(backend);
-
 console.log(`
 Setup complete! Next steps:
 
   # Run database migrations
   bun migrate
 
-  # Start everything (web + api + gRPC services)
+  # Start everything (web + api)
   bun dev
 
 Then visit http://localhost:3000/login
