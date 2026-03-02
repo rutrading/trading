@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db import Base
+from app.db.session import Base
 
 
 class Quote(Base):
@@ -34,7 +34,6 @@ class Quote(Base):
     volume_ratio: Mapped[float | None] = mapped_column(default=None)
     intraday_range_pct: Mapped[float | None] = mapped_column(default=None)
     signal: Mapped[str | None] = mapped_column(default=None)
-    example: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime | None] = mapped_column(
         default=lambda: datetime.now(timezone.utc),
     )

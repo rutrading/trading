@@ -1,11 +1,21 @@
+import logging
+from pathlib import Path
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.bootstrap import bootstrap
+from app.config import get_config
 
 from app.routers import health, historical_bars, quotes
 
-bootstrap(__file__)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+config = get_config()
+logging.basicConfig(
+    level=config.log_level,
+    format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 app = FastAPI(title="R U Trading API")
 
