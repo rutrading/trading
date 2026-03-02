@@ -1,4 +1,4 @@
-"""Shared utilities for all gRPC services and the API gateway."""
+"""Shared utilities for quote data and API pipeline logic."""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -13,9 +13,6 @@ MARKET_OPEN_HOUR = 14  # 9:30 AM ET = 14:30 UTC
 MARKET_OPEN_MINUTE = 30
 MARKET_CLOSE_HOUR = 21  # 4:00 PM ET = 21:00 UTC
 
-# Fields shared between the Quote model, protobuf TransformResponse, and
-# the JSON dict returned by the API.  Every service that reads or writes
-# quote data iterates over this list instead of hand-coding 22 field names.
 QUOTE_FIELDS: list[str] = [
     "symbol",
     "name",
@@ -44,11 +41,6 @@ QUOTE_FIELDS: list[str] = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Numeric helpers
-# ---------------------------------------------------------------------------
-
-
 def safe_float(raw: dict, key: str, fallback: float = 0.0) -> float:
     """Safely parse a float from a dict of strings."""
     try:
@@ -57,18 +49,8 @@ def safe_float(raw: dict, key: str, fallback: float = 0.0) -> float:
         return fallback
 
 
-# ---------------------------------------------------------------------------
-# Quote conversion helpers
-# ---------------------------------------------------------------------------
-
-
 def quote_to_dict(source: object, **extra: object) -> dict:
-    """Convert any quote-like object to a plain dict.
-
-    Works with SQLAlchemy models (attribute access) and protobuf messages
-    (also attribute access).  Extra keyword arguments are merged into the
-    result, which lets callers add fields like ``cached=True``.
-    """
+    """Convert a quote-like object to a plain dict."""
     result = {field: getattr(source, field, None) for field in QUOTE_FIELDS}
     result.update(extra)
     return result
@@ -77,8 +59,7 @@ def quote_to_dict(source: object, **extra: object) -> dict:
 def upsert_quote(db: Session, quote: object) -> None:
     """Insert or update a quote row, reading fields from *quote*.
 
-    *quote* is typically a protobuf ``TransformResponse`` but can be any
-    object whose attributes match :data:`QUOTE_FIELDS`.
+    *quote* can be any object whose attributes match :data:`QUOTE_FIELDS`.
     """
     from trading_lib.models import Quote
 
@@ -96,11 +77,6 @@ def upsert_quote(db: Session, quote: object) -> None:
         db.add(Quote(**kwargs))
 
     db.commit()
-
-
-# ---------------------------------------------------------------------------
-# Market-hours helpers
-# ---------------------------------------------------------------------------
 
 
 def is_market_open() -> bool:

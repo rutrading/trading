@@ -1,4 +1,4 @@
-"""Shared configuration for all gRPC services."""
+"""Shared configuration for API and pipeline helpers."""
 
 import os
 from dataclasses import dataclass, fields
@@ -8,11 +8,6 @@ from dataclasses import dataclass, fields
 class Config:
     # Database connection
     database_url: str = "postgresql://postgres:postgres@localhost:5432/trading"
-
-    # Service hosts (host:port format)
-    market_data_host: str = "localhost:50051"
-    transformer_host: str = "localhost:50052"
-    persistence_host: str = "localhost:50053"
 
     # External API config
     twelve_data_api_key: str = ""
