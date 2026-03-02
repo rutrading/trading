@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from trading_lib import bootstrap
+
+from app.bootstrap import bootstrap
 
 from app.routers import health, historical_bars, quotes
 

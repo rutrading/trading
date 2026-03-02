@@ -1,8 +1,8 @@
 import logging
 import time
 
-from trading_lib.config import Config, get_config
-from trading_lib.pipeline import MarketDataClient, persist_quote, transform_quote
+from app.config import Config, get_config
+from app.pipeline import MarketDataClient, persist_quote, transform_quote
 
 logger = logging.getLogger(__name__)
 

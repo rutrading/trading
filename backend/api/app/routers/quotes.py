@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from trading_lib.pipeline import PipelineError
-from trading_lib.utils import is_quote_fresh, quote_to_dict
+from app.db import get_db
+from app.models import Quote
+from app.pipeline import PipelineError
+from app.utils import is_quote_fresh, quote_to_dict
 
 from app.auth import get_current_user
 from app.pipeline_client import get_pipeline_client
@@ -29,9 +31,6 @@ async def get_quote(
 
     # Check DB for fresh quote
     try:
-        from trading_lib.db import get_db
-        from trading_lib.models import Quote
-
         db = next(get_db())
         try:
             existing = db.query(Quote).filter(Quote.symbol == symbol).first()

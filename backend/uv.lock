@@ -6,7 +6,6 @@ requires-python = ">=3.13"
 members = [
     "trading",
     "trading-api",
-    "trading-lib",
 ]
 
 [[package]]
@@ -534,9 +533,11 @@ source = { virtual = "api" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
+    { name = "psycopg2-binary" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
-    { name = "trading-lib" },
+    { name = "sqlalchemy" },
     { name = "uvicorn" },
 ]
 
@@ -550,9 +551,11 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=46.0.5" },
     { name = "fastapi", specifier = ">=0.129.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pyjwt", specifier = ">=2.11.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "trading-lib", editable = "lib" },
+    { name = "sqlalchemy", specifier = ">=2.0.46" },
     { name = "uvicorn", specifier = ">=0.40.0" },
 ]
 
@@ -560,25 +563,6 @@ requires-dist = [
 dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=9.0.2" },
-]
-
-[[package]]
-name = "trading-lib"
-version = "0.1.0"
-source = { editable = "lib" }
-dependencies = [
-    { name = "httpx" },
-    { name = "psycopg2-binary" },
-    { name = "python-dotenv" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "psycopg2-binary", specifier = ">=2.9.11" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "sqlalchemy", specifier = ">=2.0.46" },
 ]
 
 [[package]]

@@ -1,16 +1,13 @@
 import asyncio
 import json
-import logging
 import time
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 import httpx
 
-from trading_lib.config import Config
-from trading_lib.db import get_db
-from trading_lib.utils import safe_float, upsert_quote
-
-logger = logging.getLogger(__name__)
+from app.config import Config
+from app.db import get_db
+from app.utils import safe_float, upsert_quote
 
 
 class PipelineError(Exception):
@@ -62,8 +59,7 @@ class TransformedQuote:
 
 class RateLimiter:
     def __init__(self, calls_per_minute: int):
-        self.calls_per_minute = max(1, calls_per_minute)
-        self.interval = 60.0 / self.calls_per_minute
+        self.interval = 60.0 / max(1, calls_per_minute)
         self.last_call = 0.0
         self._lock = asyncio.Lock()
 
@@ -80,8 +76,7 @@ class MarketDataClient:
     def __init__(self, config: Config, client: httpx.AsyncClient | None = None) -> None:
         self.config = config
         self.client = client or httpx.AsyncClient(
-            base_url=config.twelve_data_base_url,
-            timeout=10.0,
+            base_url=config.twelve_data_base_url, timeout=10.0
         )
         self.rate_limiter = RateLimiter(config.twelve_data_rate_limit)
 
@@ -94,10 +89,7 @@ class MarketDataClient:
         try:
             response = await self.client.get(
                 "/quote",
-                params={
-                    "symbol": symbol,
-                    "apikey": self.config.twelve_data_api_key,
-                },
+                params={"symbol": symbol, "apikey": self.config.twelve_data_api_key},
             )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -112,17 +104,18 @@ class MarketDataClient:
 
         data = response.json()
         if "code" in data:
-            message = data.get("message", "Unknown market data error")
             code = data.get("code")
             if code == 401:
                 raise PipelineError("unauthorized", "Invalid market data API key")
             if code in (400, 404):
                 raise PipelineError("not_found", f"Symbol {symbol} not found")
-            raise PipelineError("unavailable", message)
+            raise PipelineError(
+                "unavailable", data.get("message", "Unknown market data error")
+            )
 
         raw = {
-            key: (json.dumps(value) if isinstance(value, dict) else str(value))
-            for key, value in data.items()
+            k: (json.dumps(v) if isinstance(v, dict) else str(v))
+            for k, v in data.items()
         }
         return RawQuote(
             symbol=symbol,
@@ -171,8 +164,7 @@ def transform_quote(raw_quote: RawQuote) -> TransformedQuote:
     day_range = raw_quote.high - raw_quote.low
     day_range_pct = _safe_pct(raw_quote.price - raw_quote.low, day_range)
     fifty_two_week_pct = _safe_pct(
-        raw_quote.price - fifty_two_week_low,
-        fifty_two_week_high - fifty_two_week_low,
+        raw_quote.price - fifty_two_week_low, fifty_two_week_high - fifty_two_week_low
     )
     gap_pct = (
         _safe_pct(raw_quote.open - previous_close, previous_close)
@@ -218,7 +210,3 @@ def persist_quote(quote: TransformedQuote) -> None:
         upsert_quote(db, quote)
     finally:
         db.close()
-
-
-def as_dict(data: object) -> dict:
-    return {field.name: getattr(data, field.name) for field in fields(data)}

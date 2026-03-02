@@ -12,8 +12,5 @@ dependencies = [
 [dependency-groups]
 dev = ["pytest>=9.0.2", "pytest-asyncio>=0.26.0"]
 
-[tool.uv.sources]
-trading-lib = { path = "lib", editable = true }
-
 [tool.uv.workspace]
-members = ["lib", "api"]
+members = ["api"]

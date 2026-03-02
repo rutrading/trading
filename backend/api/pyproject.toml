@@ -8,11 +8,10 @@ dependencies = [
     "pyjwt>=2.11.0",
     "cryptography>=46.0.5",
     "python-dotenv>=1.2.1",
-    "trading-lib",
+    "httpx>=0.28.1",
+    "sqlalchemy>=2.0.46",
+    "psycopg2-binary>=2.9.11",
 ]
 
 [dependency-groups]
 dev = ["pytest>=9.0.2", "httpx>=0.28.1"]
-
-[tool.uv.sources]
-trading-lib = { workspace = true }
