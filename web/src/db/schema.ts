@@ -28,6 +28,10 @@ export const orderStatusEnum = pgEnum("order_status", [
   "cancelled",
   "expired",
 ]);
+// "investment" = stocks/ETFs only, "crypto" = crypto pairs only
+export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
+// "owner" = full access + can delete, "member" = can trade & view only
+export const accountRoleEnum = pgEnum("account_role", ["owner", "member"]);
 
 export const user = pgTable("user", {
   // better auth generated id
@@ -40,8 +44,6 @@ export const user = pgTable("user", {
   emailVerified: boolean("emailVerified").notNull().default(false),
   // profile picture url
   image: text("image"),
-  // paper trading cash balance, set during onboarding (e.g. 100000.00 for beginner)
-  balance: numeric("balance", { precision: 14, scale: 2 }),
   createdAt: timestamp("createdAt", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -139,6 +141,57 @@ export const jwks = pgTable("jwks", {
   expiresAt: timestamp("expiresAt", { withTimezone: true }),
 });
 
+export const tradingAccount = pgTable(
+  "trading_account",
+  {
+    id: serial("id").primaryKey(),
+    // display name, e.g. "My Investment Account" or "Kyle & Josh Joint"
+    name: text("name").notNull(),
+    // "investment" (stocks/ETFs only) or "crypto" (crypto pairs only)
+    type: accountTypeEnum("type").notNull(),
+    // paper trading cash balance, e.g. 100000.00
+    balance: numeric("balance", { precision: 14, scale: 2 })
+      .notNull()
+      .default("100000"),
+    // whether this account is shared between two users
+    isJoint: boolean("is_joint").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("trading_account_type_idx").on(table.type)],
+);
+
+export const accountMember = pgTable(
+  "account_member",
+  {
+    id: serial("id").primaryKey(),
+    // which trading account this membership is for
+    accountId: integer("account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    // which user is a member of this account
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // "owner" = full access + can delete, "member" = can trade & view
+    role: accountRoleEnum("role").notNull().default("owner"),
+    // if true, this is the account shown by default in the UI for this user
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("account_member_accountId_idx").on(table.accountId),
+    index("account_member_userId_idx").on(table.userId),
+    index("account_member_user_account_idx").on(table.userId, table.accountId),
+  ],
+);
+
 export const symbol = pgTable("symbol", {
   id: serial("id").primaryKey(),
   // stock or crypto ticker, e.g. "AAPL" or "BTC/USD"
@@ -158,10 +211,10 @@ export const portfolio = pgTable(
   "portfolio",
   {
     id: serial("id").primaryKey(),
-    // which user owns this position
-    userId: text("user_id")
+    // which trading account owns this position
+    accountId: integer("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
     // which stock/crypto this position is for
     symbolId: integer("symbol_id")
       .notNull()
@@ -182,9 +235,9 @@ export const portfolio = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("portfolio_userId_idx").on(table.userId),
+    index("portfolio_accountId_idx").on(table.accountId),
     index("portfolio_symbolId_idx").on(table.symbolId),
-    index("portfolio_user_symbol_idx").on(table.userId, table.symbolId),
+    index("portfolio_account_symbol_idx").on(table.accountId, table.symbolId),
   ],
 );
 
@@ -192,10 +245,10 @@ export const order = pgTable(
   "order",
   {
     id: serial("id").primaryKey(),
-    // which user placed this order
-    userId: text("user_id")
+    // which trading account placed this order
+    accountId: integer("account_id")
       .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
     // which stock/crypto the order is for
     symbolId: integer("symbol_id")
       .notNull()
@@ -223,7 +276,7 @@ export const order = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("order_userId_idx").on(table.userId),
+    index("order_accountId_idx").on(table.accountId),
     index("order_symbolId_idx").on(table.symbolId),
     index("order_status_idx").on(table.status),
   ],
@@ -341,8 +394,7 @@ export const watchlist = pgTable(
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),
-  portfolios: many(portfolio),
-  orders: many(order),
+  accountMemberships: many(accountMember),
   watchlists: many(watchlist),
 }));
 
@@ -354,6 +406,20 @@ export const accountRelations = relations(account, ({ one }) => ({
   user: one(user, { fields: [account.userId], references: [user.id] }),
 }));
 
+export const tradingAccountRelations = relations(tradingAccount, ({ many }) => ({
+  members: many(accountMember),
+  portfolios: many(portfolio),
+  orders: many(order),
+}));
+
+export const accountMemberRelations = relations(accountMember, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [accountMember.accountId],
+    references: [tradingAccount.id],
+  }),
+  user: one(user, { fields: [accountMember.userId], references: [user.id] }),
+}));
+
 export const symbolRelations = relations(symbol, ({ one, many }) => ({
   quote: one(quote, { fields: [symbol.id], references: [quote.symbolId] }),
   quoteHistory: many(quoteHistory),
@@ -363,7 +429,10 @@ export const symbolRelations = relations(symbol, ({ one, many }) => ({
 }));
 
 export const portfolioRelations = relations(portfolio, ({ one }) => ({
-  user: one(user, { fields: [portfolio.userId], references: [user.id] }),
+  tradingAccount: one(tradingAccount, {
+    fields: [portfolio.accountId],
+    references: [tradingAccount.id],
+  }),
   symbol: one(symbol, {
     fields: [portfolio.symbolId],
     references: [symbol.id],
@@ -371,7 +440,10 @@ export const portfolioRelations = relations(portfolio, ({ one }) => ({
 }));
 
 export const orderRelations = relations(order, ({ one }) => ({
-  user: one(user, { fields: [order.userId], references: [user.id] }),
+  tradingAccount: one(tradingAccount, {
+    fields: [order.accountId],
+    references: [tradingAccount.id],
+  }),
   symbol: one(symbol, { fields: [order.symbolId], references: [symbol.id] }),
 }));
 
