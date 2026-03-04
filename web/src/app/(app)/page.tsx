@@ -1,17 +1,24 @@
-import { Suspense } from "react";
 import { getSession, getAccounts } from "@/app/actions/auth";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AccountSummary } from "./account-summary";
-import { PositionsPanel } from "./positions-panel";
-import { OrdersPanel } from "./orders-panel";
-import { BalancesPanel } from "./balances-panel";
-import { DashboardTabs } from "./dashboard-tabs";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 export const metadata = { title: "R U Trading" };
 
 export default async function HomePage() {
   const session = await getSession();
   if (!session) return null;
+
+  const accounts = await getAccounts();
+
+  const totalBalance = accounts.reduce(
+    (sum, a) => sum + Number(a.tradingAccount.balance),
+    0,
+  );
 
   return (
     <div className="space-y-4">
@@ -24,46 +31,57 @@ export default async function HomePage() {
         </p>
       </div>
 
-      <DashboardTabs
-        summaryPanel={
-          <Suspense fallback={<PanelSkeleton />}>
-            <AccountSummary />
-          </Suspense>
-        }
-        positionsPanel={
-          <Suspense fallback={<PanelSkeleton />}>
-            <PositionsPanel />
-          </Suspense>
-        }
-        ordersPanel={
-          <Suspense fallback={<PanelSkeleton />}>
-            <OrdersPanel />
-          </Suspense>
-        }
-        balancesPanel={
-          <Suspense fallback={<PanelSkeleton />}>
-            <BalancesPanel />
-          </Suspense>
-        }
-      />
-    </div>
-  );
-}
+      <div className="rounded-xl border border-border p-6">
+        <p className="text-sm text-muted-foreground">Total Cash Balance</p>
+        <p className="text-3xl font-semibold tabular-nums tracking-tight">
+          $
+          {totalBalance.toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </p>
+      </div>
 
-function PanelSkeleton() {
-  return (
-    <div className="space-y-4 pt-4">
-      <Skeleton className="h-5 w-32" />
       <div className="grid gap-4 sm:grid-cols-2">
-        {[1, 2].map((i) => (
-          <div
-            key={i}
-            className="space-y-3 rounded-xl border border-border p-6"
-          >
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-8 w-24" />
-            <Skeleton className="h-3 w-20" />
-          </div>
+        {accounts.map((a) => (
+          <Card key={a.id}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">
+                  {a.tradingAccount.name}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  {a.tradingAccount.isJoint && (
+                    <Badge variant="secondary" size="sm">
+                      Joint
+                    </Badge>
+                  )}
+                  <Badge
+                    variant={
+                      a.tradingAccount.type === "investment"
+                        ? "default"
+                        : "outline"
+                    }
+                    size="sm"
+                  >
+                    {a.tradingAccount.type === "investment"
+                      ? "Stocks"
+                      : "Crypto"}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-semibold tabular-nums tracking-tight">
+                $
+                {Number(a.tradingAccount.balance).toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+              <p className="text-xs text-muted-foreground">Cash balance</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>
