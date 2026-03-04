@@ -71,7 +71,7 @@ export async function AccountSummary() {
                   maximumFractionDigits: 2,
                 })}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Cash balance
               </p>
             </CardContent>

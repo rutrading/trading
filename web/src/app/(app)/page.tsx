@@ -14,12 +14,12 @@ export default async function HomePage() {
   if (!session) return null;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">
           Welcome back, {session.user.name}
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Here&apos;s an overview of your trading accounts.
         </p>
       </div>

@@ -8,10 +8,10 @@ export const metadata = { title: "Settings - R U Trading" };
 
 export default function SettingsPage() {
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Manage your profile and trading accounts.
         </p>
       </div>
