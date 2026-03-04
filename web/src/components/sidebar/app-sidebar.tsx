@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ChartLineUpIcon,
   GearSixIcon,
   PlusIcon,
   CurrencyCircleDollarIcon,
@@ -20,9 +19,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/sign-out-button";
 
 type Account = {
@@ -39,6 +36,40 @@ type Account = {
     updatedAt: Date;
   };
 };
+
+function formatBalance(balance: string) {
+  return Number(balance).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function AccountItem({
+  account,
+  isActive,
+}: {
+  account: Account;
+  isActive: boolean;
+}) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        size="lg"
+        isActive={isActive}
+        render={<Link href={`/accounts/${account.tradingAccount.id}`} />}
+      >
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-medium">
+            {account.tradingAccount.name}
+          </span>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            ${formatBalance(account.tradingAccount.balance)}
+          </span>
+        </div>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
 
 export function AppSidebar({
   accounts,
@@ -60,14 +91,11 @@ export function AppSidebar({
 
   return (
     <Sidebar>
-      <SidebarHeader className="p-4">
-        <Link href="/" className="flex items-center gap-2">
-          <ChartLineUpIcon className="size-5" weight="bold" />
-          <span className="font-semibold tracking-tight">R U Trading</span>
+      <SidebarHeader className="h-14 flex-row items-center border-b border-sidebar-border px-4">
+        <Link href="/" className="font-semibold tracking-tight">
+          R U Trading
         </Link>
       </SidebarHeader>
-
-      <SidebarSeparator />
 
       <SidebarContent>
         {investmentAccounts.length > 0 && (
@@ -79,25 +107,11 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu>
                 {investmentAccounts.map((a) => (
-                  <SidebarMenuItem key={a.id}>
-                    <SidebarMenuButton
-                      isActive={pathname === `/accounts/${a.tradingAccount.id}`}
-                      render={
-                        <Link href={`/accounts/${a.tradingAccount.id}`} />
-                      }
-                    >
-                      <span className="truncate">
-                        {a.tradingAccount.name}
-                      </span>
-                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                        $
-                        {Number(a.tradingAccount.balance).toLocaleString(
-                          "en-US",
-                          { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                        )}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <AccountItem
+                    key={a.id}
+                    account={a}
+                    isActive={pathname === `/accounts/${a.tradingAccount.id}`}
+                  />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -113,25 +127,11 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu>
                 {cryptoAccounts.map((a) => (
-                  <SidebarMenuItem key={a.id}>
-                    <SidebarMenuButton
-                      isActive={pathname === `/accounts/${a.tradingAccount.id}`}
-                      render={
-                        <Link href={`/accounts/${a.tradingAccount.id}`} />
-                      }
-                    >
-                      <span className="truncate">
-                        {a.tradingAccount.name}
-                      </span>
-                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                        $
-                        {Number(a.tradingAccount.balance).toLocaleString(
-                          "en-US",
-                          { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                        )}
-                      </span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+                  <AccountItem
+                    key={a.id}
+                    account={a}
+                    isActive={pathname === `/accounts/${a.tradingAccount.id}`}
+                  />
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -150,36 +150,20 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname === "/"}
-                  render={<Link href="/" />}
-                >
-                  <ChartLineUpIcon className="size-4" />
-                  <span>Dashboard</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  isActive={pathname === "/settings"}
-                  render={<Link href="/settings" />}
-                >
-                  <GearSixIcon className="size-4" />
-                  <span>Settings</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              isActive={pathname === "/settings"}
+              render={<Link href="/settings" />}
+            >
+              <GearSixIcon className="size-4" />
+              <span>Settings</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <div className="flex items-center justify-between px-2">
           <span className="truncate text-sm text-muted-foreground">
             {userName}

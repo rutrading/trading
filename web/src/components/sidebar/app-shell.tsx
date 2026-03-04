@@ -4,7 +4,6 @@ import { useState } from "react";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
 import { CreateAccountDialog } from "./create-account-dialog";
-import { Separator } from "@/components/ui/separator";
 
 type Account = {
   id: number;
@@ -40,11 +39,10 @@ export function AppShell({
         onOpenNewAccount={() => setDialogOpen(true)}
       />
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center border-b border-sidebar-border bg-background px-4">
           <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
         </header>
-        <div className="flex-1 overflow-auto">{children}</div>
+        <div className="flex-1 overflow-auto px-6 py-4">{children}</div>
       </SidebarInset>
       <CreateAccountDialog open={dialogOpen} onOpenChange={setDialogOpen} />
     </SidebarProvider>

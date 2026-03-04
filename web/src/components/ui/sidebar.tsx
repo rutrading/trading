@@ -339,7 +339,7 @@ function SidebarInput({
 function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex shrink-0 flex-col", className)}
       data-sidebar="header"
       data-slot="sidebar-header"
       {...props}
@@ -350,7 +350,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
 function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex flex-col gap-2 p-2", className)}
+      className={cn("flex shrink-0 flex-col gap-2 border-t border-sidebar-border px-2 py-2", className)}
       data-sidebar="footer"
       data-slot="sidebar-footer"
       {...props}
@@ -374,20 +374,12 @@ function SidebarSeparator({
 
 function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <ScrollArea
-      className="**:data-[slot=scroll-area-scrollbar]:hidden"
-      scrollFade
-    >
-      <div
-        className={cn(
-          "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
-          className,
-        )}
-        data-sidebar="content"
-        data-slot="sidebar-content"
-        {...props}
-      />
-    </ScrollArea>
+    <div
+      className={cn("flex-1 overflow-y-auto overflow-x-hidden", className)}
+      data-sidebar="content"
+      data-slot="sidebar-content"
+      {...props}
+    />
   );
 }
 
