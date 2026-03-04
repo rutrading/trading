@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function RegisterForm({
-  redirectTo = "/dashboard",
+  redirectTo = "/",
 }: {
   redirectTo?: string;
 }) {
@@ -34,7 +34,6 @@ export function RegisterForm({
       setError(error.message ?? "Failed to create account");
       setLoading(false);
     } else {
-      // Account created — databaseHook auto-provisions trading accounts
       router.push(redirectTo);
     }
   }

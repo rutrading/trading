@@ -10,7 +10,7 @@ export default async function AuthLayout({
   // Real server-side session validation — if the user is actually
   // logged in (not just a stale cookie), send them to the dashboard.
   const session = await getSession();
-  if (session) redirect("/dashboard");
+  if (session) redirect("/");
 
   return (
     <div className="flex min-h-svh flex-col">

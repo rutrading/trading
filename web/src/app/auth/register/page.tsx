@@ -4,9 +4,9 @@ import { RegisterForm } from "./form";
 export const metadata = { title: "Sign up - R U Trading" };
 
 function getSafeRedirect(url: string | undefined): string {
-  if (!url) return "/dashboard";
+  if (!url) return "/";
   if (url.startsWith("/") && !url.startsWith("//")) return url;
-  return "/dashboard";
+  return "/";
 }
 
 export default async function RegisterPage({
@@ -35,7 +35,7 @@ export default async function RegisterPage({
           href={{
             pathname: "/auth/login",
             query:
-              safeRedirect !== "/dashboard"
+              safeRedirect !== "/"
                 ? { redirect: safeRedirect }
                 : undefined,
           }}
