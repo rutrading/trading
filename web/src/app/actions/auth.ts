@@ -2,7 +2,7 @@
 
 import { cache } from "react";
 import { headers } from "next/headers";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -22,74 +22,6 @@ export const getAccounts = cache(async () => {
     with: { tradingAccount: true },
   });
 });
-
-export async function getRecentOrders(limit = 10) {
-  const accounts = await getAccounts();
-  if (accounts.length === 0) return [];
-
-  const accountIds = accounts.map((a) => a.accountId);
-
-  return db.query.order.findMany({
-    where: inArray(schema.order.accountId, accountIds),
-    with: { symbol: true },
-    orderBy: desc(schema.order.createdAt),
-    limit,
-  });
-}
-
-export async function getWatchlistItems() {
-  const session = await getSession();
-  if (!session) return [];
-
-  return db.query.watchlist.findMany({
-    where: eq(schema.watchlist.userId, session.user.id),
-    with: {
-      symbol: {
-        with: { quote: true },
-      },
-    },
-  });
-}
-
-export async function getPortfolio(accountId: number) {
-  const session = await getSession();
-  if (!session) return [];
-
-  const membership = await db.query.accountMember.findFirst({
-    where: (am, { and, eq }) =>
-      and(eq(am.accountId, accountId), eq(am.userId, session.user.id)),
-  });
-
-  if (!membership) return [];
-
-  return db.query.portfolio.findMany({
-    where: eq(schema.portfolio.accountId, accountId),
-    with: {
-      symbol: {
-        with: { quote: true },
-      },
-    },
-  });
-}
-
-export async function getOrdersForAccount(accountId: number, limit = 50) {
-  const session = await getSession();
-  if (!session) return [];
-
-  const membership = await db.query.accountMember.findFirst({
-    where: (am, { and, eq }) =>
-      and(eq(am.accountId, accountId), eq(am.userId, session.user.id)),
-  });
-
-  if (!membership) return [];
-
-  return db.query.order.findMany({
-    where: eq(schema.order.accountId, accountId),
-    with: { symbol: true },
-    orderBy: desc(schema.order.createdAt),
-    limit,
-  });
-}
 
 export async function updateProfile(name: string): Promise<ActionResult> {
   const session = await getSession();
