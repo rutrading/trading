@@ -13,6 +13,11 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      // TODO: Wire up a real email service (Resend, SendGrid, etc.)
+      console.log(`[AUTH] Password reset requested for ${user.email}`);
+      console.log(`[AUTH] Reset URL: ${url}`);
+    },
   },
   plugins: [jwt(), bearer(), nextCookies()],
   experimental: { joins: true },

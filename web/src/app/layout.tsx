@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "R U Trading",
-  description: "Paper trading for Rutgers students",
+  description: "Paper trading for Rowan students",
 };
 
 export default function RootLayout({
