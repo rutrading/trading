@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_config
 
-from app.routers import health, historical_bars, quotes
+from app.routers import health, historical_bars, holdings, orders, quotes, transactions
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 config = get_config()
@@ -30,3 +30,6 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
 app.include_router(historical_bars.router, prefix="/api")
+app.include_router(orders.router, prefix="/api")
+app.include_router(holdings.router, prefix="/api")
+app.include_router(transactions.router, prefix="/api")
