@@ -1,6 +1,8 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
+  date,
+  doublePrecision,
   index,
   integer,
   numeric,
@@ -13,15 +15,20 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
-export const assetTypeEnum = pgEnum("asset_type", ["stock", "etf", "crypto"]);
+
+export const assetClassEnum = pgEnum("asset_class", ["us_equity", "crypto"]);
+
 export const orderSideEnum = pgEnum("order_side", ["buy", "sell"]);
+
 export const orderTypeEnum = pgEnum("order_type", [
   "market",
   "limit",
   "stop",
   "stop_limit",
 ]);
+
 export const timeInForceEnum = pgEnum("time_in_force", ["day", "gtc"]);
+
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
   "open",
@@ -150,6 +157,77 @@ export const accountMember = pgTable(
   ],
 );
 
+export const symbol = pgTable(
+  "symbol",
+  {
+    ticker: text("ticker").primaryKey(), // "AAPL", "BTC/USD"
+    name: text("name").notNull(), // "Apple Inc."
+    exchange: text("exchange"), // "NASDAQ", "NYSE", "CRYPTO"
+    assetClass: assetClassEnum("asset_class").notNull(), // "us_equity" | "crypto"
+    tradable: boolean("tradable").notNull().default(true),
+    fractionable: boolean("fractionable").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("symbol_asset_class_idx").on(table.assetClass),
+    index("symbol_name_idx").on(table.name),
+  ],
+);
+
+export const quote = pgTable("quote", {
+  ticker: text("ticker")
+    .primaryKey()
+    .references(() => symbol.ticker, { onDelete: "cascade" }),
+  price: doublePrecision("price"), // latest trade price
+  bidPrice: doublePrecision("bid_price"),
+  bidSize: doublePrecision("bid_size"),
+  askPrice: doublePrecision("ask_price"),
+  askSize: doublePrecision("ask_size"),
+  open: doublePrecision("open"),
+  high: doublePrecision("high"),
+  low: doublePrecision("low"),
+  close: doublePrecision("close"),
+  volume: doublePrecision("volume"),
+  tradeCount: integer("trade_count"),
+  vwap: doublePrecision("vwap"),
+  previousClose: doublePrecision("previous_close"),
+  change: doublePrecision("change"), // price - previous_close
+  changePercent: doublePrecision("change_percent"),
+  source: text("source"), // "alpaca_ws", "alpaca_rest", "twelvedata"
+  timestamp: integer("timestamp"), // unix epoch of latest trade
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const dailyBar = pgTable(
+  "daily_bar",
+  {
+    id: serial("id").primaryKey(),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker, { onDelete: "cascade" }),
+    date: date("date", { mode: "string" }).notNull(), // "2026-03-10"
+    open: doublePrecision("open").notNull(),
+    high: doublePrecision("high").notNull(),
+    low: doublePrecision("low").notNull(),
+    close: doublePrecision("close").notNull(),
+    volume: doublePrecision("volume").notNull(),
+    tradeCount: integer("trade_count"),
+    vwap: doublePrecision("vwap"),
+  },
+  (table) => [
+    uniqueIndex("daily_bar_ticker_date_idx").on(table.ticker, table.date),
+    index("daily_bar_ticker_idx").on(table.ticker),
+    index("daily_bar_date_idx").on(table.date),
+  ],
+);
+
 export const order = pgTable(
   "order",
   {
@@ -157,8 +235,10 @@ export const order = pgTable(
     tradingAccountId: integer("trading_account_id")
       .notNull()
       .references(() => tradingAccount.id, { onDelete: "cascade" }),
-    symbol: text("symbol").notNull(),
-    assetType: assetTypeEnum("asset_type").notNull(),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
+    assetClass: assetClassEnum("asset_class").notNull(),
     side: orderSideEnum("side").notNull(),
     orderType: orderTypeEnum("order_type").notNull(),
     timeInForce: timeInForceEnum("time_in_force").notNull(),
@@ -183,7 +263,7 @@ export const order = pgTable(
   },
   (table) => [
     index("order_trading_account_id_idx").on(table.tradingAccountId),
-    index("order_symbol_idx").on(table.symbol),
+    index("order_ticker_idx").on(table.ticker),
     index("order_status_idx").on(table.status),
     index("order_created_at_idx").on(table.createdAt),
   ],
@@ -199,7 +279,9 @@ export const transaction = pgTable(
     tradingAccountId: integer("trading_account_id")
       .notNull()
       .references(() => tradingAccount.id, { onDelete: "cascade" }),
-    symbol: text("symbol").notNull(),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
     side: orderSideEnum("side").notNull(),
     quantity: numeric("quantity", { precision: 16, scale: 8 }).notNull(),
     price: numeric("price", { precision: 14, scale: 2 }).notNull(),
@@ -211,6 +293,7 @@ export const transaction = pgTable(
   (table) => [
     index("transaction_trading_account_id_idx").on(table.tradingAccountId),
     index("transaction_order_id_idx").on(table.orderId),
+    index("transaction_ticker_idx").on(table.ticker),
     index("transaction_created_at_idx").on(table.createdAt),
   ],
 );
@@ -222,8 +305,10 @@ export const holding = pgTable(
     tradingAccountId: integer("trading_account_id")
       .notNull()
       .references(() => tradingAccount.id, { onDelete: "cascade" }),
-    symbol: text("symbol").notNull(),
-    assetType: assetTypeEnum("asset_type").notNull(),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
+    assetClass: assetClassEnum("asset_class").notNull(),
     quantity: numeric("quantity", { precision: 16, scale: 8 })
       .notNull()
       .default("0"),
@@ -238,9 +323,9 @@ export const holding = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("holding_account_symbol_idx").on(
+    uniqueIndex("holding_account_ticker_idx").on(
       table.tradingAccountId,
-      table.symbol,
+      table.ticker,
     ),
     index("holding_trading_account_id_idx").on(table.tradingAccountId),
   ],
@@ -253,15 +338,17 @@ export const watchlistItem = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    symbol: text("symbol").notNull(),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("watchlist_item_user_symbol_idx").on(
+    uniqueIndex("watchlist_item_user_ticker_idx").on(
       table.userId,
-      table.symbol,
+      table.ticker,
     ),
     index("watchlist_item_user_id_idx").on(table.userId),
   ],
@@ -300,11 +387,32 @@ export const accountMemberRelations = relations(accountMember, ({ one }) => ({
   user: one(user, { fields: [accountMember.userId], references: [user.id] }),
 }));
 
+export const symbolRelations = relations(symbol, ({ one, many }) => ({
+  quote: one(quote),
+  dailyBars: many(dailyBar),
+  orders: many(order),
+  transactions: many(transaction),
+  holdings: many(holding),
+  watchlistItems: many(watchlistItem),
+}));
+
+export const quoteRelations = relations(quote, ({ one }) => ({
+  symbol: one(symbol, { fields: [quote.ticker], references: [symbol.ticker] }),
+}));
+
+export const dailyBarRelations = relations(dailyBar, ({ one }) => ({
+  symbol: one(symbol, {
+    fields: [dailyBar.ticker],
+    references: [symbol.ticker],
+  }),
+}));
+
 export const orderRelations = relations(order, ({ one, many }) => ({
   tradingAccount: one(tradingAccount, {
     fields: [order.tradingAccountId],
     references: [tradingAccount.id],
   }),
+  symbol: one(symbol, { fields: [order.ticker], references: [symbol.ticker] }),
   transactions: many(transaction),
 }));
 
@@ -314,6 +422,10 @@ export const transactionRelations = relations(transaction, ({ one }) => ({
     fields: [transaction.tradingAccountId],
     references: [tradingAccount.id],
   }),
+  symbol: one(symbol, {
+    fields: [transaction.ticker],
+    references: [symbol.ticker],
+  }),
 }));
 
 export const holdingRelations = relations(holding, ({ one }) => ({
@@ -321,8 +433,16 @@ export const holdingRelations = relations(holding, ({ one }) => ({
     fields: [holding.tradingAccountId],
     references: [tradingAccount.id],
   }),
+  symbol: one(symbol, {
+    fields: [holding.ticker],
+    references: [symbol.ticker],
+  }),
 }));
 
 export const watchlistItemRelations = relations(watchlistItem, ({ one }) => ({
   user: one(user, { fields: [watchlistItem.userId], references: [user.id] }),
+  symbol: one(symbol, {
+    fields: [watchlistItem.ticker],
+    references: [symbol.ticker],
+  }),
 }));
