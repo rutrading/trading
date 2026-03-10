@@ -1,47 +1,98 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import (
+    Date,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
 
-class Quote(Base):
-    __tablename__ = "quotes"
+class Symbol(Base):
+    __tablename__ = "symbol"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String, index=True)
-    price: Mapped[float]
-    open: Mapped[float | None] = mapped_column(default=None)
-    high: Mapped[float | None] = mapped_column(default=None)
-    low: Mapped[float | None] = mapped_column(default=None)
-    volume: Mapped[float | None] = mapped_column(default=None)
-    change: Mapped[float | None] = mapped_column(default=None)
-    change_percent: Mapped[float | None] = mapped_column(default=None)
-    source: Mapped[str | None] = mapped_column(default=None)
-    timestamp: Mapped[int | None] = mapped_column(default=None)
-    name: Mapped[str | None] = mapped_column(default=None)
-    exchange: Mapped[str | None] = mapped_column(default=None)
-    currency: Mapped[str | None] = mapped_column(default=None)
-    previous_close: Mapped[float | None] = mapped_column(default=None)
-    is_market_open: Mapped[bool | None] = mapped_column(default=None)
-    average_volume: Mapped[float | None] = mapped_column(default=None)
-    fifty_two_week_low: Mapped[float | None] = mapped_column(default=None)
-    fifty_two_week_high: Mapped[float | None] = mapped_column(default=None)
-    day_range_pct: Mapped[float | None] = mapped_column(default=None)
-    fifty_two_week_pct: Mapped[float | None] = mapped_column(default=None)
-    gap_pct: Mapped[float | None] = mapped_column(default=None)
-    volume_ratio: Mapped[float | None] = mapped_column(default=None)
-    intraday_range_pct: Mapped[float | None] = mapped_column(default=None)
-    signal: Mapped[str | None] = mapped_column(default=None)
-    created_at: Mapped[datetime | None] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)  # "AAPL", "BTC/USD"
+    name: Mapped[str] = mapped_column(String)  # "Apple Inc."
+    exchange: Mapped[str | None] = mapped_column(
+        String, default=None
+    )  # "NASDAQ", "NYSE"
+    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
+    tradable: Mapped[bool] = mapped_column(default=True)
+    fractionable: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
     )
-    updated_at: Mapped[datetime | None] = mapped_column(
+    updated_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+    quote: Mapped["Quote | None"] = relationship(back_populates="symbol", uselist=False)
+    daily_bars: Mapped[list["DailyBar"]] = relationship(back_populates="symbol")
+    orders: Mapped[list["Order"]] = relationship(back_populates="symbol")
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="symbol")
+    holdings: Mapped[list["Holding"]] = relationship(back_populates="symbol")
+    watchlist_items: Mapped[list["WatchlistItem"]] = relationship(
+        back_populates="symbol"
+    )
+
+
+class Quote(Base):
+    __tablename__ = "quote"
+
+    ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("symbol.ticker", ondelete="CASCADE"), primary_key=True
+    )
+    price: Mapped[float | None] = mapped_column(Float, default=None)
+    bid_price: Mapped[float | None] = mapped_column(Float, default=None)
+    bid_size: Mapped[float | None] = mapped_column(Float, default=None)
+    ask_price: Mapped[float | None] = mapped_column(Float, default=None)
+    ask_size: Mapped[float | None] = mapped_column(Float, default=None)
+    open: Mapped[float | None] = mapped_column(Float, default=None)
+    high: Mapped[float | None] = mapped_column(Float, default=None)
+    low: Mapped[float | None] = mapped_column(Float, default=None)
+    close: Mapped[float | None] = mapped_column(Float, default=None)
+    volume: Mapped[float | None] = mapped_column(Float, default=None)
+    trade_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    vwap: Mapped[float | None] = mapped_column(Float, default=None)
+    previous_close: Mapped[float | None] = mapped_column(Float, default=None)
+    change: Mapped[float | None] = mapped_column(Float, default=None)
+    change_percent: Mapped[float | None] = mapped_column(Float, default=None)
+    source: Mapped[str | None] = mapped_column(String, default=None)
+    timestamp: Mapped[int | None] = mapped_column(Integer, default=None)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    symbol: Mapped["Symbol"] = relationship(back_populates="quote")
+
+
+class DailyBar(Base):
+    __tablename__ = "daily_bar"
+    __table_args__ = (UniqueConstraint("ticker", "date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("symbol.ticker", ondelete="CASCADE"), index=True
+    )
+    date: Mapped[str] = mapped_column(Date)  # trading date
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[float] = mapped_column(Float)
+    trade_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    vwap: Mapped[float | None] = mapped_column(Float, default=None)
+
+    symbol: Mapped["Symbol"] = relationship(back_populates="daily_bars")
 
 
 class AccountMember(Base):
@@ -84,8 +135,8 @@ class Order(Base):
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    symbol: Mapped[str] = mapped_column(String, index=True)
-    asset_type: Mapped[str] = mapped_column(String)  # "stock" | "etf" | "crypto"
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"), index=True)
+    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
     side: Mapped[str] = mapped_column(String)  # "buy" | "sell"
     order_type: Mapped[str] = mapped_column(
         String
@@ -111,6 +162,7 @@ class Order(Base):
     )
 
     trading_account: Mapped["TradingAccount"] = relationship(back_populates="orders")
+    symbol: Mapped["Symbol"] = relationship(back_populates="orders")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="order")
 
 
@@ -122,7 +174,7 @@ class Transaction(Base):
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    symbol: Mapped[str] = mapped_column(String)
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
     side: Mapped[str] = mapped_column(String)  # "buy" | "sell"
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
     price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
@@ -135,18 +187,19 @@ class Transaction(Base):
     trading_account: Mapped["TradingAccount"] = relationship(
         back_populates="transactions"
     )
+    symbol: Mapped["Symbol"] = relationship(back_populates="transactions")
 
 
 class Holding(Base):
     __tablename__ = "holding"
-    __table_args__ = (UniqueConstraint("trading_account_id", "symbol"),)
+    __table_args__ = (UniqueConstraint("trading_account_id", "ticker"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    symbol: Mapped[str] = mapped_column(String)
-    asset_type: Mapped[str] = mapped_column(String)  # "stock" | "etf" | "crypto"
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
     average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
@@ -158,15 +211,18 @@ class Holding(Base):
     )
 
     trading_account: Mapped["TradingAccount"] = relationship(back_populates="holdings")
+    symbol: Mapped["Symbol"] = relationship(back_populates="holdings")
 
 
 class WatchlistItem(Base):
     __tablename__ = "watchlist_item"
-    __table_args__ = (UniqueConstraint("user_id", "symbol"),)
+    __table_args__ = (UniqueConstraint("user_id", "ticker"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
-    symbol: Mapped[str] = mapped_column(String)
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
+
+    symbol: Mapped["Symbol"] = relationship(back_populates="watchlist_items")
