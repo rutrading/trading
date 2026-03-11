@@ -2,9 +2,12 @@
   "name": "trading",
   "private": true,
   "scripts": {
-    "setup": "bun run backend/scripts/setup.ts",
+    "setup": "bun run scripts/setup.ts",
     "dev": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n web,api -c cyan,red \"bun run --cwd web dev\" \"uv run --directory backend/api uvicorn app.main:app --reload\"",
-    "migrate": "bun run --cwd web bunx drizzle-kit push"
+    "db:push": "bun run --cwd web bunx drizzle-kit push",
+    "db:generate": "bun run --cwd web bunx drizzle-kit generate",
+    "db:migrate": "bun run --cwd web bunx drizzle-kit migrate",
+    "db:studio": "bun run --cwd web bunx drizzle-kit studio"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
