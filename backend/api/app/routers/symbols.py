@@ -11,27 +11,15 @@ from sqlalchemy import or_
 from app.config import get_config
 from app.db import db_session
 from app.db.models import Symbol
-from app.rate_limit import RateLimiter
+from app.rate_limit import get_alpaca_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-ALPACA_TRADING_BASE = "https://api.alpaca.markets"
 
-_rate_limiter: RateLimiter | None = None
-_rate_limit_value: int | None = None
-
-
-def _get_rate_limiter(calls_per_minute: int) -> RateLimiter:
-    global _rate_limiter, _rate_limit_value
-    if _rate_limiter is None or _rate_limit_value != calls_per_minute:
-        _rate_limiter = RateLimiter(calls_per_minute)
-        _rate_limit_value = calls_per_minute
-    return _rate_limiter
-
-
-def _alpaca_headers() -> dict[str, str]:
-    config = get_config()
+def _alpaca_headers(config=None) -> dict[str, str]:
+    if config is None:
+        config = get_config()
     if not config.alpaca_api_key or not config.alpaca_secret_key:
         raise HTTPException(status_code=500, detail="Alpaca API keys not configured")
     return {
@@ -102,13 +90,13 @@ async def fetch_and_upsert_symbol(ticker: str):
         if existing:
             return _symbol_to_dict(existing)
 
-    # Fetch from Alpaca
-    await _get_rate_limiter(config.alpaca_rate_limit).acquire()
+    # fetch from Alpaca if not in local DB
+    await get_alpaca_limiter().acquire()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.get(
-                f"{ALPACA_TRADING_BASE}/v2/assets/{ticker}",
-                headers=_alpaca_headers(),
+                f"{config.alpaca_base_url}/v2/assets/{ticker}",
+                headers=_alpaca_headers(config),
             )
             if res.status_code == 404:
                 raise HTTPException(
@@ -161,19 +149,19 @@ async def seed_symbols():
     Called during setup and by the daily refresh scheduler.
     """
     config = get_config()
-    headers = _alpaca_headers()
+    headers = _alpaca_headers(config)
 
-    await _get_rate_limiter(config.alpaca_rate_limit).acquire()
+    await get_alpaca_limiter().acquire()
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             stocks_res, crypto_res = await asyncio.gather(
                 client.get(
-                    f"{ALPACA_TRADING_BASE}/v2/assets",
+                    f"{config.alpaca_base_url}/v2/assets",
                     params={"status": "active", "asset_class": "us_equity"},
                     headers=headers,
                 ),
                 client.get(
-                    f"{ALPACA_TRADING_BASE}/v2/assets",
+                    f"{config.alpaca_base_url}/v2/assets",
                     params={"status": "active", "asset_class": "crypto"},
                     headers=headers,
                 ),
