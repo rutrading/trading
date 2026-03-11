@@ -1,20 +1,25 @@
 """Symbol endpoints: search, lookup, seed from Alpaca."""
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 
 from app.config import get_config
 from app.db import db_session
 from app.db.models import Symbol
+from app.db.redis import get_redis
 from app.rate_limit import get_alpaca_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# cached search results expire after 5 minutes
+SEARCH_CACHE_TTL = 300
 
 
 def _alpaca_headers(config=None) -> dict[str, str]:
@@ -41,8 +46,19 @@ def _symbol_to_dict(s: Symbol) -> dict:
 
 @router.get("/symbols/search")
 async def search_symbols(q: str = Query(..., min_length=1)):
-    """Search local symbol table by ticker prefix or name substring."""
+    """Search local symbol table by ticker prefix or name substring.
+    Results are cached in Redis with a TTL so repeated queries are instant.
+    """
     q = q.strip().upper()
+    cache_key = f"symbol_search:{q}"
+
+    # try Redis cache first
+    redis = await get_redis()
+    cached = await redis.get(cache_key)
+    if cached is not None:
+        return json.loads(cached)
+
+    # cache miss — query Postgres
     with db_session() as db:
         results = (
             db.query(Symbol)
@@ -58,10 +74,68 @@ async def search_symbols(q: str = Query(..., min_length=1)):
                 (Symbol.ticker != q).asc(),
                 Symbol.ticker.asc(),
             )
-            .limit(8)
+            .limit(5)
             .all()
         )
-        return [_symbol_to_dict(s) for s in results]
+        data = [_symbol_to_dict(s) for s in results]
+
+    # write to Redis with TTL — key auto-expires, no manual cleanup needed
+    await redis.set(cache_key, json.dumps(data), ex=SEARCH_CACHE_TTL)
+
+    return data
+
+
+TRENDING_KEY = "symbol_trending"
+TRENDING_LIMIT = 5
+
+
+@router.post("/symbols/track")
+async def track_symbol(ticker: str = Query(..., min_length=1)):
+    """Increment the trending score for a ticker when a user selects it."""
+    ticker = ticker.strip().upper()
+    redis = await get_redis()
+    new_score = await redis.zincrby(TRENDING_KEY, 1, ticker)
+    logger.info("Symbol tracked: %s (score=%.0f)", ticker, new_score)
+    return {"ok": True}
+
+
+@router.get("/symbols/trending")
+async def trending_symbols():
+    """Return up to 10 symbols: trending first, backfilled with random tradable ones."""
+    redis = await get_redis()
+    top_tickers = await redis.zrevrange(TRENDING_KEY, 0, TRENDING_LIMIT - 1)
+
+    with db_session() as db:
+        results: list[dict] = []
+        used_tickers: set[str] = set()
+
+        # resolve trending tickers from Redis, preserving score order
+        if top_tickers:
+            symbols = (
+                db.query(Symbol)
+                .filter(Symbol.ticker.in_(top_tickers), Symbol.tradable == True)
+                .all()
+            )
+            by_ticker = {s.ticker: s for s in symbols}
+            for t in top_tickers:
+                if t in by_ticker:
+                    results.append(_symbol_to_dict(by_ticker[t]))
+                    used_tickers.add(t)
+
+        # backfill remaining slots with random tradable symbols
+        remaining = TRENDING_LIMIT - len(results)
+        if remaining > 0:
+            query = db.query(Symbol).filter(
+                Symbol.tradable == True,
+                Symbol.asset_class == "us_equity",
+            )
+            # exclude tickers already in the trending list
+            if used_tickers:
+                query = query.filter(~Symbol.ticker.in_(used_tickers))
+            backfill = query.order_by(func.random()).limit(remaining).all()
+            results.extend(_symbol_to_dict(s) for s in backfill)
+
+        return results
 
 
 @router.get("/symbols/{ticker}")
