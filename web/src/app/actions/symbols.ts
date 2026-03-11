@@ -1,9 +1,10 @@
 "use server";
 
 import { cache } from "react";
-import { eq, or, ilike, sql, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
+import { getSession } from "@/app/actions/auth";
 
 type SymbolRow = typeof schema.symbol.$inferSelect;
 
@@ -14,39 +15,95 @@ type SearchResult = {
   assetClass: "us_equity" | "crypto";
 };
 
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
+
 /**
- * Searches the local symbol table by ticker prefix or name substring.
- * No external API calls. Used by the search bar.
+ * Searches symbols via the FastAPI backend (Redis-cached).
+ * Falls back to empty array on error.
  */
 export async function searchSymbols(query: string): Promise<SearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
+  const session = await getSession();
+  if (!session) return [];
 
-  return db
-    .select({
-      ticker: schema.symbol.ticker,
-      name: schema.symbol.name,
-      exchange: schema.symbol.exchange,
-      assetClass: schema.symbol.assetClass,
-    })
-    .from(schema.symbol)
-    .where(
-      and(
-        eq(schema.symbol.tradable, true),
-        or(
-          ilike(schema.symbol.ticker, `${q}%`),
-          ilike(schema.symbol.name, `%${q}%`),
-        ),
-      ),
-    )
-    .orderBy(
-      sql`CASE
-        WHEN UPPER(${schema.symbol.ticker}) = UPPER(${q}) THEN 0
-        WHEN ${schema.symbol.ticker} ILIKE ${q + "%"} THEN 1
-        ELSE 2
-      END`,
-    )
-    .limit(8);
+  const q = query.trim();
+  if (!q || !backendUrl) return [];
+
+  try {
+    const res = await fetch(
+      `${backendUrl}/symbols/search?q=${encodeURIComponent(q)}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) return [];
+
+    const data: Array<{
+      ticker: string;
+      name: string;
+      exchange: string | null;
+      asset_class: "us_equity" | "crypto";
+    }> = await res.json();
+
+    // map snake_case backend response to camelCase frontend type
+    return data.map((row) => ({
+      ticker: row.ticker,
+      name: row.name,
+      exchange: row.exchange,
+      assetClass: row.asset_class,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Returns the top trending symbols by selection count.
+ * Backed by a Redis sorted set on the backend.
+ */
+export async function getTrendingSymbols(): Promise<SearchResult[]> {
+  const session = await getSession();
+  if (!session) return [];
+  if (!backendUrl) return [];
+
+  try {
+    const res = await fetch(`${backendUrl}/symbols/trending`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+
+    const data: Array<{
+      ticker: string;
+      name: string;
+      exchange: string | null;
+      asset_class: "us_equity" | "crypto";
+    }> = await res.json();
+
+    return data.map((row) => ({
+      ticker: row.ticker,
+      name: row.name,
+      exchange: row.exchange,
+      assetClass: row.asset_class,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Increment the trending score for a ticker when a user selects it.
+ * Fire-and-forget from the frontend.
+ */
+export async function trackSymbol(ticker: string): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+  if (!backendUrl) return;
+
+  try {
+    await fetch(
+      `${backendUrl}/symbols/track?ticker=${encodeURIComponent(ticker)}`,
+      { method: "POST", cache: "no-store" },
+    );
+  } catch {
+    // non-critical, swallow errors
+  }
 }
 
 /**
@@ -55,6 +112,9 @@ export async function searchSymbols(query: string): Promise<SearchResult[]> {
  */
 export const getSymbol = cache(
   async (ticker: string): Promise<SymbolRow | null> => {
+    const session = await getSession();
+    if (!session) return null;
+
     const t = ticker.toUpperCase().trim();
     if (!t) return null;
 
@@ -65,7 +125,6 @@ export const getSymbol = cache(
     if (existing) return existing;
 
     // Not in local DB -- ask the backend to fetch from Alpaca and insert
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL;
     if (!backendUrl) return null;
 
     try {
