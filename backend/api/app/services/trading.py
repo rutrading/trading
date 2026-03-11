@@ -114,7 +114,7 @@ def execute_fill(
     """
     total = fill_quantity * fill_price
 
-    # --- Update order ---
+    # Update order filled quantity and average fill price
     old_filled = order.filled_quantity or Decimal("0")
     new_filled = old_filled + fill_quantity
 
@@ -136,7 +136,6 @@ def execute_fill(
 
     order.updated_at = datetime.now(timezone.utc)
 
-    # --- Update holding ---
     holding = (
         db.query(Holding)
         .filter(
@@ -182,7 +181,7 @@ def execute_fill(
 
     account.updated_at = datetime.now(timezone.utc)
 
-    # --- Create transaction record ---
+    # Create transaction record
     txn = Transaction(
         order_id=order.id,
         trading_account_id=account.id,
