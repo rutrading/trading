@@ -56,7 +56,7 @@ console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
 
 console.log("Installing Python dependencies...");
-await $`uv sync`.cwd(join(root, "backend"));
+await $`uv sync`.cwd(join(root, "backend", "api"));
 
 console.log(`
 Setup complete! Next steps:
