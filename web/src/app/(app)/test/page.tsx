@@ -14,5 +14,17 @@ export default async function TestPage() {
   // dev-only page
   if (process.env.NODE_ENV !== "development") redirect("/");
 
-  return <TestClient />;
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          WebSocket Test
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Dev-only page for testing live quote subscriptions.
+        </p>
+      </div>
+      <TestClient />
+    </div>
+  );
 }
