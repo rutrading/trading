@@ -28,15 +28,21 @@ import {
 
 type TimeframeOption = {
   label: string;
-  value: "1Min" | "30Min" | "1Hour" | "1Day" | "1Month";
+  value: "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day" | "1Week" | "1Month" | "3Month" | "6Month" | "1Year";
 };
 
 const TIMEFRAME_OPTIONS: TimeframeOption[] = [
   { label: "1 MIN", value: "1Min" },
+  { label: "5 MIN", value: "5Min" },
+  { label: "15 MIN", value: "15Min" },
   { label: "30 MIN", value: "30Min" },
   { label: "1 HOUR", value: "1Hour" },
-  { label: "1DAY", value: "1Day" },
-  { label: "1MONTH", value: "1Month" },
+  { label: "1 DAY", value: "1Day" },
+  { label: "1 WEEK", value: "1Week" },
+  { label: "1 MONTH", value: "1Month" },
+  { label: "3 MONTH", value: "3Month" },
+  { label: "6 MONTH", value: "6Month" },
+  { label: "1 YEAR", value: "1Year" },
 ];
 
 type HistoricalBar = {
@@ -165,11 +171,11 @@ export function HistoricalCandlestick() {
   async function handleSubmit() {
     setError("");
 
-    if (!symbol.trim() || !timeframe || !startDate || !endDate) {
-      setError("Ticker, timeframe, start date, and end date are required.");
+    if (!symbol.trim() || !timeframe || !startDate) {
+      setError("Ticker, timeframe, and start date are required.");
       return;
     }
-    if (startDate > endDate) {
+    if (endDate && startDate > endDate) {
       setError("Start date must be before end date.");
       return;
     }
@@ -178,18 +184,16 @@ export function HistoricalCandlestick() {
     try {
       const apiBase =
         process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
-      const response = await fetch(`${apiBase}/historical-bars`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          symbol: symbol.trim().toUpperCase(),
-          timeframe,
-          start: toIsoStart(startDate),
-          end: toIsoEnd(endDate),
-        }),
+      const params = new URLSearchParams({
+        ticker: symbol.trim().toUpperCase(),
+        timeframe,
+        start: toIsoStart(startDate),
       });
+      // end defaults to now on the server if omitted
+      if (endDate) {
+        params.set("end", toIsoEnd(endDate));
+      }
+      const response = await fetch(`${apiBase}/historical-bars?${params}`);
 
       if (!response.ok) {
         const message = await response.text();

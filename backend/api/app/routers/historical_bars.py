@@ -1,29 +1,31 @@
+"""Historical bars endpoint: GET with routing by timeframe.
+
+Intraday (< 1Day) -> Alpaca REST on demand, not stored.
+Daily (1Day)      -> daily_bar table + Alpaca backfill for gaps.
+Aggregated        -> SQL aggregation over daily_bar (1Week, 1Month, 3Month).
+"""
+
 import logging
 from datetime import datetime, timezone
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
-from app.config import get_config
-from app.rate_limit import RateLimiter
+from app.db import get_db
+from app.services.bars import (
+    AGGREGATED_TIMEFRAMES,
+    DAILY_TIMEFRAME,
+    INTRADAY_TIMEFRAMES,
+    fetch_aggregated_bars,
+    fetch_daily_bars,
+    fetch_intraday_bars,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-ALLOWED_TIMEFRAMES = {"1Min", "30Min", "1Hour", "1Day", "1Month"}
-
-_alpaca_rate_limiter: RateLimiter | None = None
-_alpaca_rate_limit_value: int | None = None
-
-
-def _get_alpaca_rate_limiter(calls_per_minute: int) -> RateLimiter:
-    global _alpaca_rate_limiter, _alpaca_rate_limit_value
-    if _alpaca_rate_limiter is None or _alpaca_rate_limit_value != calls_per_minute:
-        _alpaca_rate_limiter = RateLimiter(calls_per_minute)
-        _alpaca_rate_limit_value = calls_per_minute
-    return _alpaca_rate_limiter
+ALL_TIMEFRAMES = INTRADAY_TIMEFRAMES | {DAILY_TIMEFRAME} | AGGREGATED_TIMEFRAMES
 
 
 def _parse_iso_utc(value: str) -> datetime:
@@ -36,151 +38,68 @@ def _parse_iso_utc(value: str) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-class HistoricalBarsRequest(BaseModel):
-    symbol: str = Field(min_length=1, max_length=16)
-    timeframe: str
-    start: str
-    end: str
-
-    @field_validator("symbol")
-    @classmethod
-    def validate_symbol(cls, value: str) -> str:
-        symbol = value.strip().upper()
-        if not symbol:
-            raise ValueError("symbol is required")
-        return symbol
-
-    @field_validator("timeframe")
-    @classmethod
-    def validate_timeframe(cls, value: str) -> str:
-        timeframe = value.strip()
-        if timeframe not in ALLOWED_TIMEFRAMES:
-            raise ValueError(
-                f"timeframe must be one of: {', '.join(sorted(ALLOWED_TIMEFRAMES))}"
-            )
-        return timeframe
-
-    @field_validator("start", "end")
-    @classmethod
-    def validate_datetime(cls, value: str) -> str:
-        try:
-            _parse_iso_utc(value)
-        except ValueError:
-            raise ValueError("must be a valid ISO-8601 datetime")
-        return value
-
-
-@router.post("/historical-bars")
+@router.get("/historical-bars")
 async def get_historical_bars(
-    payload: HistoricalBarsRequest,
+    ticker: str = Query(..., min_length=1, max_length=16),
+    timeframe: str = Query(...),
+    start: str = Query(...),
+    end: str = Query(None),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    start_dt = _parse_iso_utc(payload.start)
-    end_dt = _parse_iso_utc(payload.end)
+    """Fetch historical bars for a ticker, routed by timeframe."""
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker is required")
+
+    # validate timeframe against known set
+    if timeframe not in ALL_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Timeframe must be one of: {', '.join(sorted(ALL_TIMEFRAMES))}",
+        )
+
+    # default end to current UTC time if not provided
+    if not end:
+        end = datetime.now(timezone.utc).isoformat()
+
+    # validate date range
+    try:
+        start_dt = _parse_iso_utc(start)
+        end_dt = _parse_iso_utc(end)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="start and end must be valid ISO-8601 datetimes"
+        )
+
     if start_dt >= end_dt:
         raise HTTPException(status_code=400, detail="start must be before end")
 
-    config = get_config()
-    if not config.alpaca_api_key or not config.alpaca_secret_key:
-        raise HTTPException(status_code=502, detail="Missing Alpaca API credentials")
-
-    rate_limiter = _get_alpaca_rate_limiter(config.alpaca_rate_limit)
-
     try:
-        async with httpx.AsyncClient(
-            base_url=config.alpaca_data_base_url, timeout=20.0
-        ) as client:
-            all_bars = []
-            page_token: str | None = None
-            seen_tokens = set()
+        if timeframe in INTRADAY_TIMEFRAMES:
+            # intraday: fetch from Alpaca REST, never stored
+            bars = await fetch_intraday_bars(ticker, timeframe, start, end)
+            source = "alpaca"
 
-            while True:
-                params = {
-                    "timeframe": payload.timeframe,
-                    "start": payload.start,
-                    "end": payload.end,
-                    "feed": config.alpaca_feed,
-                    "adjustment": "raw",
-                    "sort": "asc",
-                    "limit": 10000,
-                }
-                if page_token:
-                    params["page_token"] = page_token
+        elif timeframe == DAILY_TIMEFRAME:
+            # daily: DB + Alpaca backfill for gaps
+            bars = await fetch_daily_bars(db, ticker, start, end)
+            source = "daily_bar"
 
-                await rate_limiter.acquire()
-                response = await client.get(
-                    f"/v2/stocks/{payload.symbol}/bars",
-                    params=params,
-                    headers={
-                        "APCA-API-KEY-ID": config.alpaca_api_key,
-                        "APCA-API-SECRET-KEY": config.alpaca_secret_key,
-                    },
-                )
-                response.raise_for_status()
+        else:
+            # weekly / monthly / quarterly: aggregate from daily_bar
+            bars = await fetch_aggregated_bars(db, ticker, timeframe, start, end)
+            source = "aggregated"
 
-                body = response.json()
-                all_bars.extend(body.get("bars", []))
-
-                next_page_token = body.get("next_page_token")
-                if not next_page_token:
-                    break
-                if next_page_token in seen_tokens:
-                    logger.warning(
-                        "Detected repeating Alpaca page token for %s; stopping pagination",
-                        payload.symbol,
-                    )
-                    break
-
-                seen_tokens.add(next_page_token)
-                page_token = next_page_token
-    except httpx.HTTPStatusError as exc:
-        status_code = exc.response.status_code
-        if status_code in (401, 403):
-            raise HTTPException(status_code=502, detail="Alpaca authentication failed")
-        if status_code == 404:
-            raise HTTPException(
-                status_code=404, detail=f"Symbol {payload.symbol} not found"
-            )
-        if status_code == 422:
-            raise HTTPException(
-                status_code=400, detail="Invalid historical bars request parameters"
-            )
-        if status_code == 429:
-            raise HTTPException(status_code=429, detail="Alpaca rate limit exceeded")
-        raise HTTPException(
-            status_code=503, detail=f"Alpaca request failed ({status_code})"
-        )
     except Exception as exc:
-        logger.exception(
-            "Failed to fetch historical bars for %s: %s", payload.symbol, exc
-        )
-        raise HTTPException(status_code=503, detail=f"Alpaca request failed: {exc}")
-
-    transformed = []
-
-    for bar in all_bars:
-        try:
-            ts = int(_parse_iso_utc(str(bar.get("t", ""))).timestamp())
-        except ValueError:
-            logger.warning("Skipping invalid bar timestamp for %s", payload.symbol)
-            continue
-
-        transformed.append(
-            {
-                "time": ts,
-                "open": float(bar.get("o", 0)),
-                "high": float(bar.get("h", 0)),
-                "low": float(bar.get("l", 0)),
-                "close": float(bar.get("c", 0)),
-                "volume": float(bar.get("v", 0)),
-                "vwap": float(bar.get("vw", 0)),
-                "trade_count": int(bar.get("n", 0)),
-            }
+        logger.exception("Failed to fetch bars for %s: %s", ticker, exc)
+        raise HTTPException(
+            status_code=503, detail=f"Failed to fetch historical bars: {exc}"
         )
 
     return {
-        "symbol": payload.symbol,
-        "timeframe": payload.timeframe,
-        "source": "alpaca",
-        "bars": transformed,
+        "ticker": ticker,
+        "timeframe": timeframe,
+        "source": source,
+        "bars": bars,
     }
