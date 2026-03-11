@@ -1,5 +1,3 @@
-"""Holdings endpoint: list current positions for a trading account."""
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -16,8 +14,6 @@ def list_holdings(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all holdings for a trading account."""
-
     account = get_trading_account(
         trading_account_id=trading_account_id, user=user, db=db
     )

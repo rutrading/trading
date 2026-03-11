@@ -1,9 +1,3 @@
-"""Core trading execution logic.
-
-Handles order validation, fill execution, holding updates, and balance changes.
-All mutating helpers expect to be called inside an existing DB session/transaction.
-"""
-
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -18,8 +12,6 @@ VALID_TIME_IN_FORCE = {"day", "gtc"}
 
 
 class OrderValidationError(Exception):
-    """Raised when an order fails pre-trade validation."""
-
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
@@ -38,7 +30,6 @@ def validate_order_request(
     limit_price: Decimal | None,
     stop_price: Decimal | None,
 ) -> None:
-    """Run all pre-trade validation checks. Raises OrderValidationError on failure."""
 
     if asset_type not in VALID_ASSET_TYPES:
         raise OrderValidationError(f"Invalid asset_type: {asset_type}")
@@ -91,7 +82,6 @@ def validate_buying_power(
     quantity: Decimal,
     price: Decimal,
 ) -> None:
-    """Check that the account has enough cash for a buy order at the given price."""
     if side == "buy":
         total_cost = quantity * price
         if account.balance < total_cost:
@@ -108,13 +98,10 @@ def execute_fill(
     fill_price: Decimal,
     fill_quantity: Decimal,
 ) -> Transaction:
-    """Execute a fill against an order. Updates order, holding, balance, and creates a transaction.
 
-    Must be called within a db transaction (caller handles commit).
-    """
     total = fill_quantity * fill_price
 
-    # --- Update order ---
+    # Update order filled quantity and average fill price
     old_filled = order.filled_quantity or Decimal("0")
     new_filled = old_filled + fill_quantity
 
@@ -136,7 +123,6 @@ def execute_fill(
 
     order.updated_at = datetime.now(timezone.utc)
 
-    # --- Update holding ---
     holding = (
         db.query(Holding)
         .filter(
@@ -182,7 +168,7 @@ def execute_fill(
 
     account.updated_at = datetime.now(timezone.utc)
 
-    # --- Create transaction record ---
+    # Create transaction record
     txn = Transaction(
         order_id=order.id,
         trading_account_id=account.id,

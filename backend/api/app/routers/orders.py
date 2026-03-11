@@ -81,8 +81,7 @@ def place_order(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Place a new order (market, limit, stop, or stop-limit)."""
-
+    # Place a new order (market, limit, stop, or stop-limit).
     # Verify membership
     account = get_trading_account(
         trading_account_id=payload.trading_account_id,
@@ -204,7 +203,6 @@ def list_orders(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List orders for a trading account with optional filters and pagination."""
 
     # Verify membership
     get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
@@ -238,7 +236,6 @@ def get_order(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get a single order with its transaction history."""
 
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
@@ -268,7 +265,7 @@ def cancel_order(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Cancel an open or partially-filled order."""
+    # Cancel an open or partially-filled order
 
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
