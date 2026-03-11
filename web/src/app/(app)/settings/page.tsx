@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { getSession } from "@/app/actions/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ProfileSection } from "./profile-section";
 import { SecuritySection } from "./security-section";
@@ -6,7 +8,9 @@ import { AccountsSection } from "./accounts-section";
 
 export const metadata = { title: "Settings - R U Trading" };
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const session = await getSession();
+  if (!session) redirect("/auth/login");
   return (
     <div className="space-y-4">
       <div>
