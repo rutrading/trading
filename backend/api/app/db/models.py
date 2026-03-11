@@ -1,10 +1,20 @@
+"""SQLAlchemy models mirroring the Drizzle schema (web/src/db/schema.ts).
+
+Drizzle is the source of truth. These models must match exactly.
+Postgres enums are created by drizzle-kit push; SQLAlchemy references them
+by name so it reads/writes the correct enum values.
+"""
+
 from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     Date,
+    Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -14,18 +24,62 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
 
+# Postgres enum types created by Drizzle.
+# create_type=False tells SQLAlchemy not to try to CREATE the enum itself;
+# drizzle-kit push already handles that.
+account_type_enum = Enum(
+    "investment",
+    "crypto",
+    name="account_type",
+    create_type=False,
+)
+asset_class_enum = Enum(
+    "us_equity",
+    "crypto",
+    name="asset_class",
+    create_type=False,
+)
+order_side_enum = Enum(
+    "buy",
+    "sell",
+    name="order_side",
+    create_type=False,
+)
+order_type_enum = Enum(
+    "market",
+    "limit",
+    "stop",
+    "stop_limit",
+    name="order_type",
+    create_type=False,
+)
+time_in_force_enum = Enum(
+    "day",
+    "gtc",
+    name="time_in_force",
+    create_type=False,
+)
+order_status_enum = Enum(
+    "pending",
+    "open",
+    "partially_filled",
+    "filled",
+    "cancelled",
+    "rejected",
+    name="order_status",
+    create_type=False,
+)
+
 
 class Symbol(Base):
     __tablename__ = "symbol"
 
-    ticker: Mapped[str] = mapped_column(String, primary_key=True)  # "AAPL", "BTC/USD"
-    name: Mapped[str] = mapped_column(String)  # "Apple Inc."
-    exchange: Mapped[str | None] = mapped_column(
-        String, default=None
-    )  # "NASDAQ", "NYSE"
-    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
-    tradable: Mapped[bool] = mapped_column(default=True)
-    fractionable: Mapped[bool] = mapped_column(default=False)
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    exchange: Mapped[str | None] = mapped_column(String, default=None)
+    asset_class: Mapped[str] = mapped_column(asset_class_enum)
+    tradable: Mapped[bool] = mapped_column(Boolean, default=True)
+    fractionable: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
@@ -77,13 +131,17 @@ class Quote(Base):
 
 class DailyBar(Base):
     __tablename__ = "daily_bar"
-    __table_args__ = (UniqueConstraint("ticker", "date"),)
+    __table_args__ = (
+        UniqueConstraint("ticker", "date", name="daily_bar_ticker_date_idx"),
+        Index("daily_bar_ticker_idx", "ticker"),
+        Index("daily_bar_date_idx", "date"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     ticker: Mapped[str] = mapped_column(
-        String, ForeignKey("symbol.ticker", ondelete="CASCADE"), index=True
+        String, ForeignKey("symbol.ticker", ondelete="CASCADE")
     )
-    date: Mapped[str] = mapped_column(Date)  # trading date
+    date: Mapped[str] = mapped_column(Date)
     open: Mapped[float] = mapped_column(Float)
     high: Mapped[float] = mapped_column(Float)
     low: Mapped[float] = mapped_column(Float)
@@ -97,6 +155,10 @@ class DailyBar(Base):
 
 class AccountMember(Base):
     __tablename__ = "account_member"
+    __table_args__ = (
+        Index("account_member_accountId_idx", "account_id"),
+        Index("account_member_userId_idx", "user_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(
@@ -107,12 +169,13 @@ class AccountMember(Base):
 
 class TradingAccount(Base):
     __tablename__ = "trading_account"
+    __table_args__ = (Index("trading_account_type_idx", "type"),)
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)
-    type: Mapped[str] = mapped_column(String)  # "investment" | "crypto"
+    type: Mapped[str] = mapped_column(account_type_enum)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("100000"))
-    is_joint: Mapped[bool] = mapped_column(default=False)
+    is_joint: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
@@ -130,18 +193,22 @@ class TradingAccount(Base):
 
 class Order(Base):
     __tablename__ = "order"
+    __table_args__ = (
+        Index("order_trading_account_id_idx", "trading_account_id"),
+        Index("order_ticker_idx", "ticker"),
+        Index("order_status_idx", "status"),
+        Index("order_created_at_idx", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"), index=True)
-    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
-    side: Mapped[str] = mapped_column(String)  # "buy" | "sell"
-    order_type: Mapped[str] = mapped_column(
-        String
-    )  # "market" | "limit" | "stop" | "stop_limit"
-    time_in_force: Mapped[str] = mapped_column(String)  # "day" | "gtc"
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+    asset_class: Mapped[str] = mapped_column(asset_class_enum)
+    side: Mapped[str] = mapped_column(order_side_enum)
+    order_type: Mapped[str] = mapped_column(order_type_enum)
+    time_in_force: Mapped[str] = mapped_column(time_in_force_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
     limit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
     stop_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
@@ -151,7 +218,7 @@ class Order(Base):
     average_fill_price: Mapped[Decimal | None] = mapped_column(
         Numeric(14, 2), default=None
     )
-    status: Mapped[str] = mapped_column(String, index=True, default="pending")
+    status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
@@ -168,6 +235,12 @@ class Order(Base):
 
 class Transaction(Base):
     __tablename__ = "transaction"
+    __table_args__ = (
+        Index("transaction_trading_account_id_idx", "trading_account_id"),
+        Index("transaction_order_id_idx", "order_id"),
+        Index("transaction_ticker_idx", "ticker"),
+        Index("transaction_created_at_idx", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("order.id", ondelete="CASCADE"))
@@ -175,7 +248,7 @@ class Transaction(Base):
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
     ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
-    side: Mapped[str] = mapped_column(String)  # "buy" | "sell"
+    side: Mapped[str] = mapped_column(order_side_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
     price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
@@ -192,14 +265,20 @@ class Transaction(Base):
 
 class Holding(Base):
     __tablename__ = "holding"
-    __table_args__ = (UniqueConstraint("trading_account_id", "ticker"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "trading_account_id", "ticker", name="holding_account_ticker_idx"
+        ),
+        Index("holding_trading_account_id_idx", "trading_account_id"),
+        Index("holding_ticker_idx", "ticker"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
     ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
-    asset_class: Mapped[str] = mapped_column(String)  # "us_equity" | "crypto"
+    asset_class: Mapped[str] = mapped_column(asset_class_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
     average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
@@ -216,7 +295,11 @@ class Holding(Base):
 
 class WatchlistItem(Base):
     __tablename__ = "watchlist_item"
-    __table_args__ = (UniqueConstraint("user_id", "ticker"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "ticker", name="watchlist_item_user_ticker_idx"),
+        Index("watchlist_item_user_id_idx", "user_id"),
+        Index("watchlist_item_ticker_idx", "ticker"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))

@@ -328,6 +328,7 @@ export const holding = pgTable(
       table.ticker,
     ),
     index("holding_trading_account_id_idx").on(table.tradingAccountId),
+    index("holding_ticker_idx").on(table.ticker),
   ],
 );
 
@@ -351,6 +352,7 @@ export const watchlistItem = pgTable(
       table.ticker,
     ),
     index("watchlist_item_user_id_idx").on(table.userId),
+    index("watchlist_item_ticker_idx").on(table.ticker),
   ],
 );
 
