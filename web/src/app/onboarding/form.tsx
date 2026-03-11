@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Stepper, type Step } from "@/components/ui/stepper";
+import { toast } from "@/lib/toasts";
 
 type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 type AccountType = "investment" | "crypto";
@@ -203,10 +204,12 @@ export function OnboardingForm() {
 
     if (!result.success) {
       setError(result.error);
+      toast.error("Account creation failed", result.error);
       setLoading(false);
       return;
     }
 
+    toast.accountCreated(accountName());
     router.push("/");
   }
 
