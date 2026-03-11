@@ -1,10 +1,3 @@
-"""Unit tests for app/services/trading.py.
-
-All tests use plain Python objects — no database, no HTTP, no external APIs.
-The DB session is replaced with a MagicMock so SQLAlchemy queries can be
-controlled via return_value / side_effect.
-"""
-
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -17,11 +10,6 @@ from app.services.trading import (
     validate_buying_power,
     validate_order_request,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def make_account(balance: str = "100000", account_id: int = 1) -> TradingAccount:
@@ -81,11 +69,6 @@ def make_db(holding: Holding | None = None) -> MagicMock:
     query_chain = db.query.return_value.filter.return_value
     query_chain.first.return_value = holding
     return db
-
-
-# ---------------------------------------------------------------------------
-# validate_order_request — field validation
-# ---------------------------------------------------------------------------
 
 
 class TestValidateOrderRequestFields:
@@ -253,11 +236,6 @@ class TestValidateOrderRequestFields:
         )
 
 
-# ---------------------------------------------------------------------------
-# validate_order_request — crypto TIF rule
-# ---------------------------------------------------------------------------
-
-
 class TestValidateOrderRequestCryptoTif:
     def test_crypto_day_order_rejected(self):
         # crypto trades 24/7 so "day" orders (which expire at market close) are
@@ -331,11 +309,6 @@ class TestValidateOrderRequestCryptoTif:
                 limit_price=None,
                 stop_price=None,
             )
-
-
-# ---------------------------------------------------------------------------
-# validate_order_request — limit / stop price rules
-# ---------------------------------------------------------------------------
 
 
 class TestValidateOrderRequestPriceRules:
@@ -544,11 +517,6 @@ class TestValidateOrderRequestPriceRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# validate_order_request — sell position check
-# ---------------------------------------------------------------------------
-
-
 class TestValidateOrderRequestSellPosition:
     def test_sell_without_holding_rejected(self):
         # user has no position at all in this symbol — short selling is not allowed
@@ -671,11 +639,6 @@ class TestValidateOrderRequestSellPosition:
             )
 
 
-# ---------------------------------------------------------------------------
-# validate_buying_power
-# ---------------------------------------------------------------------------
-
-
 class TestValidateBuyingPower:
     def test_insufficient_balance_rejected(self):
         # balance of $500 is not enough to buy 10 shares at $100 ($1,000 needed)
@@ -725,11 +688,6 @@ class TestValidateBuyingPower:
         account = make_account(balance="999.99")
         with pytest.raises(OrderValidationError, match="Insufficient buying power"):
             validate_buying_power(account, "buy", Decimal("10"), Decimal("100.00"))
-
-
-# ---------------------------------------------------------------------------
-# execute_fill — first buy (no existing holding)
-# ---------------------------------------------------------------------------
 
 
 class TestExecuteFillFirstBuy:
@@ -848,11 +806,6 @@ class TestExecuteFillFirstBuy:
         assert added.average_cost == Decimal("50000.00")
 
 
-# ---------------------------------------------------------------------------
-# execute_fill — second buy (existing holding, weighted average cost)
-# ---------------------------------------------------------------------------
-
-
 class TestExecuteFillSubsequentBuy:
     def test_weighted_average_cost_calculated(self):
         # own 10 shares at $150, buy 5 more at $180
@@ -955,11 +908,6 @@ class TestExecuteFillSubsequentBuy:
         ) / Decimal("0.75")
         assert holding.average_cost == expected_avg
         assert holding.quantity == Decimal("0.75")
-
-
-# ---------------------------------------------------------------------------
-# execute_fill — sell
-# ---------------------------------------------------------------------------
 
 
 class TestExecuteFillSell:
@@ -1107,11 +1055,6 @@ class TestExecuteFillSell:
         assert txn.quantity == Decimal("3")
         assert txn.price == Decimal("170.00")
         assert txn.total == Decimal("510.00")
-
-
-# ---------------------------------------------------------------------------
-# execute_fill — partial fill
-# ---------------------------------------------------------------------------
 
 
 class TestExecuteFillPartial:
