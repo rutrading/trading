@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_config
 from app.db.redis import get_redis, close_redis
 from app.ws.manager import ConnectionManager
+from app.ws.alpaca_feed import AlpacaFeed
 from app.ws.router import router as ws_router, set_manager
 from app.ws.flush import flush_quotes_loop
 
@@ -36,8 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 manager = ConnectionManager()
-
-feed = None
+feed = AlpacaFeed(manager, config)
 
 
 @asynccontextmanager
@@ -46,17 +46,14 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     set_manager(manager)
-
-    if feed is not None:
-        await feed.start()
+    await feed.start()
 
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
     yield
 
-    if feed is not None:
-        await feed.stop()
+    await feed.stop()
     flush_task.cancel()
     try:
         await flush_task
