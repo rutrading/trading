@@ -178,4 +178,17 @@ export function useRestoredTickers(): string[] {
   return ctx.restoredTickers;
 }
 
+export type ConnectionStatus = "connecting" | "live" | "delayed" | "offline";
+
+// useConnectionStatus: returns a human-readable connection status for UI display.
+// "live"      — WebSocket is open and receiving data
+// "delayed"   — WebSocket is closed but we have cached quote data (stale prices)
+// "connecting"— WebSocket is in the process of connecting or reconnecting
+// "offline"   — no connection and no cached data at all
+// Josh: implement this using useWSReadyState() and the quotes map from context
+export function useConnectionStatus(_ticker?: string): ConnectionStatus {
+  // TODO
+  throw new Error("useConnectionStatus not implemented");
+}
+
 export { ReadyState };
