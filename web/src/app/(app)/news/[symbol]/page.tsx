@@ -20,6 +20,8 @@ export default async function SymbolNewsPage({
 
   const { symbol } = await params;
 
+  console.log(`should grab news for ${symbol.toUpperCase()}`);
+
   return (
     <div className="space-y-4">
       <div>

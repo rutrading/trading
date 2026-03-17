@@ -12,7 +12,7 @@ export default async function WatchlistPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Watchlist</h1>
         <p className="text-sm text-muted-foreground">
-          Stocks you're keeping an eye on.
+          Stocks you&apos;re keeping an eye on.
         </p>
       </div>
     </div>
