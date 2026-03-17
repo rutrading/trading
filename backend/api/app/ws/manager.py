@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections import defaultdict
 
 from fastapi import WebSocket
@@ -36,6 +37,9 @@ class ConnectionManager:
         # user_id -> asyncio.Task running the grace timer
         self._grace_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
+
+        # ticker -> monotonic timestamp of last subscribe or received broadcast
+        self._ticker_last_active: dict[str, float] = {}
 
         # pending ticker changes the scheduler drains each loop
         self._pending_adds: list[str] = []
@@ -176,8 +180,8 @@ class ConnectionManager:
                 self._subs[ws].add(ticker)
                 was_empty = len(self._ticker_clients[ticker]) == 0
                 self._ticker_clients[ticker].add(ws)
-                # first subscriber — scheduler needs to start tracking
                 if was_empty:
+                    self._ticker_last_active[ticker] = time.monotonic()
                     added.append(ticker)
             if added:
                 self._pending_adds.extend(added)
@@ -208,6 +212,8 @@ class ConnectionManager:
         """Send a quote update to all clients subscribed to a ticker."""
         async with self._lock:
             clients = list(self._ticker_clients.get(ticker, []))
+            if clients:
+                self._ticker_last_active[ticker] = time.monotonic()
         if not clients:
             return
 
@@ -246,6 +252,13 @@ class ConnectionManager:
     @property
     def user_count(self) -> int:
         return len(self._user_connections)
+
+    def least_active_ws_ticker(self, ws_subscribed: set[str]) -> str | None:
+        # Detect the least active one, and unsubscribe it
+        candidates = {t: self._ticker_last_active.get(t, 0.0) for t in ws_subscribed}
+        if not candidates:
+            return None
+        return min(candidates, key=lambda t: candidates[t])
 
     def drain_pending(self) -> tuple[list[str], list[str]]:
         """Return and clear pending ticker adds/removes for the scheduler."""
