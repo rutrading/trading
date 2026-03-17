@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 manager = ConnectionManager()
 
-# feed is set at startup once AlpacaFeed is implemented (see app/ws/alpaca_feed.py)
 feed = None
 
 

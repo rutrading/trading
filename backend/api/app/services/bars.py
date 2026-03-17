@@ -280,7 +280,8 @@ async def fetch_aggregated_bars(
             MIN(low) AS low,
             (array_agg(close ORDER BY date DESC))[1] AS close,
             SUM(volume) AS volume,
-            SUM(trade_count) AS trade_count
+            SUM(trade_count) AS trade_count,
+            SUM(vwap * volume) / NULLIF(SUM(volume), 0) AS vwap
         FROM daily_bar
         WHERE ticker = :ticker AND date >= :start AND date <= :end
         GROUP BY period
@@ -305,6 +306,7 @@ async def fetch_aggregated_bars(
                 "close": float(row[4] or 0),
                 "volume": float(row[5] or 0),
                 "trade_count": int(row[6] or 0),
+                "vwap": float(row[7]) if row[7] is not None else None,
             }
         )
 
