@@ -58,3 +58,18 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
     return payload
+
+
+# optional variant: returns user dict when a valid token is present, None otherwise.
+# use for endpoints that work for anonymous users but can personalize for logged-in ones.
+_optional_scheme = HTTPBearer(auto_error=False)
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_scheme),
+) -> dict | None:
+    if SKIP_AUTH:
+        return DEV_USER
+    if credentials is None:
+        return None
+    return verify_token(credentials.credentials)

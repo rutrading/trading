@@ -6,9 +6,10 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 
+from app.auth import get_optional_user
 from app.config import get_config
 from app.db import db_session
 from app.db.models import Symbol
@@ -90,7 +91,10 @@ TRENDING_LIMIT = 5
 
 
 @router.post("/symbols/track")
-async def track_symbol(ticker: str = Query(..., min_length=1)):
+async def track_symbol(
+    ticker: str = Query(..., min_length=1),
+    user: dict | None = Depends(get_optional_user),
+):
     """Increment the trending score for a ticker when a user selects it."""
     ticker = ticker.strip().upper()
     redis = await get_redis()
@@ -150,7 +154,10 @@ async def get_symbol(ticker: str):
 
 
 @router.put("/symbols/{ticker}")
-async def fetch_and_upsert_symbol(ticker: str):
+async def fetch_and_upsert_symbol(
+    ticker: str,
+    user: dict | None = Depends(get_optional_user),
+):
     """
     Fetch a single symbol from Alpaca by exact ticker and upsert into local DB.
     Called by the frontend when a symbol isn't in the local table yet.
@@ -217,7 +224,7 @@ async def fetch_and_upsert_symbol(ticker: str):
 
 
 @router.post("/symbols/seed")
-async def seed_symbols():
+async def seed_symbols(user: dict | None = Depends(get_optional_user)):
     """
     Bulk fetch all tradable assets from Alpaca and upsert into symbol table.
     Called during setup and by the daily refresh scheduler.

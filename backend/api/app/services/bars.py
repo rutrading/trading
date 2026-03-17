@@ -25,7 +25,7 @@ DAILY_TIMEFRAME = "1Day"
 AGGREGATED_TIMEFRAMES = {"1Week", "1Month", "3Month", "6Month", "1Year"}
 
 
-def _parse_iso_utc(value: str) -> datetime:
+def parse_iso_utc(value: str) -> datetime:
     """Parse an ISO-8601 string into a timezone-aware UTC datetime."""
     if not value:
         raise ValueError("missing ISO datetime")
@@ -49,7 +49,7 @@ def _transform_bars(raw_bars: list[dict]) -> list[dict]:
     result = []
     for bar in raw_bars:
         try:
-            ts = int(_parse_iso_utc(str(bar.get("t", ""))).timestamp())
+            ts = int(parse_iso_utc(str(bar.get("t", ""))).timestamp())
         except ValueError:
             continue
         result.append(
@@ -156,8 +156,8 @@ async def fetch_daily_bars(
     2. If any trading days are missing, fetch them from Alpaca and upsert.
     3. Return the complete range from DB.
     """
-    start_date = _parse_iso_utc(start).date()
-    end_date = _parse_iso_utc(end).date()
+    start_date = parse_iso_utc(start).date()
+    end_date = parse_iso_utc(end).date()
 
     # get dates we already have
     existing_rows = (
@@ -186,7 +186,7 @@ async def fetch_daily_bars(
             new_rows = []
             for bar in raw:
                 try:
-                    bar_date = _parse_iso_utc(str(bar.get("t", ""))).date()
+                    bar_date = parse_iso_utc(str(bar.get("t", ""))).date()
                 except ValueError:
                     continue
 
@@ -256,7 +256,7 @@ async def fetch_daily_bars(
         if isinstance(d, date):
             ts = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp())
         else:
-            ts = int(_parse_iso_utc(str(d)).timestamp())
+            ts = int(parse_iso_utc(str(d)).timestamp())
         result.append(
             {
                 "time": ts,
@@ -284,8 +284,8 @@ async def fetch_aggregated_bars(
     # make sure daily bars are populated
     await fetch_daily_bars(db, ticker, start, end)
 
-    start_date = _parse_iso_utc(start).date()
-    end_date = _parse_iso_utc(end).date()
+    start_date = parse_iso_utc(start).date()
+    end_date = parse_iso_utc(end).date()
 
     if period == "6Month":
         # no native date_trunc for half-year; bucket using interval arithmetic

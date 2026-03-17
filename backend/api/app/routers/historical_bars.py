@@ -20,22 +20,13 @@ from app.services.bars import (
     fetch_aggregated_bars,
     fetch_daily_bars,
     fetch_intraday_bars,
+    parse_iso_utc,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ALL_TIMEFRAMES = INTRADAY_TIMEFRAMES | {DAILY_TIMEFRAME} | AGGREGATED_TIMEFRAMES
-
-
-def _parse_iso_utc(value: str) -> datetime:
-    if not value:
-        raise ValueError("missing ISO datetime")
-    normalized = value.replace("Z", "+00:00")
-    dt = datetime.fromisoformat(normalized)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 @router.get("/historical-bars")
@@ -65,8 +56,8 @@ async def get_historical_bars(
 
     # validate date range
     try:
-        start_dt = _parse_iso_utc(start)
-        end_dt = _parse_iso_utc(end)
+        start_dt = parse_iso_utc(start)
+        end_dt = parse_iso_utc(end)
     except ValueError:
         raise HTTPException(
             status_code=400, detail="start and end must be valid ISO-8601 datetimes"

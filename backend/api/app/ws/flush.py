@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
