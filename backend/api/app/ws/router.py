@@ -1,10 +1,12 @@
 """WebSocket endpoint for browser clients.
 
 Protocol (JSON messages from client):
+  { "type": "ping" }
   { "type": "subscribe",   "tickers": ["AAPL", "MSFT"] }
   { "type": "unsubscribe", "tickers": ["AAPL"] }
 
 Server sends:
+  { "type": "pong" }
   { "type": "quote", "ticker": "AAPL", "data": { ... } }
   { "type": "subscribed", "tickers": ["AAPL", "MSFT"] }
   { "type": "unsubscribed", "tickers": ["AAPL"] }
@@ -78,7 +80,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                 )
                 continue
 
-            if msg_type == "subscribe":
+            if msg_type == "ping":
+                await ws.send_text(json.dumps({"type": "pong"}))
+
+            elif msg_type == "subscribe":
                 await _manager.subscribe(ws, tickers)
                 await ws.send_text(
                     json.dumps(

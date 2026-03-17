@@ -57,7 +57,7 @@ export function WebSocketProvider({
       share: true,
       heartbeat: {
         message: JSON.stringify({ type: "ping" }),
-        returnMessage: "pong",
+        returnMessage: JSON.stringify({ type: "pong" }),
         timeout: 60000,
         interval: 25000,
       },
