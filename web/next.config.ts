@@ -1,10 +1,11 @@
+import { resolve } from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
   reactCompiler: true,
   turbopack: {
-    root: "..",
+    root: resolve(__dirname, ".."),
   },
   experimental: {
     turbopackFileSystemCacheForDev: true,

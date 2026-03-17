@@ -1,0 +1,83 @@
+"use server";
+
+import { cache } from "react";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { getSession } from "@/app/actions/auth";
+import * as api from "@/lib/api";
+
+type SymbolRow = typeof schema.symbol.$inferSelect;
+
+type SymbolResult = {
+  ticker: string;
+  name: string;
+  exchange: string | null;
+  asset_class: "us_equity" | "crypto";
+};
+
+type SearchResult = {
+  ticker: string;
+  name: string;
+  exchange: string | null;
+  assetClass: "us_equity" | "crypto";
+};
+
+function toSearchResult(row: SymbolResult): SearchResult {
+  return {
+    ticker: row.ticker,
+    name: row.name,
+    exchange: row.exchange,
+    assetClass: row.asset_class,
+  };
+}
+
+export async function searchSymbols(query: string): Promise<SearchResult[]> {
+  const session = await getSession();
+  if (!session) return [];
+
+  const q = query.trim();
+  if (!q) return [];
+
+  const res = await api.get<SymbolResult[]>("/symbols/search", { q });
+  return res.ok ? res.data.map(toSearchResult) : [];
+}
+
+export async function getTrendingSymbols(): Promise<SearchResult[]> {
+  const session = await getSession();
+  if (!session) return [];
+
+  const res = await api.get<SymbolResult[]>("/symbols/trending");
+  return res.ok ? res.data.map(toSearchResult) : [];
+}
+
+export async function trackSymbol(ticker: string): Promise<void> {
+  const session = await getSession();
+  if (!session) return;
+
+  await api.post("/symbols/track", { ticker });
+}
+
+export const getSymbol = cache(
+  async (ticker: string): Promise<SymbolRow | null> => {
+    const session = await getSession();
+    if (!session) return null;
+
+    const t = ticker.toUpperCase().trim();
+    if (!t) return null;
+
+    const existing = await db.query.symbol.findFirst({
+      where: eq(schema.symbol.ticker, t),
+    });
+    if (existing) return existing;
+
+    const res = await api.put("/symbols/" + encodeURIComponent(t));
+    if (!res.ok) return null;
+
+    return (
+      (await db.query.symbol.findFirst({
+        where: eq(schema.symbol.ticker, t),
+      })) ?? null
+    );
+  },
+);

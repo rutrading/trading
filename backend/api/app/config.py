@@ -5,15 +5,18 @@ from dataclasses import dataclass, fields
 @dataclass(frozen=True)
 class Config:
     database_url: str = "postgresql://postgres:postgres@localhost:5432/trading"
-    twelve_data_api_key: str = ""
-    twelve_data_base_url: str = "https://api.twelvedata.com"
-    twelve_data_rate_limit: int = 8
+    redis_url: str = "redis://localhost:6379/0"
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
+    alpaca_base_url: str = "https://api.alpaca.markets"
     alpaca_data_base_url: str = "https://data.alpaca.markets"
     alpaca_feed: str = "iex"
     alpaca_rate_limit: int = 200
+    alpaca_ws_stocks_url: str = "wss://stream.data.alpaca.markets/v2/iex"
+    alpaca_ws_crypto_url: str = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
+    alpaca_ws_symbol_limit: int = 30
     quote_staleness_seconds: int = 60
+    quote_flush_interval: int = 30
     log_level: str = "INFO"
 
 

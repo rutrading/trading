@@ -74,11 +74,9 @@ function AccountItem({
 export function AppSidebar({
   accounts,
   userName,
-  onOpenNewAccount,
 }: {
   accounts: Account[];
   userName: string;
-  onOpenNewAccount: () => void;
 }) {
   const pathname = usePathname();
 
@@ -142,7 +140,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton onClick={onOpenNewAccount}>
+                <SidebarMenuButton render={<Link href="/onboarding" />}>
                   <PlusIcon className="size-4" />
                   <span>Open a New Account</span>
                 </SidebarMenuButton>

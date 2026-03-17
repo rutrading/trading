@@ -9,36 +9,48 @@ Senior project for Rowan University, advised by Professor McKee.
 ## Overview
 
 - Authentication with account registration and session management
-- Single quote endpoint that fetches real-time market data through the API pipeline
+- Real-time quotes from Alpaca with three-tier caching (Redis, Postgres, REST fallback)
+- Historical candlestick charts with intraday, daily, and aggregated timeframes
+- Symbol search backed by Alpaca asset data synced to Postgres
+- Order placement and portfolio management with holdings and transaction history
+- Shared sliding-window rate limiter across all Alpaca API calls
+- WebSocket-based live quote streaming with per-user tracking and reconnection grace period (mock data, Alpaca feed pending)
+- Watchlist for tracking saved stocks with current prices and daily changes
+- Settings page for profile management and account actions
 
 **Planned:**
 
-- Virtual cash balance for simulated trading
-- Dashboard for searching stocks, viewing live and historical price charts, and executing trades
-- Portfolio tracking with holdings, average cost basis, unrealized gains/losses, and full transaction history
-- Financial news integration from RSS/XML feeds displayed alongside stock data
-- Watchlist for tracking saved stocks with current prices and daily changes
-- Settings page for profile management and account actions
+- Dashboard with portfolio value, holdings breakdown, and daily movers
+- Financial news integration filtered by symbol
+- Stock detail page with live price, charts, and trade execution
+- Real-time Alpaca feed to replace mock WebSocket price data
 
 ## Architecture
 
 ![System Architecture Diagram](.github/system_architecture_diagram.png)
 
-*Last updated: February 19, 2026*
+*Last updated: March 11, 2026*
 
-The Next.js frontend communicates with a FastAPI backend over REST. The backend fetches market data from [TwelveData](https://twelvedata.com/), computes derived fields, and stores normalized quotes in Postgres for caching. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server.
+The Next.js frontend communicates with a FastAPI backend over REST. The backend fetches market data from [Alpaca](https://alpaca.markets/), caches quotes in Redis (hot) and Postgres (warm), and falls back to Alpaca REST on cache miss. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server.
 
-### Backend Flow
+### Quote Flow
 
-1. API receives `/api/quote?symbol=...`
-2. Checks Postgres cache freshness
-3. Fetches from TwelveData on cache miss
-4. Computes indicators and signal
-5. Upserts the quote into Postgres
+1. API receives `/api/quote?ticker=...`
+2. Checks Redis hash (`quote:<ticker>`) for a fresh cached quote
+3. Falls back to Postgres `quote` table if Redis misses
+4. Fetches from Alpaca snapshot endpoint on full cache miss
+5. Writes back to Redis and upserts into Postgres
+
+### Historical Bars Flow
+
+1. API receives `/api/historical-bars?ticker=...&timeframe=...&start=...`
+2. Intraday timeframes (1Min through 1Hour) fetch directly from Alpaca REST, never stored
+3. Daily bars read from the `daily_bar` table, backfilling gaps from Alpaca on demand
+4. Aggregated timeframes (1Week through 1Year) use SQL aggregation over daily bars
 
 ### Database
 
-Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python backend code uses SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun migrate` runs `drizzle-kit push`).
+Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python backend uses SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun db:push`).
 
 ## Getting Started
 
@@ -49,16 +61,27 @@ bun install
 bun setup
 ```
 
-The setup script will start Postgres via Docker Compose, copy `.env.example` files, generate a `BETTER_AUTH_SECRET`, and install dependencies.
+The setup script will start Postgres and Redis via Docker Compose, copy `.env.example` files, generate a `BETTER_AUTH_SECRET`, and install dependencies.
 
-Then run the database migration and start:
+Then push the database schema and start:
 
 ```bash
-bun migrate
+bun db:push
 bun dev
 ```
 
 Open http://localhost:3000/login, create an account, and you'll see the dashboard.
+
+## Scripts
+
+```bash
+bun setup        # first-time project setup (Docker, env files, deps)
+bun dev          # start web + api concurrently
+bun db:push      # push Drizzle schema to Postgres (no migration files)
+bun db:generate  # generate a migration SQL file from schema diff
+bun db:migrate   # run pending migration files
+bun db:studio    # open Drizzle Studio GUI
+```
 
 ## Testing
 
@@ -74,10 +97,10 @@ bun test
 
 ## Docker
 
-For local database only:
+For local services only:
 
 ```bash
-docker compose up -d db
+docker compose up -d
 ```
 
 ## Contributing

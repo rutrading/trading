@@ -3,8 +3,7 @@ import { existsSync, copyFileSync, readFileSync, writeFileSync } from "fs";
 import { randomBytes } from "crypto";
 import { join } from "path";
 
-const backend = join(import.meta.dir, "..");
-const root = join(backend, "..");
+const root = join(import.meta.dir, "..");
 
 // Check Docker is running
 try {
@@ -24,11 +23,11 @@ try {
   process.exit(1);
 }
 
-// Start Postgres
-console.log("Starting Postgres...");
-await $`docker compose up -d db`.cwd(root);
+// Start Postgres and Redis
+console.log("Starting Postgres and Redis...");
+await $`docker compose up -d`.cwd(root);
 
-// Copy web/.env.example → web/.env (if not exists)
+// Copy web/.env.example -> web/.env (if not exists)
 const webEnv = join(root, "web", ".env");
 if (!existsSync(webEnv)) {
   copyFileSync(join(root, "web", ".env.example"), webEnv);
@@ -43,10 +42,10 @@ if (!existsSync(webEnv)) {
   console.log("web/.env already exists, skipping");
 }
 
-// Copy api/.env.example → api/.env (if not exists)
-const apiEnv = join(backend, "api", ".env");
+// Copy api/.env.example -> api/.env (if not exists)
+const apiEnv = join(root, "backend", "api", ".env");
 if (!existsSync(apiEnv)) {
-  copyFileSync(join(backend, "api", ".env.example"), apiEnv);
+  copyFileSync(join(root, "backend", "api", ".env.example"), apiEnv);
   console.log("Created backend/api/.env");
 } else {
   console.log("backend/api/.env already exists, skipping");
@@ -57,13 +56,13 @@ console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
 
 console.log("Installing Python dependencies...");
-await $`uv sync`.cwd(backend);
+await $`uv sync`.cwd(join(root, "backend", "api"));
 
 console.log(`
 Setup complete! Next steps:
 
-  # Run database migrations
-  bun migrate
+  # Push database schema
+  bun db:push
 
   # Start everything (web + api)
   bun dev

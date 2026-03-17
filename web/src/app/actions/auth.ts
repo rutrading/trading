@@ -39,15 +39,16 @@ export async function updateProfile(name: string): Promise<ActionResult> {
 }
 
 const BALANCE_MAP = {
-  beginner: "10000",
+  beginner: "100000",
   intermediate: "50000",
-  expert: "100000",
+  advanced: "25000",
+  expert: "10000",
 } as const;
 
 export async function createAccount(
   name: string,
   type: "investment" | "crypto",
-  experience: "beginner" | "intermediate" | "expert",
+  experience: "beginner" | "intermediate" | "advanced" | "expert",
   partnerEmail?: string,
 ): Promise<ActionResult> {
   const session = await getSession();

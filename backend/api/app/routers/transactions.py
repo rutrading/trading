@@ -13,13 +13,13 @@ router = APIRouter()
 @router.get("/transactions")
 def list_transactions(
     trading_account_id: int,
-    symbol: str | None = Query(None),
+    ticker: str | None = Query(None),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List transaction history for a trading account with optional symbol filter."""
+    """List transaction history for a trading account with optional ticker filter."""
 
     get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
 
@@ -27,8 +27,9 @@ def list_transactions(
         Transaction.trading_account_id == trading_account_id
     )
 
-    if symbol:
-        query = query.filter(Transaction.symbol == symbol.upper().strip())
+    # optionally filter by ticker
+    if ticker:
+        query = query.filter(Transaction.ticker == ticker.upper().strip())
 
     total = query.count()
     transactions = (
@@ -43,7 +44,7 @@ def list_transactions(
             {
                 "id": t.id,
                 "order_id": t.order_id,
-                "symbol": t.symbol,
+                "ticker": t.ticker,
                 "side": t.side,
                 "quantity": str(t.quantity),
                 "price": str(t.price),

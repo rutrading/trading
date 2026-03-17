@@ -22,6 +22,25 @@ DEV_USER = {
 }
 
 
+def verify_token(token: str | None) -> dict | None:
+    """Validate a raw JWT string and return the decoded payload.
+    Returns None if the token is missing or invalid.
+    Used by the WS endpoint where Depends() isn't available."""
+    if SKIP_AUTH:
+        return DEV_USER
+
+    if not token:
+        return None
+
+    try:
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        return jwt.decode(
+            token, signing_key.key, algorithms=["RS256", "ES256", "EdDSA"]
+        )
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:
@@ -33,18 +52,24 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
         )
 
-    token = credentials.credentials
-    try:
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token, signing_key.key, algorithms=["RS256", "ES256", "EdDSA"]
-        )
-        return payload
-    except jwt.ExpiredSignatureError:
+    payload = verify_token(credentials.credentials)
+    if payload is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
         )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
+    return payload
+
+
+# optional variant: returns user dict when a valid token is present, None otherwise.
+# use for endpoints that work for anonymous users but can personalize for logged-in ones.
+_optional_scheme = HTTPBearer(auto_error=False)
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_optional_scheme),
+) -> dict | None:
+    if SKIP_AUTH:
+        return DEV_USER
+    if credentials is None:
+        return None
+    return verify_token(credentials.credentials)

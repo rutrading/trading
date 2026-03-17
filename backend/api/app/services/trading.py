@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Holding, Order, TradingAccount, Transaction
 
-VALID_ASSET_TYPES = {"stock", "etf", "crypto"}
+VALID_ASSET_CLASSES = {"us_equity", "crypto"}
 VALID_SIDES = {"buy", "sell"}
 VALID_ORDER_TYPES = {"market", "limit", "stop", "stop_limit"}
 VALID_TIME_IN_FORCE = {"day", "gtc"}
@@ -29,8 +29,8 @@ def validate_order_request(
     *,
     account: TradingAccount,
     db: Session,
-    symbol: str,
-    asset_type: str,
+    ticker: str,
+    asset_class: str,
     side: str,
     order_type: str,
     time_in_force: str,
@@ -40,8 +40,9 @@ def validate_order_request(
 ) -> None:
     """Run all pre-trade validation checks. Raises OrderValidationError on failure."""
 
-    if asset_type not in VALID_ASSET_TYPES:
-        raise OrderValidationError(f"Invalid asset_type: {asset_type}")
+    # reject unknown asset class
+    if asset_class not in VALID_ASSET_CLASSES:
+        raise OrderValidationError(f"Invalid asset_class: {asset_class}")
     if side not in VALID_SIDES:
         raise OrderValidationError(f"Invalid side: {side}")
     if order_type not in VALID_ORDER_TYPES:
@@ -52,36 +53,36 @@ def validate_order_request(
     if quantity <= 0:
         raise OrderValidationError("Quantity must be greater than 0")
 
-    # Crypto must use GTC
-    if asset_type == "crypto" and time_in_force == "day":
+    # crypto must use GTC (no day orders for 24/7 markets)
+    if asset_class == "crypto" and time_in_force == "day":
         raise OrderValidationError("Crypto orders must use 'gtc' time-in-force")
 
-    # Limit price required for limit and stop_limit orders
+    # limit price required for limit and stop_limit orders
     if order_type in ("limit", "stop_limit") and limit_price is None:
         raise OrderValidationError(f"limit_price is required for {order_type} orders")
     if limit_price is not None and limit_price <= 0:
         raise OrderValidationError("limit_price must be greater than 0")
 
-    # Stop price required for stop and stop_limit orders
+    # stop price required for stop and stop_limit orders
     if order_type in ("stop", "stop_limit") and stop_price is None:
         raise OrderValidationError(f"stop_price is required for {order_type} orders")
     if stop_price is not None and stop_price <= 0:
         raise OrderValidationError("stop_price must be greater than 0")
 
-    # Sell validation: must own enough of the position
+    # sell validation: must own enough of the position
     if side == "sell":
         holding = (
             db.query(Holding)
             .filter(
                 Holding.trading_account_id == account.id,
-                Holding.symbol == symbol,
+                Holding.ticker == ticker,
             )
             .first()
         )
         if holding is None or holding.quantity < quantity:
             owned = holding.quantity if holding else Decimal("0")
             raise OrderValidationError(
-                f"Insufficient position: you own {owned} of {symbol}, tried to sell {quantity}"
+                f"Insufficient position: you own {owned} of {ticker}, tried to sell {quantity}"
             )
 
 
@@ -114,11 +115,11 @@ def execute_fill(
     """
     total = fill_quantity * fill_price
 
-    # Update order filled quantity and average fill price
+    # update order fill tracking
     old_filled = order.filled_quantity or Decimal("0")
     new_filled = old_filled + fill_quantity
 
-    # Weighted average fill price
+    # weighted average fill price
     if old_filled == 0:
         order.average_fill_price = fill_price
     else:
@@ -129,6 +130,7 @@ def execute_fill(
 
     order.filled_quantity = new_filled
 
+    # mark fully filled or partially filled
     if new_filled >= order.quantity:
         order.status = "filled"
     else:
@@ -136,11 +138,12 @@ def execute_fill(
 
     order.updated_at = datetime.now(timezone.utc)
 
+    # find or create holding for this ticker
     holding = (
         db.query(Holding)
         .filter(
             Holding.trading_account_id == account.id,
-            Holding.symbol == order.symbol,
+            Holding.ticker == order.ticker,
         )
         .first()
     )
@@ -149,14 +152,14 @@ def execute_fill(
         if holding is None:
             holding = Holding(
                 trading_account_id=account.id,
-                symbol=order.symbol,
-                asset_type=order.asset_type,
+                ticker=order.ticker,
+                asset_class=order.asset_class,
                 quantity=fill_quantity,
                 average_cost=fill_price,
             )
             db.add(holding)
         else:
-            # Weighted average cost basis
+            # weighted average cost basis
             old_qty = holding.quantity
             old_cost = holding.average_cost
             holding.average_cost = (
@@ -165,27 +168,27 @@ def execute_fill(
             holding.quantity = old_qty + fill_quantity
             holding.updated_at = datetime.now(timezone.utc)
 
-        # Deduct from balance
+        # deduct from balance
         account.balance -= total
 
     elif order.side == "sell":
         if holding is not None:
             holding.quantity -= fill_quantity
             holding.updated_at = datetime.now(timezone.utc)
-            # Remove holding row if fully sold
+            # remove holding row if fully sold
             if holding.quantity <= 0:
                 db.delete(holding)
 
-        # Add to balance
+        # add proceeds to balance
         account.balance += total
 
     account.updated_at = datetime.now(timezone.utc)
 
-    # Create transaction record
+    # create transaction record
     txn = Transaction(
         order_id=order.id,
         trading_account_id=account.id,
-        symbol=order.symbol,
+        ticker=order.ticker,
         side=order.side,
         quantity=fill_quantity,
         price=fill_price,

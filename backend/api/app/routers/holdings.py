@@ -25,7 +25,7 @@ def list_holdings(
     holdings = (
         db.query(Holding)
         .filter(Holding.trading_account_id == account.id)
-        .order_by(Holding.symbol)
+        .order_by(Holding.ticker)
         .all()
     )
 
@@ -33,8 +33,8 @@ def list_holdings(
         "holdings": [
             {
                 "id": h.id,
-                "symbol": h.symbol,
-                "asset_type": h.asset_type,
+                "ticker": h.ticker,
+                "asset_class": h.asset_class,
                 "quantity": str(h.quantity),
                 "average_cost": str(h.average_cost),
                 "created_at": h.created_at.isoformat(),
