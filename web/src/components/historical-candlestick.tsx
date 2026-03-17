@@ -10,6 +10,7 @@ import {
   createChart,
 } from "lightweight-charts";
 
+import { getHistoricalBars } from "@/app/actions/bars";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -182,26 +183,18 @@ export function HistoricalCandlestick() {
 
     setLoading(true);
     try {
-      const apiBase =
-        process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
-      const params = new URLSearchParams({
+      const result = await getHistoricalBars({
         ticker: symbol.trim().toUpperCase(),
         timeframe,
         start: toIsoStart(startDate),
+        end: endDate ? toIsoEnd(endDate) : undefined,
       });
-      // end defaults to now on the server if omitted
-      if (endDate) {
-        params.set("end", toIsoEnd(endDate));
-      }
-      const response = await fetch(`${apiBase}/historical-bars?${params}`);
 
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || "Failed to fetch historical data");
+      if (!result.ok) {
+        throw new Error(result.error);
       }
 
-      const payload = await response.json();
-      setBars(payload.bars ?? []);
+      setBars(result.data.bars);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
