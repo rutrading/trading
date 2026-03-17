@@ -14,15 +14,16 @@ Senior project for Rowan University, advised by Professor McKee.
 - Symbol search backed by Alpaca asset data synced to Postgres
 - Order placement and portfolio management with holdings and transaction history
 - Shared sliding-window rate limiter across all Alpaca API calls
+- WebSocket-based live quote streaming with per-user tracking and reconnection grace period (mock data, Alpaca feed pending)
 - Watchlist for tracking saved stocks with current prices and daily changes
 - Settings page for profile management and account actions
 
 **Planned:**
 
-- WebSocket-based live quote streaming (browser to FastAPI to Alpaca)
 - Dashboard with portfolio value, holdings breakdown, and daily movers
 - Financial news integration filtered by symbol
 - Stock detail page with live price, charts, and trade execution
+- Real-time Alpaca feed to replace mock WebSocket price data
 
 ## Architecture
 
