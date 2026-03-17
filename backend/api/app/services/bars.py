@@ -92,7 +92,7 @@ async def _fetch_alpaca_bars(
                 "timeframe": timeframe,
                 "start": start,
                 "end": end,
-                "adjustment": "raw",
+                "adjustment": "all",
                 "sort": "asc",
                 "limit": 10000,
                 **extra_params,
