@@ -18,10 +18,12 @@ from app.routers import (
     health,
     historical_bars,
     holdings,
+    news,
     orders,
     quotes,
     symbols,
     transactions,
+    watchlist,
 )
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -81,3 +83,5 @@ app.include_router(orders.router, prefix="/api")
 app.include_router(holdings.router, prefix="/api")
 app.include_router(symbols.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
+app.include_router(watchlist.router, prefix="/api")
+app.include_router(news.router, prefix="/api")
