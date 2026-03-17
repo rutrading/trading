@@ -57,3 +57,7 @@ export function post<T>(path: string, params?: Record<string, string | undefined
 export function put<T>(path: string, params?: Record<string, string | undefined>) {
   return request<T>(buildUrl(path, params), { method: "PUT" });
 }
+
+export function del<T>(path: string, params?: Record<string, string | undefined>) {
+  return request<T>(buildUrl(path, params), { method: "DELETE" });
+}
