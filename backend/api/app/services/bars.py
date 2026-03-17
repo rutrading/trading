@@ -1,10 +1,4 @@
-"""Historical bar service layer.
-
-Routing logic:
-  - Intraday timeframes (< 1Day): fetch from Alpaca REST on demand, never stored.
-  - Daily (1Day): read from daily_bar table, backfill gaps from Alpaca, insert.
-  - Aggregated (1Week, 1Month, 3Month, 6Month, 1Year): SQL aggregation over daily_bar.
-"""
+"""Historical bar service layer."""
 
 import logging
 from datetime import datetime, date, timezone
@@ -78,7 +72,6 @@ async def _fetch_alpaca_bars(
     limiter = get_alpaca_limiter()
     headers = _alpaca_headers()
 
-    # crypto tickers use a different endpoint path
     is_crypto = "/" in ticker
     if is_crypto:
         base_path = f"/v1beta3/crypto/us/bars"
@@ -117,7 +110,6 @@ async def _fetch_alpaca_bars(
             body = response.json()
 
             if is_crypto:
-                # crypto response: {"bars": {"BTC/USD": [...]}}
                 bars_list = body.get("bars", {}).get(ticker, [])
             else:
                 bars_list = body.get("bars", [])
@@ -127,7 +119,6 @@ async def _fetch_alpaca_bars(
             next_token = body.get("next_page_token")
             if not next_token:
                 break
-            # guard against infinite pagination loops
             if next_token in seen_tokens:
                 logger.warning(
                     "Repeating page token for %s, stopping pagination", ticker
@@ -150,16 +141,10 @@ async def fetch_intraday_bars(
 async def fetch_daily_bars(
     db: Session, ticker: str, start: str, end: str
 ) -> list[dict]:
-    """Fetch daily bars, using the daily_bar table with gap-backfill from Alpaca.
-
-    1. Query existing daily_bar rows for the date range.
-    2. If any trading days are missing, fetch them from Alpaca and upsert.
-    3. Return the complete range from DB.
-    """
+    """Fetch daily bars from the daily_bar table, backfilling gaps from Alpaca."""
     start_date = parse_iso_utc(start).date()
     end_date = parse_iso_utc(end).date()
 
-    # get dates we already have
     existing_rows = (
         db.query(DailyBar)
         .filter(
@@ -173,8 +158,6 @@ async def fetch_daily_bars(
 
     existing_dates = {row.date for row in existing_rows}
 
-    # check if we need to backfill by fetching from Alpaca to see what days exist
-    # only fetch if we don't have data or there might be gaps
     should_backfill = len(existing_rows) == 0 or (
         end_date > start_date and (end_date - start_date).days > len(existing_rows) * 2
     )
@@ -190,7 +173,6 @@ async def fetch_daily_bars(
                 except ValueError:
                     continue
 
-                # skip dates we already have
                 if bar_date in existing_dates:
                     continue
 
@@ -209,7 +191,6 @@ async def fetch_daily_bars(
                 )
 
             if new_rows:
-                # bulk insert, skip any rows that already exist (race condition guard)
                 stmt = pg_insert(DailyBar).values(
                     [
                         {
@@ -226,9 +207,6 @@ async def fetch_daily_bars(
                         for row in new_rows
                     ]
                 )
-                # existing rows already filtered out in Python above;
-                # DO NOTHING handles the rare race where another request
-                # inserted the same (ticker, date) between our SELECT and INSERT
                 stmt = stmt.on_conflict_do_nothing(
                     index_elements=["ticker", "date"],
                 )
@@ -236,7 +214,6 @@ async def fetch_daily_bars(
                 db.commit()
                 logger.info("Backfilled %d daily bars for %s", len(new_rows), ticker)
 
-        # re-query for the complete range
         existing_rows = (
             db.query(DailyBar)
             .filter(
@@ -248,11 +225,9 @@ async def fetch_daily_bars(
             .all()
         )
 
-    # convert to response format
     result = []
     for row in existing_rows:
         d = row.date
-        # daily bars use date as a YYYY-MM-DD string for lightweight-charts
         if isinstance(d, date):
             ts = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp())
         else:
@@ -276,20 +251,13 @@ async def fetch_daily_bars(
 async def fetch_aggregated_bars(
     db: Session, ticker: str, period: str, start: str, end: str
 ) -> list[dict]:
-    """Compute weekly/monthly/quarterly bars by aggregating daily_bar rows via SQL.
-
-    First ensures daily bars exist for the range (backfills if needed),
-    then groups by the requested period.
-    """
-    # make sure daily bars are populated
+    """Aggregate daily bars into weekly/monthly/quarterly via SQL."""
     await fetch_daily_bars(db, ticker, start, end)
 
     start_date = parse_iso_utc(start).date()
     end_date = parse_iso_utc(end).date()
 
     if period == "6Month":
-        # no native date_trunc for half-year; bucket using interval arithmetic
-        # date_trunc('year') + 6 months * floor((month - 1) / 6)
         group_expr = (
             "date_trunc('year', date)"
             " + INTERVAL '6 months' * FLOOR((EXTRACT(month FROM date)::int - 1) / 6)"
