@@ -12,12 +12,12 @@ import {
 
 import { SymbolSearch, type SymbolItem } from "@/components/symbol-search";
 import {
-  useQuotes,
-  useWSReadyState,
-  useRestoredTickers,
+  type QuoteData,
   ReadyState,
-} from "@/components/ws-provider";
-import type { QuoteData } from "@/components/ws-provider";
+  useQuotes,
+  useRestoredTickers,
+  useWSReadyState,
+} from "@/hooks/use-quotes";
 
 const STATUS_MAP: Record<ReadyState, { label: string; color: string }> = {
   [ReadyState.CONNECTING]: { label: "Connecting", color: "text-yellow-500" },
