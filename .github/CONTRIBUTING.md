@@ -29,12 +29,8 @@ docker compose up -d db
 **Running Tests**
 ```bash
 # API
-cd backend/api
-uv run pytest
-
-# API
 cd backend
-uv run --package trading-api pytest api/tests/
+uv run pytest
 
 # Web
 cd web

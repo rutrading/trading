@@ -88,7 +88,7 @@ bun db:studio    # open Drizzle Studio GUI
 ```bash
 # API tests
 cd backend
-uv run --package trading-api pytest api/tests/
+uv run pytest tests/
 
 # Web tests
 cd web
