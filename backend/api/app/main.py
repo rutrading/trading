@@ -40,8 +40,23 @@ manager = ConnectionManager()
 feed = AlpacaFeed(manager, config)
 
 
+def _assert_alpaca_credentials() -> None:
+    key = (config.alpaca_api_key or "").strip()
+    secret = (config.alpaca_secret_key or "").strip()
+
+    if key in {"", "your_alpaca_key_here"} or secret in {
+        "",
+        "your_alpaca_secret_here",
+    }:
+        raise RuntimeError(
+            "ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in backend/api/.env"
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _assert_alpaca_credentials()
+
     await get_redis()
     logger.info("Redis connected")
 
