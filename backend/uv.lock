@@ -2,12 +2,6 @@ version = 1
 revision = 3
 requires-python = ">=3.13"
 
-[manifest]
-members = [
-    "trading",
-    "trading-api",
-]
-
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -626,40 +620,9 @@ wheels = [
 ]
 
 [[package]]
-name = "trading"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "httpx" },
-    { name = "psycopg2-binary" },
-    { name = "python-dotenv" },
-    { name = "sqlalchemy" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "psycopg2-binary", specifier = ">=2.9.11" },
-    { name = "python-dotenv", specifier = ">=1.2.1" },
-    { name = "sqlalchemy", specifier = ">=2.0.46" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "pytest-asyncio", specifier = ">=0.26.0" },
-]
-
-[[package]]
 name = "trading-api"
 version = "0.1.0"
-source = { virtual = "api" }
+source = { virtual = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },

@@ -1,19 +1,29 @@
 [project]
-name = "trading"
+name = "trading-api"
 version = "0.1.0"
+description = "R U Trading API gateway"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.129.0",
+    "uvicorn>=0.40.0",
+    "pyjwt>=2.11.0",
+    "cryptography>=46.0.5",
     "httpx>=0.28.1",
     "sqlalchemy>=2.0.46",
     "psycopg2-binary>=2.9.11",
     "python-dotenv>=1.2.1",
+    "redis[hiredis]>=5.0.0",
+    "websockets>=15.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
-    "pytest-asyncio>=0.26.0",
+    "httpx>=0.28.1",
+    "anyio[trio]>=4.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.15.6",
 ]
 
-[tool.uv.workspace]
-members = ["api"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
