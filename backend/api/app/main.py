@@ -36,39 +36,40 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-manager = ConnectionManager()
-feed = AlpacaFeed(manager, config)
 
-
-def _assert_alpaca_credentials() -> None:
+def _has_alpaca_credentials() -> bool:
     key = (config.alpaca_api_key or "").strip()
     secret = (config.alpaca_secret_key or "").strip()
-
-    if key in {"", "your_alpaca_key_here"} or secret in {
+    return key not in {"", "your_alpaca_key_here"} and secret not in {
         "",
         "your_alpaca_secret_here",
-    }:
-        raise RuntimeError(
-            "ALPACA_API_KEY and ALPACA_SECRET_KEY must be set in backend/api/.env"
-        )
+    }
+
+
+manager = ConnectionManager()
+feed = AlpacaFeed(manager, config) if _has_alpaca_credentials() else None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _assert_alpaca_credentials()
-
     await get_redis()
     logger.info("Redis connected")
 
     set_manager(manager)
-    await feed.start()
+    if feed is None:
+        logger.warning(
+            "Alpaca credentials not set, live feed disabled. Set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable streaming."
+        )
+    else:
+        await feed.start()
 
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
     yield
 
-    await feed.stop()
+    if feed is not None:
+        await feed.stop()
     flush_task.cancel()
     try:
         await flush_task
