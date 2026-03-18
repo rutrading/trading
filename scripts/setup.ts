@@ -56,7 +56,9 @@ console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
 
 console.log("Installing Python dependencies...");
-await $`uv sync`.cwd(join(root, "backend", "api"));
+await $`uv sync`
+  .cwd(join(root, "backend", "api"))
+  .env({ ...process.env, VIRTUAL_ENV: "" });
 
 console.log(`
 Setup complete! Next steps:
