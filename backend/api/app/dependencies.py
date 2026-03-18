@@ -1,10 +1,38 @@
-"""Shared FastAPI dependencies for trading endpoints."""
+"""Authorization dependencies for account-scoped endpoints.
+
+auth.py handles identity (who is the user).
+This module handles account membership checks (what they can access).
+"""
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import AccountMember, TradingAccount, get_db
+
+
+def _load_trading_account(db: Session, trading_account_id: int) -> TradingAccount:
+    account = (
+        db.query(TradingAccount).filter(TradingAccount.id == trading_account_id).first()
+    )
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trading account not found",
+        )
+    return account
+
+
+def _is_account_member(db: Session, trading_account_id: int, user_id: str) -> bool:
+    membership = (
+        db.query(AccountMember)
+        .filter(
+            AccountMember.account_id == trading_account_id,
+            AccountMember.user_id == user_id,
+        )
+        .first()
+    )
+    return membership is not None
 
 
 def get_trading_account(
@@ -17,29 +45,13 @@ def get_trading_account(
     Use as a FastAPI dependency on any endpoint that operates on a trading account.
     In SKIP_AUTH / dev mode (user sub == "dev"), the membership check is bypassed.
     """
-    account = (
-        db.query(TradingAccount).filter(TradingAccount.id == trading_account_id).first()
-    )
-    if account is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trading account not found",
-        )
+    account = _load_trading_account(db, trading_account_id)
 
-    # Skip membership check for dev user
-    user_id = user.get("sub", "")
+    user_id = str(user.get("sub", "")).strip()
     if user_id == "dev":
         return account
 
-    membership = (
-        db.query(AccountMember)
-        .filter(
-            AccountMember.account_id == trading_account_id,
-            AccountMember.user_id == user_id,
-        )
-        .first()
-    )
-    if membership is None:
+    if not _is_account_member(db, trading_account_id, user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not a member of this trading account",
