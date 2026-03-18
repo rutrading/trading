@@ -7,39 +7,29 @@ from app.auth import get_current_user
 from app.db import get_db
 from app.db.models import Symbol, WatchlistItem
 from app.db.redis import get_redis
+from app.schemas import (
+    WatchlistItemResponse,
+    WatchlistMutationResponse,
+    WatchlistQuoteResponse,
+    WatchlistResponse,
+)
 
 router = APIRouter()
 
 
-async def _get_quote_from_redis(redis, ticker: str) -> dict | None:
+async def _get_quote_from_redis(redis, ticker: str) -> WatchlistQuoteResponse | None:
     data = await redis.hgetall(f"quote:{ticker}")
     if not data:
         return None
 
-    def _f(key: str) -> float | None:
-        v = data.get(key)
-        return float(v) if v else None
-
-    def _i(key: str) -> int | None:
-        v = data.get(key)
-        return int(float(v)) if v else None
-
-    return {
-        "price": _f("price"),
-        "change": _f("change"),
-        "change_percent": _f("change_percent"),
-        "bid_price": _f("bid_price"),
-        "ask_price": _f("ask_price"),
-        "timestamp": _i("timestamp"),
-        "source": data.get("source"),
-    }
+    return WatchlistQuoteResponse.from_redis_hash(data)
 
 
-@router.get("/watchlist")
+@router.get("/watchlist", response_model=WatchlistResponse)
 async def list_watchlist(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> WatchlistResponse:
     user_id = user["sub"]
     items = (
         db.query(WatchlistItem)
@@ -49,26 +39,26 @@ async def list_watchlist(
     )
 
     redis = await get_redis()
-    result = []
+    result: list[WatchlistItemResponse] = []
     for item in items:
         quote = await _get_quote_from_redis(redis, item.ticker)
         result.append(
-            {
-                "ticker": item.ticker,
-                "created_at": item.created_at.isoformat(),
-                "quote": quote,
-            }
+            WatchlistItemResponse.from_values(
+                ticker=item.ticker,
+                created_at=item.created_at,
+                quote=quote,
+            )
         )
 
-    return {"watchlist": result}
+    return WatchlistResponse(watchlist=result)
 
 
-@router.post("/watchlist")
+@router.post("/watchlist", response_model=WatchlistMutationResponse)
 def add_to_watchlist(
     ticker: str = Query(..., min_length=1, max_length=16),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> WatchlistMutationResponse:
     ticker = ticker.upper().strip()
     user_id = user["sub"]
 
@@ -82,19 +72,19 @@ def add_to_watchlist(
         .first()
     )
     if existing:
-        return {"ticker": ticker, "added": False}
+        return WatchlistMutationResponse(ticker=ticker, added=False)
 
     db.add(WatchlistItem(user_id=user_id, ticker=ticker))
     db.commit()
-    return {"ticker": ticker, "added": True}
+    return WatchlistMutationResponse(ticker=ticker, added=True)
 
 
-@router.delete("/watchlist/{ticker}")
+@router.delete("/watchlist/{ticker}", response_model=WatchlistMutationResponse)
 def remove_from_watchlist(
     ticker: str,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> WatchlistMutationResponse:
     ticker = ticker.upper().strip()
     user_id = user["sub"]
 
@@ -108,4 +98,4 @@ def remove_from_watchlist(
 
     db.delete(item)
     db.commit()
-    return {"ticker": ticker, "removed": True}
+    return WatchlistMutationResponse(ticker=ticker, removed=True)

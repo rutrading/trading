@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import Transaction, get_db
 from app.dependencies import get_trading_account
+from app.schemas import TransactionResponse, TransactionsResponse
 
 router = APIRouter()
 
@@ -27,9 +28,9 @@ def list_transactions(
         Transaction.trading_account_id == trading_account_id
     )
 
-    # optionally filter by ticker
-    if ticker:
-        query = query.filter(Transaction.ticker == ticker.upper().strip())
+    ticker_filter = ticker.upper().strip() if ticker else None
+    if ticker_filter:
+        query = query.filter(Transaction.ticker == ticker_filter)
 
     total = query.count()
     transactions = (
@@ -39,21 +40,12 @@ def list_transactions(
         .all()
     )
 
-    return {
-        "transactions": [
-            {
-                "id": t.id,
-                "order_id": t.order_id,
-                "ticker": t.ticker,
-                "side": t.side,
-                "quantity": str(t.quantity),
-                "price": str(t.price),
-                "total": str(t.total),
-                "created_at": t.created_at.isoformat(),
-            }
-            for t in transactions
+    return TransactionsResponse(
+        transactions=[
+            TransactionResponse.from_transaction(transaction)
+            for transaction in transactions
         ],
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-    }
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
