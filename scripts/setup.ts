@@ -51,16 +51,6 @@ if (!existsSync(apiEnv)) {
   console.log("backend/api/.env already exists, skipping");
 }
 
-const apiEnvContent = readFileSync(apiEnv, "utf-8");
-if (
-  apiEnvContent.includes("ALPACA_API_KEY=your_alpaca_key_here") ||
-  apiEnvContent.includes("ALPACA_SECRET_KEY=your_alpaca_secret_here")
-) {
-  console.log(
-    "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in backend/api/.env before running bun dev"
-  );
-}
-
 // Install dependencies
 console.log("Installing web dependencies...");
 await $`bun install`.cwd(join(root, "web"));
@@ -73,8 +63,8 @@ await $`uv sync`
 console.log(`
 Setup complete! Next steps:
 
-  # Push database schema
-  bun db:push
+  # Apply database migrations
+  bun db:migrate
 
   # Start everything (web + api)
   bun dev
