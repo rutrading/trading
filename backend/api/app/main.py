@@ -8,12 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_config
-from app.db.redis import get_redis, close_redis
-from app.ws.manager import ConnectionManager
-from app.ws.alpaca_feed import AlpacaFeed
-from app.ws.router import router as ws_router, set_manager
-from app.ws.flush import flush_quotes_loop
-
+from app.db.redis import close_redis, get_redis
 from app.routers import (
     health,
     historical_bars,
@@ -25,6 +20,12 @@ from app.routers import (
     transactions,
     watchlist,
 )
+from app.ws.feeds.alpaca import AlpacaFeed
+from app.ws.feeds.base import BaseFeed
+from app.ws.flush import flush_quotes_loop
+from app.ws.manager import ConnectionManager
+from app.ws.feeds.mock import MockFeed
+from app.ws.router import router as ws_router, set_manager
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 config = get_config()
@@ -47,7 +48,11 @@ def _has_alpaca_credentials() -> bool:
 
 
 manager = ConnectionManager()
-feed = AlpacaFeed(manager, config) if _has_alpaca_credentials() else None
+feed: BaseFeed
+if _has_alpaca_credentials():
+    feed = AlpacaFeed(manager, config)
+else:
+    feed = MockFeed(manager)
 
 
 @asynccontextmanager
@@ -56,20 +61,19 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     set_manager(manager)
-    if feed is None:
+    if not _has_alpaca_credentials():
         logger.warning(
-            "Alpaca credentials not set, live feed disabled. Set ALPACA_API_KEY and ALPACA_SECRET_KEY to enable streaming."
+            "Alpaca credentials not set, using mock market-data feed for local development."
         )
-    else:
-        await feed.start()
+
+    await feed.start()
 
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
     yield
 
-    if feed is not None:
-        await feed.stop()
+    await feed.stop()
     flush_task.cancel()
     try:
         await flush_task

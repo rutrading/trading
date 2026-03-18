@@ -40,13 +40,70 @@ _manager: ConnectionManager | None = None
 
 
 def set_manager(manager: ConnectionManager) -> None:
+    """Set the shared ConnectionManager instance at app startup."""
     global _manager
     _manager = manager
 
 
+async def _send(ws: WebSocket, payload: dict) -> None:
+    """Send a JSON payload to the websocket client."""
+    await ws.send_text(json.dumps(payload))
+
+
+def _normalize_tickers(value: object) -> list[str] | None:
+    """Validate and normalize incoming ticker array.
+
+    Returns None when input is not an array.
+    """
+    if not isinstance(value, list):
+        return None
+
+    tickers: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        ticker = item.strip().upper()
+        if not ticker or ticker in seen:
+            continue
+        seen.add(ticker)
+        tickers.append(ticker)
+    return tickers
+
+
+async def _handle_message(manager: ConnectionManager, ws: WebSocket, msg: dict) -> None:
+    """Handle one inbound websocket client message."""
+    msg_type = msg.get("type")
+
+    if msg_type == "ping":
+        await _send(ws, {"type": "pong"})
+        return
+
+    if msg_type not in ("subscribe", "unsubscribe"):
+        await _send(
+            ws, {"type": "error", "message": f"Unknown message type: {msg_type}"}
+        )
+        return
+
+    tickers = _normalize_tickers(msg.get("tickers", []))
+    if tickers is None:
+        await _send(ws, {"type": "error", "message": "tickers must be an array"})
+        return
+
+    if msg_type == "subscribe":
+        await manager.subscribe(ws, tickers)
+        await _send(ws, {"type": "subscribed", "tickers": tickers})
+        return
+
+    await manager.unsubscribe(ws, tickers)
+    await _send(ws, {"type": "unsubscribed", "tickers": tickers})
+
+
 @router.websocket("/api/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
-    if _manager is None:
+    """Main websocket endpoint for quote subscriptions."""
+    manager = _manager
+    if manager is None:
         await ws.close(code=1011, reason="Server not ready")
         return
 
@@ -58,7 +115,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
 
     user_id = payload.get("sub", "unknown")
-    await _manager.connect(ws, user_id)
+    await manager.connect(ws, user_id)
 
     try:
         while True:
@@ -66,58 +123,14 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await ws.send_text(
-                    json.dumps({"type": "error", "message": "Invalid JSON"})
-                )
+                await _send(ws, {"type": "error", "message": "Invalid JSON"})
                 continue
 
-            msg_type = msg.get("type")
-            tickers = msg.get("tickers", [])
-
-            if not isinstance(tickers, list):
-                await ws.send_text(
-                    json.dumps({"type": "error", "message": "tickers must be an array"})
-                )
-                continue
-
-            if msg_type == "ping":
-                await ws.send_text(json.dumps({"type": "pong"}))
-
-            elif msg_type == "subscribe":
-                await _manager.subscribe(ws, tickers)
-                await ws.send_text(
-                    json.dumps(
-                        {
-                            "type": "subscribed",
-                            "tickers": [t.upper() for t in tickers],
-                        }
-                    )
-                )
-
-            elif msg_type == "unsubscribe":
-                await _manager.unsubscribe(ws, tickers)
-                await ws.send_text(
-                    json.dumps(
-                        {
-                            "type": "unsubscribed",
-                            "tickers": [t.upper() for t in tickers],
-                        }
-                    )
-                )
-
-            else:
-                await ws.send_text(
-                    json.dumps(
-                        {
-                            "type": "error",
-                            "message": f"Unknown message type: {msg_type}",
-                        }
-                    )
-                )
+            await _handle_message(manager, ws, msg)
 
     except WebSocketDisconnect:
         logger.info("User %s left (WebSocket closed by client)", user_id)
     except Exception:
         logger.exception("WebSocket error for user %s", user_id)
     finally:
-        await _manager.disconnect(ws)
+        await manager.disconnect(ws)
