@@ -1,8 +1,5 @@
 import json
-import time
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from app.ws.manager import ConnectionManager
 
@@ -319,8 +316,6 @@ class TestLeastActiveWsTicker:
         ws = make_ws()
         await manager.connect(ws, "user1")
         await manager.subscribe(ws, ["AAPL"])
-
-        import time
 
         manager._ticker_last_active["AAPL"] = 1000.0
         manager._ticker_last_active["MSFT"] = 2000.0
