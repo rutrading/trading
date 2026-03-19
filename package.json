@@ -4,8 +4,6 @@
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "dev": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n web,api -c cyan,red \"bun run --cwd web dev\" \"bun run scripts/dev-api.ts\"",
-    "migrate": "bun run db:migrate",
-    "db:push": "bun run --cwd web bunx drizzle-kit push",
     "db:generate": "bun run --cwd web bunx drizzle-kit generate",
     "db:migrate": "bun run --cwd web bunx drizzle-kit migrate",
     "db:studio": "bun run --cwd web bunx drizzle-kit studio"
