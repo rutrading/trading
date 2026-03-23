@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
+from typing import TypeVar
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import get_config
-from app.db.redis import get_redis
+from app.db.redis import RedisClient, get_redis
 from app.db.session import get_session_factory
 from app.db.models import Quote
 
 logger = logging.getLogger(__name__)
+
+NumberT = TypeVar("NumberT", int, float)
 
 
 async def flush_quotes_loop() -> None:
@@ -32,15 +36,16 @@ async def flush_quotes_loop() -> None:
 
 async def flush_once() -> None:
     """Flush all dirty quotes from Redis to Postgres in one batch."""
-    redis = await get_redis()
+    redis: RedisClient = await get_redis()
 
     # pop all dirty tickers atomically
     dirty: set[str] = set()
     while True:
-        ticker = await redis.spop("quotes:dirty")
-        if ticker is None:
+        popped = await redis.spop("quotes:dirty")
+        if popped is None:
             break
-        dirty.add(ticker)
+        if isinstance(popped, str):
+            dirty.add(popped)
 
     if not dirty:
         return
@@ -54,12 +59,14 @@ async def flush_once() -> None:
         rows.append(
             {
                 "ticker": ticker,
-                "price": _float(data.get("price")),
-                "bid_price": _float(data.get("bid_price")),
-                "ask_price": _float(data.get("ask_price")),
-                "change": _float(data.get("change")),
-                "change_percent": _float(data.get("change_percent")),
-                "timestamp": _int(data.get("timestamp")),
+                "price": _parse_number(data.get("price"), float),
+                "bid_price": _parse_number(data.get("bid_price"), float),
+                "ask_price": _parse_number(data.get("ask_price"), float),
+                "change": _parse_number(data.get("change"), float),
+                "change_percent": _parse_number(data.get("change_percent"), float),
+                "timestamp": _parse_number(
+                    data.get("timestamp"), lambda v: int(float(v))
+                ),
                 "source": data.get("source", "mock"),
             }
         )
@@ -70,9 +77,9 @@ async def flush_once() -> None:
     # upsert into Postgres quote table
     session = get_session_factory()()
     try:
-        stmt = pg_insert(Quote.__table__).values(rows)
+        stmt = pg_insert(Quote).values(rows)
         stmt = stmt.on_conflict_do_update(
-            index_elements=["ticker"],
+            index_elements=[Quote.ticker],
             set_={
                 "price": stmt.excluded.price,
                 "bid_price": stmt.excluded.bid_price,
@@ -93,19 +100,10 @@ async def flush_once() -> None:
         session.close()
 
 
-def _float(val: str | None) -> float | None:
-    if val is None:
+def _parse_number(value: str | None, cast: Callable[[str], NumberT]) -> NumberT | None:
+    if value in (None, ""):
         return None
     try:
-        return float(val)
-    except ValueError:
-        return None
-
-
-def _int(val: str | None) -> int | None:
-    if val is None:
-        return None
-    try:
-        return int(val)
-    except ValueError:
+        return cast(value)
+    except (TypeError, ValueError):
         return None

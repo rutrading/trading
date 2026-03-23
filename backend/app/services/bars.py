@@ -74,7 +74,7 @@ async def _fetch_alpaca_bars(
 
     is_crypto = "/" in ticker
     if is_crypto:
-        base_path = f"/v1beta3/crypto/us/bars"
+        base_path = "/v1beta3/crypto/us/bars"
         extra_params = {"symbols": ticker}
     else:
         base_path = f"/v2/stocks/{ticker}/bars"

@@ -24,11 +24,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: uv sync --frozen --package trading-api
+        run: uv sync --frozen
 
       - name: Run tests
         working-directory: backend
-        run: uv run --package trading-api pytest api/tests/ -v
+        run: uv run pytest tests/ -v
 
   web:
     name: Web Check

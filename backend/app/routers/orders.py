@@ -10,6 +10,12 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import Order, get_db
 from app.dependencies import get_trading_account
+from app.schemas import (
+    OrderDetailResponse,
+    OrderResponse,
+    OrdersPageResponse,
+    OrderTransactionResponse,
+)
 from app.services.trading import (
     OrderValidationError,
     execute_fill,
@@ -50,29 +56,11 @@ class PlaceOrderRequest(BaseModel):
         return v
 
 
-def _order_to_dict(order: Order) -> dict:
-    return {
-        "id": order.id,
-        "trading_account_id": order.trading_account_id,
-        "ticker": order.ticker,
-        "asset_class": order.asset_class,
-        "side": order.side,
-        "order_type": order.order_type,
-        "time_in_force": order.time_in_force,
-        "quantity": str(order.quantity),
-        "limit_price": str(order.limit_price)
-        if order.limit_price is not None
-        else None,
-        "stop_price": str(order.stop_price) if order.stop_price is not None else None,
-        "filled_quantity": str(order.filled_quantity),
-        "average_fill_price": str(order.average_fill_price)
-        if order.average_fill_price is not None
-        else None,
-        "status": order.status,
-        "rejection_reason": order.rejection_reason,
-        "created_at": order.created_at.isoformat(),
-        "updated_at": order.updated_at.isoformat(),
-    }
+def _get_order_or_404(db: Session, order_id: int) -> Order:
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
 
 
 @router.post("/orders")
@@ -94,7 +82,6 @@ def place_order(
     limit_price = Decimal(payload.limit_price) if payload.limit_price else None
     stop_price = Decimal(payload.stop_price) if payload.stop_price else None
 
-    # pre-trade validation (position size, asset class, order type, etc.)
     try:
         validate_order_request(
             account=account,
@@ -108,8 +95,8 @@ def place_order(
             limit_price=limit_price,
             stop_price=stop_price,
         )
-    except OrderValidationError as e:
-        raise HTTPException(status_code=400, detail=e.detail)
+    except OrderValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.detail)
 
     # create order record
     order = Order(
@@ -137,8 +124,8 @@ def place_order(
 
         try:
             validate_buying_power(account, payload.side, quantity, price)
-        except OrderValidationError as e:
-            raise HTTPException(status_code=400, detail=e.detail)
+        except OrderValidationError as exc:
+            raise HTTPException(status_code=400, detail=exc.detail)
 
         order.status = "pending"
         db.add(order)
@@ -173,8 +160,8 @@ def place_order(
         ):
             try:
                 validate_buying_power(account, payload.side, quantity, limit_price)
-            except OrderValidationError as e:
-                raise HTTPException(status_code=400, detail=e.detail)
+            except OrderValidationError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail)
 
         order.status = "open"
         db.add(order)
@@ -191,7 +178,7 @@ def place_order(
             order.status,
         )
 
-    return _order_to_dict(order)
+    return OrderResponse.from_order(order)
 
 
 @router.get("/orders")
@@ -224,12 +211,12 @@ def list_orders(
         .all()
     )
 
-    return {
-        "orders": [_order_to_dict(o) for o in orders],
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-    }
+    return OrdersPageResponse(
+        orders=[OrderResponse.from_order(order) for order in orders],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.get("/orders/{order_id}")
@@ -240,26 +227,19 @@ def get_order(
 ):
     """Get a single order with its transaction history."""
 
-    order = db.query(Order).filter(Order.id == order_id).first()
-    if order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
+    order = _get_order_or_404(db, order_id)
 
     # verify the user owns this order's account
     get_trading_account(trading_account_id=order.trading_account_id, user=user, db=db)
 
-    result = _order_to_dict(order)
-    result["transactions"] = [
-        {
-            "id": t.id,
-            "quantity": str(t.quantity),
-            "price": str(t.price),
-            "total": str(t.total),
-            "side": t.side,
-            "created_at": t.created_at.isoformat(),
-        }
-        for t in order.transactions
-    ]
-    return result
+    base = OrderResponse.from_order(order)
+    return OrderDetailResponse(
+        **base.model_dump(),
+        transactions=[
+            OrderTransactionResponse.from_transaction(transaction)
+            for transaction in order.transactions
+        ],
+    )
 
 
 @router.post("/orders/{order_id}/cancel")
@@ -270,9 +250,7 @@ def cancel_order(
 ):
     """Cancel an open or partially-filled order."""
 
-    order = db.query(Order).filter(Order.id == order_id).first()
-    if order is None:
-        raise HTTPException(status_code=404, detail="Order not found")
+    order = _get_order_or_404(db, order_id)
 
     # verify the user owns this order's account
     get_trading_account(trading_account_id=order.trading_account_id, user=user, db=db)
@@ -290,4 +268,4 @@ def cancel_order(
 
     logger.info("Order %d cancelled for account %d", order.id, order.trading_account_id)
 
-    return _order_to_dict(order)
+    return OrderResponse.from_order(order)

@@ -1,63 +1,98 @@
 /**
- * Typed HTTP client for the FastAPI backend.
- *
- * Meant to be called from server actions only (runs on the Next.js server).
- * Handles base URL resolution, query string building, and error shaping
- * so individual actions stay thin.
+ * Minimal typed API client for server actions.
  */
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
-
-// ── response types ──────────────────────────────────────────────────────────
+type QueryParams = Record<string, string | undefined>;
 
 export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
-// ── helpers ─────────────────────────────────────────────────────────────────
-
-function buildUrl(path: string, params?: Record<string, string | undefined>): string {
-  const url = `${BASE_URL}${path}`;
+function buildUrl(path: string, params?: QueryParams): string {
+  const url = `${API_BASE_URL}${path}`;
   if (!params) return url;
 
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) {
-    if (v !== undefined) qs.set(k, v);
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) search.set(key, value);
   }
-  const str = qs.toString();
-  return str ? `${url}?${str}` : url;
+
+  const query = search.toString();
+  return query ? `${url}?${query}` : url;
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function request<T>(
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  path: string,
+  params?: QueryParams,
+): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(url, { cache: "no-store" as const, ...init });
+    const res = await fetch(buildUrl(path, params), {
+      method,
+      cache: "no-store",
+    });
 
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return { ok: false, error: body || `Request failed (${res.status})` };
+      const text = await res.text().catch(() => "");
+      return { ok: false, error: text || `Request failed (${res.status})` };
     }
 
-    const data: T = await res.json();
-    return { ok: true, data };
+    return { ok: true, data: (await res.json()) as T };
   } catch {
     return { ok: false, error: "Network error" };
   }
 }
 
-// ── public methods ──────────────────────────────────────────────────────────
-
-export function get<T>(path: string, params?: Record<string, string | undefined>) {
-  return request<T>(buildUrl(path, params));
+/**
+ * Example:
+ * type BarsResponse = {
+ *   ticker: string; timeframe: string; source: string;
+ *   bars: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+ * }
+ * const res = await get<BarsResponse>("/historical-bars", {
+ *   ticker: "AAPL",
+ *   timeframe: "1Day",
+ *   start: "2025-01-01T00:00:00Z",
+ * })
+ * if (res.ok) console.log(res.data.ticker, res.data.bars.length)
+ */
+export function get<T>(path: string, params?: QueryParams) {
+  return request<T>("GET", path, params);
 }
 
-export function post<T>(path: string, params?: Record<string, string | undefined>) {
-  return request<T>(buildUrl(path, params), { method: "POST" });
+/**
+ * Example:
+ * type AddWatchlistResponse = { ticker: string; added: boolean }
+ * const res = await post<AddWatchlistResponse>("/watchlist", {
+ *   ticker: "AAPL",
+ * })
+ * if (res.ok) console.log(res.data.ticker, res.data.added)
+ */
+export function post<T>(path: string, params?: QueryParams) {
+  return request<T>("POST", path, params);
 }
 
-export function put<T>(path: string, params?: Record<string, string | undefined>) {
-  return request<T>(buildUrl(path, params), { method: "PUT" });
+/**
+ * Example:
+ * type SymbolResponse = {
+ *   ticker: string; name: string; exchange: string | null;
+ *   asset_class: "us_equity" | "crypto";
+ * }
+ * const res = await put<SymbolResponse>("/symbols/AAPL")
+ * if (res.ok) console.log(res.data.name)
+ */
+export function put<T>(path: string, params?: QueryParams) {
+  return request<T>("PUT", path, params);
 }
 
-export function del<T>(path: string, params?: Record<string, string | undefined>) {
-  return request<T>(buildUrl(path, params), { method: "DELETE" });
+/**
+ * Example:
+ * type RemoveWatchlistResponse = { ticker: string; removed: boolean }
+ * const res = await del<RemoveWatchlistResponse>("/watchlist/AAPL")
+ * if (res.ok) console.log(res.data.ticker, res.data.removed)
+ */
+export function del<T>(path: string, params?: QueryParams) {
+  return request<T>("DELETE", path, params);
 }

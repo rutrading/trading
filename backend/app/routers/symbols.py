@@ -6,14 +6,13 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, or_
 
-from app.auth import get_optional_user
 from app.config import get_config
 from app.db import db_session
 from app.db.models import Symbol
-from app.db.redis import get_redis
+from app.db.redis import RedisClient, get_redis
 from app.rate_limit import get_alpaca_limiter
 
 logger = logging.getLogger(__name__)
@@ -54,7 +53,7 @@ async def search_symbols(q: str = Query(..., min_length=1)):
     cache_key = f"symbol_search:{q}"
 
     # try Redis cache first
-    redis = await get_redis()
+    redis: RedisClient = await get_redis()
     cached = await redis.get(cache_key)
     if cached is not None:
         return json.loads(cached)
@@ -64,7 +63,7 @@ async def search_symbols(q: str = Query(..., min_length=1)):
         results = (
             db.query(Symbol)
             .filter(
-                Symbol.tradable == True,
+                Symbol.tradable,
                 or_(
                     Symbol.ticker.ilike(f"{q}%"),
                     Symbol.name.ilike(f"%{q}%"),
@@ -93,11 +92,10 @@ TRENDING_LIMIT = 5
 @router.post("/symbols/track")
 async def track_symbol(
     ticker: str = Query(..., min_length=1),
-    user: dict | None = Depends(get_optional_user),
 ):
     """Increment the trending score for a ticker when a user selects it."""
     ticker = ticker.strip().upper()
-    redis = await get_redis()
+    redis: RedisClient = await get_redis()
     new_score = await redis.zincrby(TRENDING_KEY, 1, ticker)
     logger.info("Symbol tracked: %s (score=%.0f)", ticker, new_score)
     return {"ok": True}
@@ -106,7 +104,7 @@ async def track_symbol(
 @router.get("/symbols/trending")
 async def trending_symbols():
     """Return up to 10 symbols: trending first, backfilled with random tradable ones."""
-    redis = await get_redis()
+    redis: RedisClient = await get_redis()
     top_tickers = await redis.zrevrange(TRENDING_KEY, 0, TRENDING_LIMIT - 1)
 
     with db_session() as db:
@@ -117,7 +115,7 @@ async def trending_symbols():
         if top_tickers:
             symbols = (
                 db.query(Symbol)
-                .filter(Symbol.ticker.in_(top_tickers), Symbol.tradable == True)
+                .filter(Symbol.ticker.in_(top_tickers), Symbol.tradable)
                 .all()
             )
             by_ticker = {s.ticker: s for s in symbols}
@@ -130,7 +128,7 @@ async def trending_symbols():
         remaining = TRENDING_LIMIT - len(results)
         if remaining > 0:
             query = db.query(Symbol).filter(
-                Symbol.tradable == True,
+                Symbol.tradable,
                 Symbol.asset_class == "us_equity",
             )
             # exclude tickers already in the trending list
@@ -156,7 +154,6 @@ async def get_symbol(ticker: str):
 @router.put("/symbols/{ticker}")
 async def fetch_and_upsert_symbol(
     ticker: str,
-    user: dict | None = Depends(get_optional_user),
 ):
     """
     Fetch a single symbol from Alpaca by exact ticker and upsert into local DB.
@@ -224,7 +221,7 @@ async def fetch_and_upsert_symbol(
 
 
 @router.post("/symbols/seed")
-async def seed_symbols(user: dict | None = Depends(get_optional_user)):
+async def seed_symbols():
     """
     Bulk fetch all tradable assets from Alpaca and upsert into symbol table.
     Called during setup and by the daily refresh scheduler.

@@ -42,13 +42,13 @@ if (!existsSync(webEnv)) {
   console.log("web/.env already exists, skipping");
 }
 
-// Copy api/.env.example -> api/.env (if not exists)
-const apiEnv = join(root, "backend", "api", ".env");
+// Copy backend/.env.example -> backend/.env (if not exists)
+const apiEnv = join(root, "backend", ".env");
 if (!existsSync(apiEnv)) {
-  copyFileSync(join(root, "backend", "api", ".env.example"), apiEnv);
-  console.log("Created backend/api/.env");
+  copyFileSync(join(root, "backend", ".env.example"), apiEnv);
+  console.log("Created backend/.env");
 } else {
-  console.log("backend/api/.env already exists, skipping");
+  console.log("backend/.env already exists, skipping");
 }
 
 // Install dependencies
@@ -57,7 +57,7 @@ await $`bun install`.cwd(join(root, "web"));
 
 console.log("Installing Python dependencies...");
 await $`uv sync`
-  .cwd(join(root, "backend", "api"))
+  .cwd(join(root, "backend"))
   .env({ ...process.env, VIRTUAL_ENV: "" });
 
 console.log(`

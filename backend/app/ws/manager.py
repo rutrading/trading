@@ -41,9 +41,19 @@ class ConnectionManager:
         # ticker -> monotonic timestamp of last subscribe or received broadcast
         self._ticker_last_active: dict[str, float] = {}
 
-        # pending ticker changes the scheduler drains each loop
-        self._pending_adds: list[str] = []
-        self._pending_removes: list[str] = []
+        # pending ticker changes the feed drains each loop
+        self._pending_adds: set[str] = set()
+        self._pending_removes: set[str] = set()
+
+    def _mark_tracked(self, tickers: list[str]) -> None:
+        for ticker in tickers:
+            self._pending_removes.discard(ticker)
+            self._pending_adds.add(ticker)
+
+    def _mark_untracked(self, tickers: list[str]) -> None:
+        for ticker in tickers:
+            self._pending_adds.discard(ticker)
+            self._pending_removes.add(ticker)
 
     async def connect(self, ws: WebSocket, user_id: str) -> None:
         await ws.accept()
@@ -126,7 +136,7 @@ class ConnectionManager:
                         del self._ticker_clients[ticker]
                         removed.append(ticker)
                 if removed:
-                    self._pending_removes.extend(removed)
+                    self._mark_untracked(removed)
 
             # clean up empty user entries
             if user_id and not self._user_connections.get(user_id):
@@ -161,7 +171,7 @@ class ConnectionManager:
                     self._ticker_clients.pop(ticker, None)
                     removed.append(ticker)
             if removed:
-                self._pending_removes.extend(removed)
+                self._mark_untracked(removed)
 
         logger.info(
             "Grace expired for user=%s, untracked: %s",
@@ -184,7 +194,7 @@ class ConnectionManager:
                     self._ticker_last_active[ticker] = time.monotonic()
                     added.append(ticker)
             if added:
-                self._pending_adds.extend(added)
+                self._mark_tracked(added)
         if added:
             logger.info("New tickers tracked: %s", added)
         return added
@@ -203,7 +213,7 @@ class ConnectionManager:
                     del self._ticker_clients[ticker]
                     removed.append(ticker)
             if removed:
-                self._pending_removes.extend(removed)
+                self._mark_untracked(removed)
         if removed:
             logger.info("Tickers untracked: %s", removed)
         return removed
@@ -254,16 +264,15 @@ class ConnectionManager:
         return len(self._user_connections)
 
     def least_active_ws_ticker(self, ws_subscribed: set[str]) -> str | None:
-        # Detect the least active one, and unsubscribe it
         candidates = {t: self._ticker_last_active.get(t, 0.0) for t in ws_subscribed}
         if not candidates:
             return None
         return min(candidates, key=lambda t: candidates[t])
 
     def drain_pending(self) -> tuple[list[str], list[str]]:
-        """Return and clear pending ticker adds/removes for the scheduler."""
-        adds = self._pending_adds[:]
-        removes = self._pending_removes[:]
+        """Return and clear pending ticker adds/removes for the feed."""
+        adds = sorted(self._pending_adds)
+        removes = sorted(self._pending_removes)
         self._pending_adds.clear()
         self._pending_removes.clear()
         return adds, removes

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import Holding, get_db
 from app.dependencies import get_trading_account
+from app.schemas import HoldingResponse, HoldingsResponse
 
 router = APIRouter()
 
@@ -29,19 +30,8 @@ def list_holdings(
         .all()
     )
 
-    return {
-        "holdings": [
-            {
-                "id": h.id,
-                "ticker": h.ticker,
-                "asset_class": h.asset_class,
-                "quantity": str(h.quantity),
-                "average_cost": str(h.average_cost),
-                "created_at": h.created_at.isoformat(),
-                "updated_at": h.updated_at.isoformat(),
-            }
-            for h in holdings
-        ],
-        "trading_account_id": account.id,
-        "cash_balance": str(account.balance),
-    }
+    return HoldingsResponse(
+        holdings=[HoldingResponse.from_holding(holding) for holding in holdings],
+        trading_account_id=account.id,
+        cash_balance=str(account.balance),
+    )
