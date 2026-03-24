@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/app/actions/auth";
+import { StockChart } from "./client";
 
 export async function generateMetadata({
   params,
@@ -28,6 +29,7 @@ export default async function StockDetailPage({
         </h1>
         <p className="text-sm text-muted-foreground">Stock detail page.</p>
       </div>
+      <StockChart ticker={ticker} />
     </div>
   );
 }
