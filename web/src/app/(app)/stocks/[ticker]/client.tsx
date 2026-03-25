@@ -10,6 +10,7 @@ import {
   createChart,
 } from "lightweight-charts";
 import { getHistoricalBars } from "@/app/actions/bars";
+import { useConnectionStatus, useQuote } from "@/components/ws-provider";
 
 type HistoricalBar = {
   time: number;
@@ -62,6 +63,8 @@ export function StockChart({ ticker }: { ticker: string }) {
   const seriesRef = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
   const [bars, setBars] = useState<HistoricalBar[]>([]);
 
+  const quote = useQuote(ticker);
+
   const chartData = useMemo<CandlestickData[]>(() => {
     return bars.map((bar) => ({
       time: bar.time as UTCTimestamp,
@@ -76,7 +79,7 @@ export function StockChart({ ticker }: { ticker: string }) {
     async function fetchBars() {
       const result = await getHistoricalBars({
         ticker: ticker.trim().toUpperCase(),
-        timeframe: "1Min",
+        timeframe: "15Min",
         start: toIsoStart(startDate),
         end: toIsoEnd(endDate),
       });
@@ -88,7 +91,7 @@ export function StockChart({ ticker }: { ticker: string }) {
       setBars(result.data.bars);
     }
     fetchBars();
-  }, [ticker]);
+  }, [ticker, startDate, endDate]);
 
   // useEffect(() => {
   //   if (chartRef.current && bars.length > 0) {
@@ -157,6 +160,14 @@ export function StockChart({ ticker }: { ticker: string }) {
     series.setData(chartData);
     chart.timeScale().fitContent();
   }, [chartData]);
+
+  useEffect(() => {
+    if (!quote || !seriesRef.current) return;
+    seriesRef.current.update({
+      time: formatDate(new Date(quote.timestamp)),
+      value: quote.price,
+    });
+  }, [quote]);
 
   return (
     <div

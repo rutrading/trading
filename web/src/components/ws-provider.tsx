@@ -1,7 +1,5 @@
 "use client";
 
-import { quote } from "@/db/schema";
-import { Connection } from "pg";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
