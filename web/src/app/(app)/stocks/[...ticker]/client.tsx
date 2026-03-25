@@ -10,7 +10,7 @@ import {
   createChart,
 } from "lightweight-charts";
 import { getHistoricalBars } from "@/app/actions/bars";
-import { useConnectionStatus, useQuote } from "@/components/ws-provider";
+import { useQuote } from "@/components/ws-provider";
 
 type HistoricalBar = {
   time: number;
@@ -19,11 +19,6 @@ type HistoricalBar = {
   low: number;
   close: number;
 };
-
-function formatDate(date?: Date): string {
-  if (!date) return "Select date";
-  return date.toLocaleDateString();
-}
 
 function toIsoStart(date: Date): string {
   return new Date(
@@ -52,11 +47,7 @@ function toIsoEnd(date: Date): string {
 }
 
 export function StockChart({ ticker }: { ticker: string }) {
-  // const [startDate, setStartDate] = useState<Date>(new Date());
-  // const [endDate, setEndDate] = useState<Date>(new Date());
-  // const startDate = new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000); // a week ago
-  const startDate = new Date(new Date().getTime() - 2 * 24 * 60 * 60 * 1000); // two days ago
-  const endDate = new Date(); // current date
+  // TODO: Set up functionality to change intervals
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi>(null);
@@ -65,6 +56,7 @@ export function StockChart({ ticker }: { ticker: string }) {
 
   const quote = useQuote(ticker);
 
+  // TODO: Replace useMemo if possible
   const chartData = useMemo<CandlestickData[]>(() => {
     return bars.map((bar) => ({
       time: bar.time as UTCTimestamp,
@@ -77,6 +69,12 @@ export function StockChart({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     async function fetchBars() {
+      // const startDate = new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000); // a week ago
+      const startDate = new Date(
+        new Date().getTime() - 2 * 24 * 60 * 60 * 1000,
+      ); // two days ago
+      const endDate = new Date(); // current date
+
       const result = await getHistoricalBars({
         ticker: ticker.trim().toUpperCase(),
         timeframe: "15Min",
@@ -91,14 +89,7 @@ export function StockChart({ ticker }: { ticker: string }) {
       setBars(result.data.bars);
     }
     fetchBars();
-  }, [ticker, startDate, endDate]);
-
-  // useEffect(() => {
-  //   if (chartRef.current && bars.length > 0) {
-  //     const candlestickSeries = chartRef.current.addCandlestickSeries();
-  //     candlestickSeries.setData(bars);
-  //   }
-  // }, [bars]);
+  }, [ticker]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
@@ -161,12 +152,54 @@ export function StockChart({ ticker }: { ticker: string }) {
     chart.timeScale().fitContent();
   }, [chartData]);
 
+  const currentCandleRef = useRef<CandlestickData | null>(null);
+
   useEffect(() => {
     if (!quote || !seriesRef.current) return;
-    seriesRef.current.update({
-      time: formatDate(new Date(quote.timestamp)),
-      value: quote.price,
-    });
+
+    const intervalSec = 60 * 15; // 15 minute interval in seconds
+    const intervalTime = (Math.floor(quote.timestamp / intervalSec) *
+      intervalSec) as UTCTimestamp;
+
+    if (currentCandleRef.current === null) {
+      // Initialize first candle
+      // TODO: use previous candle from historical to prevent completely replacing old candle
+      currentCandleRef.current = {
+        time: intervalTime,
+        open: quote.price,
+        high: quote.price,
+        low: quote.price,
+        close: quote.price,
+      };
+      seriesRef.current.update(currentCandleRef.current);
+      return;
+    }
+
+    const currentTime = currentCandleRef.current.time as number;
+
+    if (currentTime === intervalTime) {
+      // Same candle
+      currentCandleRef.current.close = quote.price;
+      currentCandleRef.current.high = Math.max(
+        currentCandleRef.current.high,
+        quote.price,
+      );
+      currentCandleRef.current.low = Math.min(
+        currentCandleRef.current.low,
+        quote.price,
+      );
+      seriesRef.current.update(currentCandleRef.current);
+    } else if (currentTime < intervalTime) {
+      // New candle interval
+      currentCandleRef.current = {
+        time: intervalTime,
+        open: quote.price,
+        high: quote.price,
+        low: quote.price,
+        close: quote.price,
+      };
+      seriesRef.current.update(currentCandleRef.current);
+    }
   }, [quote]);
 
   return (
