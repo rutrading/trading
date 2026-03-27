@@ -8,7 +8,13 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from app.db.models import Order
-from app.tasks.order_executor import _in_window, _should_expire, _should_fill
+from app.tasks.order_executor import (
+    VOLUME_FILL_RATE,
+    _compute_fill_quantity,
+    _in_window,
+    _should_expire,
+    _should_fill,
+)
 
 ET = ZoneInfo("America/New_York")
 
@@ -40,8 +46,59 @@ def et_time(hour: int, minute: int, second: int = 0) -> datetime:
 
 
 # ---------------------------------------------------------------------------
+# _compute_fill_quantity
+# ---------------------------------------------------------------------------
+
+
+class TestComputeFillQuantity:
+    def test_fills_all_remaining_when_no_volume_data(self):
+        # no daily bar for this ticker — fall back to full fill
+        assert _compute_fill_quantity(Decimal("100"), None) == Decimal("100")
+
+    def test_fills_all_remaining_when_volume_is_zero(self):
+        assert _compute_fill_quantity(Decimal("100"), Decimal("0")) == Decimal("100")
+
+    def test_caps_fill_at_volume_rate_when_remaining_exceeds_fillable(self):
+        # 2,000,000 shares/day × 0.05% = 1,000 fillable; remaining=5,000 → fill 1,000
+        daily_volume = Decimal("2000000")
+        fillable = (daily_volume * VOLUME_FILL_RATE).quantize(Decimal("0.000001"))
+        result = _compute_fill_quantity(Decimal("5000"), daily_volume)
+        assert result == fillable
+
+    def test_fills_all_remaining_when_remaining_is_less_than_fillable(self):
+        # 2,000,000 shares/day → 1,000 fillable; remaining=10 → fill 10
+        result = _compute_fill_quantity(Decimal("10"), Decimal("2000000"))
+        assert result == Decimal("10")
+
+    def test_floors_at_one_unit_for_very_low_volume_tickers(self):
+        # 1,000 shares/day × 0.05% = 0.5 → floored to 1
+        result = _compute_fill_quantity(Decimal("50"), Decimal("1000"))
+        assert result == Decimal("1")
+
+    def test_fills_remaining_when_remaining_less_than_floor(self):
+        # remaining=0.3 (fractional crypto position), fillable=0.5 → min(0.3, max(1, 0.5))
+        # max(1, 0.5)=1, min(0.3, 1)=0.3 → fills remaining
+        result = _compute_fill_quantity(Decimal("0.3"), Decimal("1000"))
+        assert result == Decimal("0.3")
+
+    def test_remaining_exactly_equals_fillable(self):
+        # remaining == fillable → should fill everything in one cycle
+        daily_volume = Decimal("2000000")
+        fillable = (daily_volume * VOLUME_FILL_RATE).quantize(Decimal("0.000001"))
+        result = _compute_fill_quantity(fillable, daily_volume)
+        assert result == fillable
+
+
+# ---------------------------------------------------------------------------
 # _should_fill — limit orders
 # ---------------------------------------------------------------------------
+
+
+class TestShouldFillMarket:
+    def test_market_order_returns_false(self):
+        # market orders are filled at placement time — executor must never attempt to fill them
+        order = make_exec_order("market", "buy")
+        assert _should_fill(order, Decimal("100.00"), et_time(10, 0)) is False
 
 
 class TestShouldFillLimit:

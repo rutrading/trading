@@ -5,7 +5,10 @@ import pytest
 
 from app.db.models import Holding, Order, TradingAccount, Transaction
 from app.services.trading import (
+    MARKET_BASE_SLIPPAGE,
+    MARKET_IMPACT_FACTOR,
     OrderValidationError,
+    compute_market_fill_price,
     compute_stop_reservation_per_share,
     execute_fill,
     validate_buying_power,
@@ -784,6 +787,24 @@ class TestExecuteFillSell:
         db.delete.assert_not_called()
         assert holding.quantity == Decimal("5")
 
+    def test_partial_sell_sets_partially_filled_status(self):
+        # fill 3 of 10 shares on a sell → status should be partially_filled
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", quantity="10")
+        holding = make_holding(quantity="10", average_cost="150.00")
+        db = make_db(holding=holding)
+
+        execute_fill(
+            db=db,
+            order=order,
+            account=account,
+            fill_price=Decimal("170.00"),
+            fill_quantity=Decimal("3"),
+        )
+
+        assert order.status == "partially_filled"
+        assert order.filled_quantity == Decimal("3")
+
     def test_sell_transaction_recorded(self):
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="3")
@@ -1032,6 +1053,54 @@ class TestValidateStopLimitPriceRelationship:
 # ---------------------------------------------------------------------------
 
 
+class TestComputeMarketFillPrice:
+    def test_buy_fills_above_quoted_price(self):
+        # any buy should fill above the quote — slippage works against the buyer
+        fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), Decimal("2000000"))
+        assert fill > Decimal("100")
+
+    def test_sell_fills_below_quoted_price(self):
+        # any sell should fill below the quote — slippage works against the seller
+        fill = compute_market_fill_price(Decimal("100"), "sell", Decimal("10"), Decimal("2000000"))
+        assert fill < Decimal("100")
+
+    def test_base_slippage_applied_when_no_volume_data(self):
+        # without volume data only base slippage applies
+        fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), None)
+        expected = Decimal("100") * (1 + MARKET_BASE_SLIPPAGE)
+        assert fill == expected
+
+    def test_large_order_relative_to_volume_increases_slippage(self):
+        # bigger order as share of daily volume → more market impact → higher slippage
+        small_fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("100"), Decimal("2000000"))
+        large_fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("50000"), Decimal("2000000"))
+        assert large_fill > small_fill
+
+    def test_market_impact_formula_is_correct(self):
+        quote = Decimal("200")
+        qty = Decimal("1000")
+        volume = Decimal("1000000")
+        expected_slippage = MARKET_BASE_SLIPPAGE + (qty / volume) * MARKET_IMPACT_FACTOR
+        expected_fill = quote * (1 + expected_slippage)
+        fill = compute_market_fill_price(quote, "buy", qty, volume)
+        assert fill == expected_fill
+
+    def test_zero_volume_falls_back_to_base_slippage(self):
+        fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), Decimal("0"))
+        expected = Decimal("100") * (1 + MARKET_BASE_SLIPPAGE)
+        assert fill == expected
+
+    def test_sell_formula_exact_value(self):
+        # sell fill = quote × (1 - slippage), verify exact value not just direction
+        quote = Decimal("200")
+        qty = Decimal("1000")
+        volume = Decimal("1000000")
+        expected_slippage = MARKET_BASE_SLIPPAGE + (qty / volume) * MARKET_IMPACT_FACTOR
+        expected_fill = quote * (1 - expected_slippage)
+        fill = compute_market_fill_price(quote, "sell", qty, volume)
+        assert fill == expected_fill
+
+
 class TestComputeStopReservationPerShare:
     def test_atr_term_dominates_when_atr_is_high(self):
         # stop=$200, ATR=$10 → option_b = 200 + 1.5×10 = $215 > option_a = 200×1.02 = $204
@@ -1158,6 +1227,24 @@ class TestExecuteFillReleasesReservedBalance:
 
         assert account.reserved_balance == Decimal("500.00")
 
+    def test_reserved_balance_cannot_go_below_zero(self):
+        # reserved_balance=$10 but release would be 10×$5=$50 — floors at $0
+        # this guards against rounding or race conditions in production
+        account = make_account(balance="10000.00", reserved_balance="10.00")
+        order = make_order(side="buy", quantity="10")
+        order.reserved_per_share = Decimal("5.00")
+        db = make_db(holding=None)
+
+        execute_fill(
+            db=db,
+            order=order,
+            account=account,
+            fill_price=Decimal("3.00"),
+            fill_quantity=Decimal("10"),
+        )
+
+        assert account.reserved_balance == Decimal("0")
+
     def test_sell_fill_does_not_touch_reserved_balance(self):
         account = make_account(balance="0.00", reserved_balance="200.00")
         order = make_order(side="sell", quantity="5")
@@ -1198,6 +1285,51 @@ class TestExecuteFillInsufficientFundsAtFillTime:
 
         # reserved_balance should decrease by remaining × reserved_per_share = 2×50 = $100
         assert account.reserved_balance == Decimal("0.00")
+
+    def test_pre_fill_check_with_partially_filled_order_rejected(self):
+        # order: 10 shares total, 4 already filled, remaining=6
+        # reserved_per_share=$50, reserved_balance=6×$50=$300
+        # other_reserved = 300 - 6×50 = $0, available = $200
+        # fill cost = 6 × $60 = $360 > $200 → rejected
+        account = make_account(balance="200.00", reserved_balance="300.00")
+        order = make_order(side="buy", quantity="10")
+        order.filled_quantity = Decimal("4")
+        order.average_fill_price = Decimal("55.00")
+        order.status = "partially_filled"
+        order.reserved_per_share = Decimal("50.00")
+        db = make_db(holding=None)
+
+        result = execute_fill(
+            db=db,
+            order=order,
+            account=account,
+            fill_price=Decimal("60.00"),
+            fill_quantity=Decimal("6"),
+        )
+
+        assert result is None
+        assert order.status == "cancelled"
+
+    def test_pre_fill_check_with_partially_filled_order_passes(self):
+        # same order shape, but balance is sufficient
+        account = make_account(balance="500.00", reserved_balance="300.00")
+        order = make_order(side="buy", quantity="10")
+        order.filled_quantity = Decimal("4")
+        order.average_fill_price = Decimal("55.00")
+        order.status = "partially_filled"
+        order.reserved_per_share = Decimal("50.00")
+        db = make_db(holding=None)
+
+        result = execute_fill(
+            db=db,
+            order=order,
+            account=account,
+            fill_price=Decimal("60.00"),
+            fill_quantity=Decimal("6"),
+        )
+
+        assert result is not None
+        assert order.status == "filled"
 
     def test_sufficient_funds_returns_transaction(self):
         # balance=$10000, reserved=$100 (this order's reservation), fill $50 per share × 2 = $100
