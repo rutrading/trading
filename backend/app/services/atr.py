@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
@@ -53,7 +54,7 @@ def compute_atr(ticker: str, db: Session, n: int = ATR_PERIODS) -> Decimal:
 def _compute_atr(
     bars: list,
     n: int,
-    get_hlc: Callable[[object], tuple[Decimal, Decimal, Decimal]],
+    get_hlc: Callable[[Any], tuple[Decimal, Decimal, Decimal]],
 ) -> Decimal:
     """Core TR loop. get_hlc(bar) must return (high, low, close) as Decimals."""
     trs: list[Decimal] = []
@@ -62,7 +63,7 @@ def _compute_atr(
         high, low, _ = get_hlc(bars[i])
         tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
         trs.append(tr)
-    return sum(trs[-n:]) / n
+    return sum(trs[-n:], Decimal("0")) / n
 
 
 def _atr_from_db_bars(bars: list, n: int) -> Decimal:

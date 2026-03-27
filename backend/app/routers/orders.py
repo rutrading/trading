@@ -305,12 +305,13 @@ def cancel_order(
     if order.side == "buy" and order.reserved_per_share is not None:
         remaining = order.quantity - (order.filled_quantity or Decimal("0"))
         account = db.query(TradingAccount).filter(TradingAccount.id == order.trading_account_id).first()
-        if account is not None:
-            account.reserved_balance = max(
-                Decimal("0"),
-                account.reserved_balance - remaining * order.reserved_per_share,
-            )
-            account.updated_at = datetime.now(timezone.utc)
+        if account is None:
+            raise HTTPException(status_code=500, detail="Trading account not found for order")
+        account.reserved_balance = max(
+            Decimal("0"),
+            account.reserved_balance - remaining * order.reserved_per_share,
+        )
+        account.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
     db.commit()
