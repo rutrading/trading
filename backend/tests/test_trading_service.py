@@ -6,16 +6,18 @@ import pytest
 from app.db.models import Holding, Order, TradingAccount, Transaction
 from app.services.trading import (
     OrderValidationError,
+    compute_stop_reservation_per_share,
     execute_fill,
     validate_buying_power,
     validate_order_request,
 )
 
 
-def make_account(balance: str = "100000", account_id: int = 1) -> TradingAccount:
+def make_account(balance: str = "100000", account_id: int = 1, reserved_balance: str = "0") -> TradingAccount:
     account = TradingAccount()
     account.id = account_id
     account.balance = Decimal(balance)
+    account.reserved_balance = Decimal(reserved_balance)
     account.name = "Test Account"
     account.type = "investment"
     account.is_joint = False
@@ -43,6 +45,7 @@ def make_order(
     order.average_fill_price = None
     order.status = "pending"
     order.rejection_reason = None
+    order.reserved_per_share = None
     return order
 
 
@@ -323,6 +326,7 @@ class TestValidateOrderRequestPriceRules:
         )
 
     def test_valid_stop_limit_order_passes(self):
+        # Buy stop-limit: stop triggers at $150, limit caps buy at $155 (stop <= limit)
         db = make_db()
         account = make_account()
         _validate(
@@ -331,8 +335,8 @@ class TestValidateOrderRequestPriceRules:
             order_type="stop_limit",
             time_in_force="gtc",
             quantity=Decimal("10"),
-            limit_price=Decimal("148.00"),
             stop_price=Decimal("150.00"),
+            limit_price=Decimal("155.00"),
         )
 
     def test_valid_stop_order_passes(self):
@@ -870,3 +874,339 @@ class TestExecuteFillPartial:
         )
 
         assert account.balance == Decimal("99100.00")
+
+
+# ---------------------------------------------------------------------------
+# Time-in-force: opg / cls
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOrderRequestTifOpenClose:
+    def test_opg_accepted_for_us_equity(self):
+        db = make_db()
+        account = make_account()
+        _validate(account, db, asset_class="us_equity", time_in_force="opg", quantity=Decimal("5"))
+
+    def test_cls_accepted_for_us_equity(self):
+        db = make_db()
+        account = make_account()
+        _validate(account, db, asset_class="us_equity", time_in_force="cls", quantity=Decimal("5"))
+
+    def test_opg_rejected_for_crypto(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="opg"):
+            _validate(
+                account,
+                db,
+                ticker="BTC/USD",
+                asset_class="crypto",
+                time_in_force="opg",
+                quantity=Decimal("0.1"),
+            )
+
+    def test_cls_rejected_for_crypto(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="cls"):
+            _validate(
+                account,
+                db,
+                ticker="ETH/USD",
+                asset_class="crypto",
+                time_in_force="cls",
+                quantity=Decimal("1"),
+            )
+
+    def test_opg_accepted_for_us_equity_sell(self):
+        holding = make_holding(quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(account, db, side="sell", asset_class="us_equity", time_in_force="opg", quantity=Decimal("5"))
+
+    def test_cls_accepted_for_us_equity_sell(self):
+        holding = make_holding(quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(account, db, side="sell", asset_class="us_equity", time_in_force="cls", quantity=Decimal("5"))
+
+
+# ---------------------------------------------------------------------------
+# Stop-limit price relationship
+# ---------------------------------------------------------------------------
+
+
+class TestValidateStopLimitPriceRelationship:
+    def test_buy_stop_limit_stop_above_limit_rejected(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="stop_price must be <= limit_price"):
+            _validate(
+                account,
+                db,
+                order_type="stop_limit",
+                side="buy",
+                time_in_force="gtc",
+                quantity=Decimal("10"),
+                stop_price=Decimal("160.00"),
+                limit_price=Decimal("155.00"),
+            )
+
+    def test_buy_stop_limit_stop_equal_limit_accepted(self):
+        db = make_db()
+        account = make_account()
+        _validate(
+            account,
+            db,
+            order_type="stop_limit",
+            side="buy",
+            time_in_force="gtc",
+            quantity=Decimal("10"),
+            stop_price=Decimal("155.00"),
+            limit_price=Decimal("155.00"),
+        )
+
+    def test_buy_stop_limit_stop_below_limit_accepted(self):
+        db = make_db()
+        account = make_account()
+        _validate(
+            account,
+            db,
+            order_type="stop_limit",
+            side="buy",
+            time_in_force="gtc",
+            quantity=Decimal("10"),
+            stop_price=Decimal("150.00"),
+            limit_price=Decimal("155.00"),
+        )
+
+    def test_sell_stop_limit_stop_below_limit_rejected(self):
+        holding = make_holding(quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="stop_price must be >= limit_price"):
+            _validate(
+                account,
+                db,
+                order_type="stop_limit",
+                side="sell",
+                time_in_force="gtc",
+                quantity=Decimal("5"),
+                stop_price=Decimal("140.00"),
+                limit_price=Decimal("145.00"),
+            )
+
+    def test_sell_stop_limit_stop_equal_limit_accepted(self):
+        holding = make_holding(quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(
+            account,
+            db,
+            order_type="stop_limit",
+            side="sell",
+            time_in_force="gtc",
+            quantity=Decimal("5"),
+            stop_price=Decimal("145.00"),
+            limit_price=Decimal("145.00"),
+        )
+
+    def test_sell_stop_limit_stop_above_limit_accepted(self):
+        holding = make_holding(quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(
+            account,
+            db,
+            order_type="stop_limit",
+            side="sell",
+            time_in_force="gtc",
+            quantity=Decimal("5"),
+            stop_price=Decimal("148.00"),
+            limit_price=Decimal("145.00"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Stop reservation per-share equation
+# ---------------------------------------------------------------------------
+
+
+class TestComputeStopReservationPerShare:
+    def test_atr_term_dominates_when_atr_is_high(self):
+        # stop=$200, ATR=$10 → option_b = 200 + 1.5×10 = $215 > option_a = 200×1.02 = $204
+        result = compute_stop_reservation_per_share(Decimal("200"), Decimal("10"))
+        assert result == Decimal("215.0")
+
+    def test_percentage_term_dominates_when_atr_is_low(self):
+        # stop=$200, ATR=$0.50 → option_a = 200×1.02 = $204 > option_b = 200 + 1.5×0.5 = $200.75
+        result = compute_stop_reservation_per_share(Decimal("200"), Decimal("0.50"))
+        assert result == Decimal("204.00")
+
+    def test_zero_atr_falls_back_to_percentage_only(self):
+        # ATR=0 → option_b = stop + 0 = stop; option_a = stop×1.02 wins
+        result = compute_stop_reservation_per_share(Decimal("100"), Decimal("0"))
+        assert result == Decimal("102.00")
+
+    def test_exact_boundary_where_both_terms_equal(self):
+        # want option_a == option_b: stop×1.02 = stop + 1.5×ATR → ATR = stop×0.02/1.5
+        # stop=$150 → ATR = 150×0.02/1.5 = $2 → both = 150×1.02 = $153
+        result = compute_stop_reservation_per_share(Decimal("150"), Decimal("2"))
+        assert result == Decimal("153.00")
+
+
+# ---------------------------------------------------------------------------
+# Buying power — uses account.reserved_balance directly
+# ---------------------------------------------------------------------------
+
+
+def make_open_limit_order(
+    account_id: int = 1,
+    ticker: str = "AAPL",
+    quantity: str = "10",
+    filled_quantity: str = "0",
+    limit_price: str = "150.00",
+    order_type: str = "limit",
+) -> Order:
+    order = Order()
+    order.id = 99
+    order.trading_account_id = account_id
+    order.ticker = ticker
+    order.side = "buy"
+    order.order_type = order_type
+    order.asset_class = "us_equity"
+    order.time_in_force = "gtc"
+    order.quantity = Decimal(quantity)
+    order.filled_quantity = Decimal(filled_quantity)
+    order.limit_price = Decimal(limit_price)
+    order.stop_price = None
+    order.status = "open"
+    return order
+
+
+def make_reserved_db(open_orders: list) -> MagicMock:
+    """Mock DB whose query().filter().all() returns open_orders."""
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = open_orders
+    return db
+
+
+class TestValidateBuyingPowerWithReservation:
+    def test_second_order_rejected_when_reserved_blocks_balance(self):
+        # balance $1000, already reserved $900, new order needs $200 → blocked
+        account = make_account(balance="1000.00", reserved_balance="900.00")
+        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
+            validate_buying_power(account, "buy", Decimal("2"), Decimal("100.00"))
+
+    def test_second_order_passes_when_balance_sufficient(self):
+        # balance $1000, reserved $500, new order needs $400 → ok
+        account = make_account(balance="1000.00", reserved_balance="500.00")
+        validate_buying_power(account, "buy", Decimal("4"), Decimal("100.00"))
+
+    def test_zero_reserved_behaves_like_original(self):
+        account = make_account(balance="500.00", reserved_balance="0")
+        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
+            validate_buying_power(account, "buy", Decimal("10"), Decimal("100.00"))
+
+    def test_sell_side_ignores_reserved(self):
+        account = make_account(balance="0.00", reserved_balance="999999")
+        # Should not raise even with huge reserved value
+        validate_buying_power(account, "sell", Decimal("10"), Decimal("100.00"))
+
+    def test_exact_available_balance_passes(self):
+        # balance=$1000, reserved=$600, need=$400 exactly → should pass (not raise)
+        account = make_account(balance="1000.00", reserved_balance="600.00")
+        validate_buying_power(account, "buy", Decimal("4"), Decimal("100.00"))
+
+
+# ---------------------------------------------------------------------------
+# execute_fill — reserved balance release and pre-fill check
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteFillReleasesReservedBalance:
+    def test_full_fill_releases_full_reservation(self):
+        # 10 shares at $2/share reserved = $20 total; fill releases all $20
+        account = make_account(balance="10000.00", reserved_balance="20.00")
+        order = make_order(side="buy", quantity="10")
+        order.reserved_per_share = Decimal("2.00")
+        db = make_db(holding=None)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("1.50"), fill_quantity=Decimal("10"))
+
+        assert account.reserved_balance == Decimal("0.00")
+
+    def test_partial_fill_releases_proportional_reservation(self):
+        # 10 shares at $2/share reserved = $20; fill 4 shares → release $8
+        account = make_account(balance="10000.00", reserved_balance="20.00")
+        order = make_order(side="buy", quantity="10")
+        order.reserved_per_share = Decimal("2.00")
+        db = make_db(holding=None)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("1.50"), fill_quantity=Decimal("4"))
+
+        assert account.reserved_balance == Decimal("12.00")  # 20 - 4×2
+
+    def test_no_reserved_per_share_does_not_change_reserved_balance(self):
+        # market order: reserved_per_share is None → reserved_balance unchanged
+        account = make_account(balance="10000.00", reserved_balance="500.00")
+        order = make_order(side="buy", quantity="5")
+        order.reserved_per_share = None
+        db = make_db(holding=None)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("100.00"), fill_quantity=Decimal("5"))
+
+        assert account.reserved_balance == Decimal("500.00")
+
+    def test_sell_fill_does_not_touch_reserved_balance(self):
+        account = make_account(balance="0.00", reserved_balance="200.00")
+        order = make_order(side="sell", quantity="5")
+        order.reserved_per_share = None
+        holding = make_holding(ticker="AAPL", quantity="10")
+        db = make_db(holding=holding)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("100.00"), fill_quantity=Decimal("5"))
+
+        assert account.reserved_balance == Decimal("200.00")
+
+
+class TestExecuteFillInsufficientFundsAtFillTime:
+    def test_returns_none_when_balance_insufficient(self):
+        # account has $100 balance but other reservations are $90
+        # this order reserved $50/share for 2 shares (=$100 reserved)
+        # other_reserved = 100 - 2×50 = 0, available = 100 - 0 = $100
+        # fill cost = 2 × $80 = $160 > $100 → rejected
+        account = make_account(balance="100.00", reserved_balance="100.00")
+        order = make_order(side="buy", quantity="2")
+        order.reserved_per_share = Decimal("50.00")
+        db = make_db(holding=None)
+
+        result = execute_fill(db=db, order=order, account=account, fill_price=Decimal("80.00"), fill_quantity=Decimal("2"))
+
+        assert result is None
+        assert order.status == "cancelled"
+        assert order.rejection_reason is not None
+
+    def test_reserved_balance_released_on_rejection(self):
+        # same setup: fill rejected, reservation should be cleared
+        account = make_account(balance="100.00", reserved_balance="100.00")
+        order = make_order(side="buy", quantity="2")
+        order.reserved_per_share = Decimal("50.00")
+        db = make_db(holding=None)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("80.00"), fill_quantity=Decimal("2"))
+
+        # reserved_balance should decrease by remaining × reserved_per_share = 2×50 = $100
+        assert account.reserved_balance == Decimal("0.00")
+
+    def test_sufficient_funds_returns_transaction(self):
+        # balance=$10000, reserved=$100 (this order's reservation), fill $50 per share × 2 = $100
+        account = make_account(balance="10000.00", reserved_balance="100.00")
+        order = make_order(side="buy", quantity="2")
+        order.reserved_per_share = Decimal("50.00")
+        db = make_db(holding=None)
+
+        result = execute_fill(db=db, order=order, account=account, fill_price=Decimal("50.00"), fill_quantity=Decimal("2"))
+
+        assert result is not None
+        assert order.status == "filled"
