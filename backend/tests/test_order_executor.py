@@ -101,6 +101,25 @@ class TestShouldFillMarket:
         assert _should_fill(order, Decimal("100.00"), et_time(10, 0)) is False
 
 
+class TestShouldFillNoneGuards:
+    def test_limit_order_with_no_limit_price_returns_false(self):
+        # corrupt order — limit_price is None; must not raise TypeError
+        order = make_exec_order("limit", "buy", limit_price=None)
+        assert _should_fill(order, Decimal("100.00"), et_time(10, 0)) is False
+
+    def test_stop_order_with_no_stop_price_returns_false(self):
+        order = make_exec_order("stop", "buy", stop_price=None)
+        assert _should_fill(order, Decimal("100.00"), et_time(10, 0)) is False
+
+    def test_stop_limit_order_with_no_stop_price_returns_false(self):
+        order = make_exec_order("stop_limit", "buy", limit_price="110.00", stop_price=None)
+        assert _should_fill(order, Decimal("100.00"), et_time(10, 0)) is False
+
+    def test_stop_limit_order_with_no_limit_price_returns_false(self):
+        order = make_exec_order("stop_limit", "buy", limit_price=None, stop_price="100.00")
+        assert _should_fill(order, Decimal("105.00"), et_time(10, 0)) is False
+
+
 class TestShouldFillLimit:
     def test_limit_buy_fills_when_price_at_or_below_limit(self):
         order = make_exec_order("limit", "buy", limit_price="150.00")

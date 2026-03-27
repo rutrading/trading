@@ -179,12 +179,18 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
         return False
 
     if ot == "limit":
+        if lp is None:
+            return False
         return (side == "buy" and price <= lp) or (side == "sell" and price >= lp)
 
     if ot == "stop":
+        if sp is None:
+            return False
         return (side == "buy" and price >= sp) or (side == "sell" and price <= sp)
 
     if ot == "stop_limit":
+        if sp is None or lp is None:
+            return False
         # stop must trigger first, then price must be within limit
         triggered = (side == "buy" and price >= sp) or (side == "sell" and price <= sp)
         if not triggered:
