@@ -1,6 +1,7 @@
 """Order endpoints: place, list, get, and cancel orders."""
 
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import Order, get_db
+from app.db.models import TradingAccount
 from app.dependencies import get_trading_account
 from app.schemas import (
     OrderDetailResponse,
@@ -16,8 +18,10 @@ from app.schemas import (
     OrdersPageResponse,
     OrderTransactionResponse,
 )
+from app.services.atr import compute_atr
 from app.services.trading import (
     OrderValidationError,
+    compute_stop_reservation_per_share,
     execute_fill,
     validate_buying_power,
     validate_order_request,
@@ -113,20 +117,25 @@ def place_order(
 
     price = Decimal(payload.price) if payload.price else None
 
-    if payload.order_type == "market":
-        # market orders execute immediately at the provided price;
-        # the caller (frontend) supplies the current market price
-        if price is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Market orders require a price (the current market price).",
-            )
+    if payload.order_type == "market" and price is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Market orders require a price (the current market price).",
+        )
 
+    # determine the price to check buying power against based on order type:
+    # market → execution price, limit/stop_limit → limit_price (worst case),
+    # stop → stop_price (trigger price, best available estimate)
+    check_price = price or limit_price or stop_price
+
+    # for all buy orders, check available buying power (balance minus already reserved)
+    if payload.side == "buy" and check_price is not None:
         try:
-            validate_buying_power(account, payload.side, quantity, price)
+            validate_buying_power(account, payload.side, quantity, check_price)
         except OrderValidationError as exc:
             raise HTTPException(status_code=400, detail=exc.detail)
 
+    if payload.order_type == "market":
         order.status = "pending"
         db.add(order)
         db.flush()  # get order.id before creating transactions
@@ -151,17 +160,20 @@ def place_order(
         )
 
     else:
-        # limit, stop, stop-limit: park as open
-        # for limit buy orders, reserve funds at limit price
-        if (
-            payload.side == "buy"
-            and payload.order_type in ("limit", "stop_limit")
-            and limit_price
-        ):
-            try:
-                validate_buying_power(account, payload.side, quantity, limit_price)
-            except OrderValidationError as exc:
-                raise HTTPException(status_code=400, detail=exc.detail)
+        # compute and store per-share reservation for open buy orders
+        if payload.side == "buy":
+            if payload.order_type == "stop":
+                atr = compute_atr(payload.ticker, db)
+                rps = compute_stop_reservation_per_share(stop_price, atr)
+            elif payload.order_type in ("limit", "stop_limit"):
+                rps = limit_price  # limit_price is the hard ceiling
+            else:
+                rps = None
+
+            if rps is not None:
+                order.reserved_per_share = rps
+                account.reserved_balance += quantity * rps
+                account.updated_at = datetime.now(timezone.utc)
 
         order.status = "open"
         db.add(order)
@@ -261,6 +273,17 @@ def cancel_order(
             status_code=400,
             detail=f"Cannot cancel order with status '{order.status}'",
         )
+
+    # release reserved balance for open buy orders
+    if order.side == "buy" and order.reserved_per_share is not None:
+        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+        account = db.query(TradingAccount).filter(TradingAccount.id == order.trading_account_id).first()
+        if account is not None:
+            account.reserved_balance = max(
+                Decimal("0"),
+                account.reserved_balance - remaining * order.reserved_per_share,
+            )
+            account.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
     db.commit()
