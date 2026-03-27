@@ -86,6 +86,9 @@ def place_order(
     limit_price = Decimal(payload.limit_price) if payload.limit_price else None
     stop_price = Decimal(payload.stop_price) if payload.stop_price else None
 
+    # crypto trades 24/7 — always gtc regardless of what was sent
+    time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
+
     try:
         validate_order_request(
             account=account,
@@ -94,7 +97,7 @@ def place_order(
             asset_class=payload.asset_class,
             side=payload.side,
             order_type=payload.order_type,
-            time_in_force=payload.time_in_force,
+            time_in_force=time_in_force,
             quantity=quantity,
             limit_price=limit_price,
             stop_price=stop_price,
@@ -109,7 +112,7 @@ def place_order(
         asset_class=payload.asset_class,
         side=payload.side,
         order_type=payload.order_type,
-        time_in_force=payload.time_in_force,
+        time_in_force=time_in_force,
         quantity=quantity,
         limit_price=limit_price,
         stop_price=stop_price,
