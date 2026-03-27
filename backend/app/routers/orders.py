@@ -304,7 +304,7 @@ def cancel_order(
     # release reserved balance for open buy orders
     if order.side == "buy" and order.reserved_per_share is not None:
         remaining = order.quantity - (order.filled_quantity or Decimal("0"))
-        account = db.query(TradingAccount).filter(TradingAccount.id == order.trading_account_id).first()
+        account = db.query(TradingAccount).filter(TradingAccount.id == order.trading_account_id).with_for_update().first()
         if account is None:
             raise HTTPException(status_code=500, detail="Trading account not found for order")
         account.reserved_balance = max(

@@ -94,6 +94,7 @@ def _process_open_orders() -> None:
                 account = (
                     db.query(TradingAccount)
                     .filter(TradingAccount.id == order.trading_account_id)
+                    .with_for_update()
                     .first()
                 )
                 if account is None:
@@ -128,6 +129,7 @@ def _process_open_orders() -> None:
                     account = (
                         db.query(TradingAccount)
                         .filter(TradingAccount.id == order.trading_account_id)
+                        .with_for_update()
                         .first()
                     )
                     if account is not None:
