@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import Order, get_db
-from app.db.models import TradingAccount
+from app.db.models import DailyBar, Quote, TradingAccount
 from app.dependencies import get_trading_account
 from app.schemas import (
     OrderDetailResponse,
@@ -21,6 +21,7 @@ from app.schemas import (
 from app.services.atr import compute_atr
 from app.services.trading import (
     OrderValidationError,
+    compute_market_fill_price,
     compute_stop_reservation_per_share,
     execute_fill,
     validate_buying_power,
@@ -39,7 +40,6 @@ class PlaceOrderRequest(BaseModel):
     order_type: str  # "market" | "limit" | "stop" | "stop_limit"
     time_in_force: str = "day"  # "day" | "gtc"
     quantity: str  # string to avoid float precision issues
-    price: str | None = None  # execution price for market orders
     limit_price: str | None = None  # required for limit / stop_limit
     stop_price: str | None = None  # required for stop / stop_limit
 
@@ -48,7 +48,7 @@ class PlaceOrderRequest(BaseModel):
     def clean_ticker(cls, v: str) -> str:
         return v.strip().upper()
 
-    @field_validator("quantity", "price", "limit_price", "stop_price")
+    @field_validator("quantity", "limit_price", "stop_price")
     @classmethod
     def validate_decimal(cls, v: str | None) -> str | None:
         if v is None:
@@ -115,27 +115,47 @@ def place_order(
         stop_price=stop_price,
     )
 
-    price = Decimal(payload.price) if payload.price else None
-
-    if payload.order_type == "market" and price is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Market orders require a price (the current market price).",
-        )
-
-    # determine the price to check buying power against based on order type:
-    # market → execution price, limit/stop_limit → limit_price (worst case),
-    # stop → stop_price (trigger price, best available estimate)
-    check_price = price or limit_price or stop_price
-
-    # for all buy orders, check available buying power (balance minus already reserved)
-    if payload.side == "buy" and check_price is not None:
-        try:
-            validate_buying_power(account, payload.side, quantity, check_price)
-        except OrderValidationError as exc:
-            raise HTTPException(status_code=400, detail=exc.detail)
+    # buying power check for non-market buy orders — market orders check below
+    # after fetching the live quote from the DB
+    if payload.order_type != "market" and payload.side == "buy":
+        check_price = limit_price or stop_price
+        if check_price is not None:
+            try:
+                validate_buying_power(account, payload.side, quantity, check_price)
+            except OrderValidationError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail)
 
     if payload.order_type == "market":
+        # backend owns the price — never trust the client for market fills
+        quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
+        if quote is None or quote.price is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No current price available for {payload.ticker}. Try again in a moment.",
+            )
+        market_price = Decimal(str(quote.price))
+
+        # buying power check against the live quoted price
+        if payload.side == "buy":
+            try:
+                validate_buying_power(account, payload.side, quantity, market_price)
+            except OrderValidationError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail)
+
+        # slippage-adjusted fill price using latest daily bar volume
+        latest_bar = (
+            db.query(DailyBar)
+            .filter(DailyBar.ticker == payload.ticker)
+            .order_by(DailyBar.date.desc())
+            .first()
+        )
+        daily_volume = (
+            Decimal(str(latest_bar.volume))
+            if latest_bar and latest_bar.volume
+            else None
+        )
+        fill_price = compute_market_fill_price(market_price, payload.side, quantity, daily_volume)
+
         order.status = "pending"
         db.add(order)
         db.flush()  # get order.id before creating transactions
@@ -144,18 +164,20 @@ def place_order(
             db=db,
             order=order,
             account=account,
-            fill_price=price,
+            fill_price=fill_price,
             fill_quantity=quantity,
         )
         db.commit()
         db.refresh(order)
 
         logger.info(
-            "Market order filled: %s %s %s @ %s for account %d",
+            "Market order filled: %s %s %s @ %s (quoted %s, slippage %.4f%%) for account %d",
             payload.side,
             quantity,
             payload.ticker,
-            price,
+            fill_price,
+            market_price,
+            float((fill_price - market_price) / market_price * 100),
             account.id,
         )
 

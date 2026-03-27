@@ -19,6 +19,9 @@ VALID_TIME_IN_FORCE = {"day", "gtc", "opg", "cls"}
 STOP_RESERVATION_P = Decimal("0.02")  # 2% price buffer
 STOP_RESERVATION_K = Decimal("1.5")   # 1.5× ATR multiplier
 
+MARKET_BASE_SLIPPAGE = Decimal("0.0005")  # 0.05% — simulates the bid-ask spread
+MARKET_IMPACT_FACTOR = Decimal("0.05")    # 5% — scales order size vs. daily volume
+
 
 class OrderValidationError(Exception):
     """Raised when an order fails pre-trade validation."""
@@ -114,6 +117,28 @@ def compute_stop_reservation_per_share(stop_price: Decimal, atr: Decimal) -> Dec
     option_a = stop_price * (1 + STOP_RESERVATION_P)
     option_b = stop_price + STOP_RESERVATION_K * atr
     return max(option_a, option_b)
+
+
+def compute_market_fill_price(
+    quote_price: Decimal,
+    side: str,
+    quantity: Decimal,
+    daily_volume: Decimal | None,
+) -> Decimal:
+    """Return the slippage-adjusted fill price for a market order.
+
+    Slippage = base spread + market impact proportional to order size vs. daily volume.
+    Buys fill slightly above the quoted price; sells fill slightly below — both work
+    against the trader, which is correct.
+
+    Falls back to base slippage alone when no daily volume data is available.
+    """
+    slippage = MARKET_BASE_SLIPPAGE
+    if daily_volume and daily_volume > 0:
+        slippage += (quantity / daily_volume) * MARKET_IMPACT_FACTOR
+    if side == "buy":
+        return quote_price * (1 + slippage)
+    return quote_price * (1 - slippage)
 
 
 def validate_buying_power(
