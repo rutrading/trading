@@ -1053,6 +1053,49 @@ class TestValidateStopLimitPriceRelationship:
 # ---------------------------------------------------------------------------
 
 
+class TestStopOrderBuyingPowerMustUseRps:
+    def test_rps_always_exceeds_stop_price(self):
+        # even with zero ATR the flat 2% buffer makes rps > stop_price
+        rps = compute_stop_reservation_per_share(Decimal("100"), Decimal("0"))
+        assert rps > Decimal("100")
+
+    def test_barely_enough_at_stop_price_passes_but_fails_at_rps(self):
+        # balance=$1010, qty=10, stop=$100 → needs $1000 at stop_price (passes)
+        # rps = max(100×1.02, 100+1.5×5) = max($102, $107.50) = $107.50 → needs $1075 (fails)
+        # this is the exact scenario the bug allowed through: check was against stop_price
+        stop_price = Decimal("100")
+        atr = Decimal("5")
+        rps = compute_stop_reservation_per_share(stop_price, atr)
+        qty = Decimal("10")
+        account = make_account(balance="1010.00")
+
+        validate_buying_power(account, "buy", qty, stop_price)  # incorrectly passed before fix
+
+        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
+            validate_buying_power(account, "buy", qty, rps)  # correct check after fix
+
+
+class TestMarketOrderBuyingPowerMustUseSlippagePrice:
+    def test_fill_price_always_exceeds_quote_for_buys(self):
+        fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), Decimal("1000000"))
+        assert fill > Decimal("100")
+
+    def test_barely_enough_at_quote_passes_but_fails_at_fill_price(self):
+        # balance=$1000.01, qty=10, quote=$100 → needs $1000 at quote (passes)
+        # fill_price = $100 × (1 + ~0.05%) = ~$100.05 → needs ~$1000.50 (fails)
+        # this is the exact scenario the bug allowed through: check was against market_price
+        quote = Decimal("100")
+        qty = Decimal("10")
+        volume = Decimal("1000000")
+        fill_price = compute_market_fill_price(quote, "buy", qty, volume)
+        account = make_account(balance=str(qty * quote + Decimal("0.01")))  # $1000.01
+
+        validate_buying_power(account, "buy", qty, quote)  # incorrectly passed before fix
+
+        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
+            validate_buying_power(account, "buy", qty, fill_price)  # correct check after fix
+
+
 class TestComputeMarketFillPrice:
     def test_buy_fills_above_quoted_price(self):
         # any buy should fill above the quote — slippage works against the buyer
