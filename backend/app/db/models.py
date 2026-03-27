@@ -56,6 +56,8 @@ order_type_enum = Enum(
 time_in_force_enum = Enum(
     "day",
     "gtc",
+    "opg",
+    "cls",
     name="time_in_force",
     create_type=False,
 )
@@ -175,6 +177,7 @@ class TradingAccount(Base):
     name: Mapped[str] = mapped_column(String)
     type: Mapped[str] = mapped_column(account_type_enum)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("100000"))
+    reserved_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     is_joint: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
@@ -220,6 +223,7 @@ class Order(Base):
     )
     status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
+    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(14, 6), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
