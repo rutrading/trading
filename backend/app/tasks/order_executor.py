@@ -10,9 +10,10 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.db.models import Order, Quote, TradingAccount
+from app.db.models import DailyBar, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
 from app.services.trading import execute_fill
 
@@ -21,6 +22,12 @@ POLL_INTERVAL = 5  # seconds between executor cycles
 MARKET_OPEN = (9, 30)
 MARKET_CLOSE = (16, 0)
 FILL_WINDOW_MINUTES = 5  # window around open/close for opg/cls fills
+
+# 0.05% of daily volume is fillable per poll cycle.
+# Liquid large-caps (60M shares/day) → 30,000 fillable: retail orders fill in one cycle.
+# Small-caps (200K shares/day) → 100 fillable: larger orders take multiple cycles.
+# This produces realistic differentiation between liquid and illiquid stocks.
+VOLUME_FILL_RATE = Decimal("0.0005")
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +63,28 @@ def _process_open_orders() -> None:
             if q.price is not None
         }
 
+        # fetch the most recent daily bar volume per ticker in a single query
+        latest_date_subq = (
+            db.query(DailyBar.ticker, func.max(DailyBar.date).label("max_date"))
+            .filter(DailyBar.ticker.in_(tickers))
+            .group_by(DailyBar.ticker)
+            .subquery()
+        )
+        recent_bars = (
+            db.query(DailyBar)
+            .join(
+                latest_date_subq,
+                (DailyBar.ticker == latest_date_subq.c.ticker)
+                & (DailyBar.date == latest_date_subq.c.max_date),
+            )
+            .all()
+        )
+        volumes: dict[str, Decimal] = {
+            bar.ticker: Decimal(str(bar.volume))
+            for bar in recent_bars
+            if bar.volume is not None and bar.volume > 0
+        }
+
         for order in open_orders:
             price = quotes.get(order.ticker)
             if price is None:
@@ -70,12 +99,13 @@ def _process_open_orders() -> None:
                 if account is None:
                     continue
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+                fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
                 result = execute_fill(
                     db=db,
                     order=order,
                     account=account,
                     fill_price=price,
-                    fill_quantity=remaining,
+                    fill_quantity=fill_quantity,
                 )
                 db.commit()
                 if result is None:
@@ -117,6 +147,20 @@ def _process_open_orders() -> None:
                 )
     finally:
         db.close()
+
+
+def _compute_fill_quantity(remaining: Decimal, daily_volume: Decimal | None) -> Decimal:
+    """Return how many units to fill this cycle based on daily volume.
+
+    Caps fills at VOLUME_FILL_RATE of the day's volume so large orders on
+    illiquid stocks take multiple cycles — mimicking real liquidity constraints.
+    Falls back to filling all remaining units when no volume data is available.
+    Floors at 1 unit to prevent infinite micro-fill loops on very low-volume tickers.
+    """
+    if daily_volume is None or daily_volume <= 0:
+        return remaining
+    fillable = (daily_volume * VOLUME_FILL_RATE).quantize(Decimal("0.000001"))
+    return min(remaining, max(Decimal("1"), fillable))
 
 
 def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
