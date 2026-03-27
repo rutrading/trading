@@ -191,7 +191,7 @@ def place_order(
             payload.ticker,
             fill_price,
             market_price,
-            float((fill_price - market_price) / market_price * 100),
+            float((fill_price - market_price) / market_price * 100) if market_price else 0.0,
             account.id,
         )
 
