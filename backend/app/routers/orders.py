@@ -135,14 +135,10 @@ def place_order(
             )
         market_price = Decimal(str(quote.price))
 
-        # buying power check against the live quoted price
-        if payload.side == "buy":
-            try:
-                validate_buying_power(account, payload.side, quantity, market_price)
-            except OrderValidationError as exc:
-                raise HTTPException(status_code=400, detail=exc.detail)
-
-        # slippage-adjusted fill price using latest daily bar volume
+        # compute slippage-adjusted fill price before the buying power check so
+        # the check uses the actual fill cost — not just the raw quoted price.
+        # a user with exactly enough balance at the quote would otherwise pass
+        # validation but then fail the pre-fill check inside execute_fill.
         latest_bar = (
             db.query(DailyBar)
             .filter(DailyBar.ticker == payload.ticker)
@@ -155,6 +151,13 @@ def place_order(
             else None
         )
         fill_price = compute_market_fill_price(market_price, payload.side, quantity, daily_volume)
+
+        # buying power check against the slippage-adjusted fill price
+        if payload.side == "buy":
+            try:
+                validate_buying_power(account, payload.side, quantity, fill_price)
+            except OrderValidationError as exc:
+                raise HTTPException(status_code=400, detail=exc.detail)
 
         order.status = "pending"
         db.add(order)
