@@ -550,6 +550,7 @@ class TestExecuteFillFirstBuy:
             fill_quantity=Decimal("5"),
         )
 
+        assert txn is not None
         assert txn.order_id == order.id
         assert txn.trading_account_id == account.id
 
@@ -819,6 +820,7 @@ class TestExecuteFillSell:
             fill_quantity=Decimal("3"),
         )
 
+        assert txn is not None
         assert txn.side == "sell"
         assert txn.quantity == Decimal("3")
         assert txn.price == Decimal("170.00")
