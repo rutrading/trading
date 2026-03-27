@@ -6,7 +6,7 @@ when price conditions are met. Also handles opg/cls TIF timing and day-order exp
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -136,7 +136,7 @@ def _process_open_orders() -> None:
                             Decimal("0"),
                             account.reserved_balance - remaining * order.reserved_per_share,
                         )
-                        account.updated_at = datetime.now(ET)
+                        account.updated_at = datetime.now(timezone.utc)
                 order.status = "cancelled"
                 db.commit()
                 logger.info(
@@ -171,11 +171,12 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
     lp = order.limit_price
     sp = order.stop_price
 
-    # opg/cls: fill during the appropriate market window regardless of order type
-    if tif == "opg":
-        return _in_window(now_et, MARKET_OPEN)
-    if tif == "cls":
-        return _in_window(now_et, MARKET_CLOSE)
+    # opg/cls: only eligible during the appropriate time window; if not in the
+    # window return False immediately, otherwise fall through to price conditions
+    if tif == "opg" and not _in_window(now_et, MARKET_OPEN):
+        return False
+    if tif == "cls" and not _in_window(now_et, MARKET_CLOSE):
+        return False
 
     if ot == "limit":
         return (side == "buy" and price <= lp) or (side == "sell" and price >= lp)
@@ -194,8 +195,12 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
 
 
 def _should_expire(order: Order, now_et: datetime) -> bool:
-    """Return True if a day order has passed market close and should be cancelled."""
-    if order.time_in_force != "day":
+    """Return True if an order has passed market close and should be cancelled.
+
+    day orders expire at close. opg and cls orders also expire at close — if
+    they missed their fill window they will never fill and should be cleaned up.
+    """
+    if order.time_in_force not in ("day", "opg", "cls"):
         return False
     return (now_et.hour, now_et.minute) >= MARKET_CLOSE
 

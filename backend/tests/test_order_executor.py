@@ -221,6 +221,26 @@ class TestShouldFillOpgCls:
         # 2:00 PM ET — well outside the 5-min window around 4:00 PM
         assert _should_fill(order, Decimal("150.00"), et_time(14, 0)) is False
 
+    def test_opg_limit_buy_does_not_fill_when_price_above_limit_during_window(self):
+        # price condition must still be respected during the opg window
+        order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
+        # 9:32 AM ET — inside window, but opening price is above limit
+        assert _should_fill(order, Decimal("155.00"), et_time(9, 32)) is False
+
+    def test_opg_limit_buy_fills_when_price_at_or_below_limit_during_window(self):
+        order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
+        assert _should_fill(order, Decimal("148.00"), et_time(9, 32)) is True
+
+    def test_cls_limit_sell_does_not_fill_when_price_below_limit_during_window(self):
+        # price condition must still be respected during the cls window
+        order = make_exec_order("limit", "sell", limit_price="150.00", tif="cls")
+        # 4:02 PM ET — inside window, but closing price is below limit
+        assert _should_fill(order, Decimal("145.00"), et_time(16, 2)) is False
+
+    def test_cls_limit_sell_fills_when_price_at_or_above_limit_during_window(self):
+        order = make_exec_order("limit", "sell", limit_price="150.00", tif="cls")
+        assert _should_fill(order, Decimal("152.00"), et_time(16, 2)) is True
+
 
 # ---------------------------------------------------------------------------
 # _should_expire
@@ -242,6 +262,20 @@ class TestShouldExpire:
         order = make_exec_order("limit", "buy", limit_price="150.00", tif="gtc")
         # 5:00 PM ET — well after close, but GTC doesn't expire
         assert _should_expire(order, et_time(17, 0)) is False
+
+    def test_opg_order_expires_at_market_close(self):
+        # opg that missed its morning window should not persist open all day
+        order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
+        assert _should_expire(order, et_time(16, 1)) is True
+
+    def test_opg_order_does_not_expire_before_market_close(self):
+        order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
+        assert _should_expire(order, et_time(15, 59)) is False
+
+    def test_cls_order_expires_at_market_close(self):
+        # cls that missed its closing window should not persist open indefinitely
+        order = make_exec_order("limit", "sell", limit_price="150.00", tif="cls")
+        assert _should_expire(order, et_time(16, 1)) is True
 
 
 # ---------------------------------------------------------------------------
