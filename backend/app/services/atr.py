@@ -5,6 +5,7 @@ Falls back to a synchronous Alpaca fetch when the DB doesn't have enough data.
 """
 
 import logging
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -49,16 +50,28 @@ def compute_atr(ticker: str, db: Session, n: int = ATR_PERIODS) -> Decimal:
     return Decimal("0")
 
 
-def _atr_from_db_bars(bars: list, n: int) -> Decimal:
-    """Compute ATR from a list of DailyBar ORM objects (oldest first)."""
+def _compute_atr(
+    bars: list,
+    n: int,
+    get_hlc: Callable[[object], tuple[Decimal, Decimal, Decimal]],
+) -> Decimal:
+    """Core TR loop. get_hlc(bar) must return (high, low, close) as Decimals."""
     trs: list[Decimal] = []
     for i in range(1, len(bars)):
-        prev_close = Decimal(str(bars[i - 1].close))
-        high = Decimal(str(bars[i].high))
-        low = Decimal(str(bars[i].low))
+        _, _, prev_close = get_hlc(bars[i - 1])
+        high, low, _ = get_hlc(bars[i])
         tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
         trs.append(tr)
     return sum(trs[-n:]) / n
+
+
+def _atr_from_db_bars(bars: list, n: int) -> Decimal:
+    """Compute ATR from a list of DailyBar ORM objects (oldest first)."""
+    return _compute_atr(
+        bars,
+        n,
+        lambda b: (Decimal(str(b.high)), Decimal(str(b.low)), Decimal(str(b.close))),
+    )
 
 
 def _atr_from_raw_bars(raw: list[dict], n: int) -> Decimal:
@@ -66,14 +79,11 @@ def _atr_from_raw_bars(raw: list[dict], n: int) -> Decimal:
 
     Alpaca bar keys: t (time), o, h, l, c, v.
     """
-    trs: list[Decimal] = []
-    for i in range(1, len(raw)):
-        prev_close = Decimal(str(raw[i - 1]["c"]))
-        high = Decimal(str(raw[i]["h"]))
-        low = Decimal(str(raw[i]["l"]))
-        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-        trs.append(tr)
-    return sum(trs[-n:]) / n
+    return _compute_atr(
+        raw,
+        n,
+        lambda b: (Decimal(str(b["h"])), Decimal(str(b["l"])), Decimal(str(b["c"]))),
+    )
 
 
 def _fetch_bars_sync(ticker: str, limit: int) -> list[dict]:
