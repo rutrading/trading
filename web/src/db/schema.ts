@@ -27,7 +27,7 @@ export const orderTypeEnum = pgEnum("order_type", [
   "stop_limit",
 ]);
 
-export const timeInForceEnum = pgEnum("time_in_force", ["day", "gtc"]);
+export const timeInForceEnum = pgEnum("time_in_force", ["day", "gtc", "opg", "cls"]);
 
 export const orderStatusEnum = pgEnum("order_status", [
   "pending",
@@ -129,6 +129,9 @@ export const tradingAccount = pgTable(
     balance: numeric("balance", { precision: 14, scale: 2 })
       .notNull()
       .default("100000"),
+    reservedBalance: numeric("reserved_balance", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
     isJoint: boolean("is_joint").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -254,6 +257,7 @@ export const order = pgTable(
     }),
     status: orderStatusEnum("status").notNull().default("pending"),
     rejectionReason: text("rejection_reason"),
+    reservedPerShare: numeric("reserved_per_share", { precision: 14, scale: 6 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
