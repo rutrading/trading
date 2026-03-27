@@ -115,13 +115,21 @@ def place_order(
         stop_price=stop_price,
     )
 
-    # buying power check for non-market buy orders — market orders check below
-    # after fetching the live quote from the DB
+    # for non-market buy orders, compute rps before the buying power check so
+    # the check validates against the actual reservation amount — not just the
+    # raw stop/limit price. for stop orders rps > stop_price (ATR buffer), so
+    # checking against stop_price would allow over-reservation.
+    rps: Decimal | None = None
     if payload.order_type != "market" and payload.side == "buy":
-        check_price = limit_price or stop_price
-        if check_price is not None:
+        if payload.order_type == "stop":
+            atr = compute_atr(payload.ticker, db)
+            rps = compute_stop_reservation_per_share(stop_price, atr)
+        elif payload.order_type in ("limit", "stop_limit"):
+            rps = limit_price
+
+        if rps is not None:
             try:
-                validate_buying_power(account, payload.side, quantity, check_price)
+                validate_buying_power(account, payload.side, quantity, rps)
             except OrderValidationError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail)
 
@@ -185,20 +193,11 @@ def place_order(
         )
 
     else:
-        # compute and store per-share reservation for open buy orders
-        if payload.side == "buy":
-            if payload.order_type == "stop":
-                atr = compute_atr(payload.ticker, db)
-                rps = compute_stop_reservation_per_share(stop_price, atr)
-            elif payload.order_type in ("limit", "stop_limit"):
-                rps = limit_price  # limit_price is the hard ceiling
-            else:
-                rps = None
-
-            if rps is not None:
-                order.reserved_per_share = rps
-                account.reserved_balance += quantity * rps
-                account.updated_at = datetime.now(timezone.utc)
+        # rps was already computed above for the buying power check — use it directly
+        if payload.side == "buy" and rps is not None:
+            order.reserved_per_share = rps
+            account.reserved_balance += quantity * rps
+            account.updated_at = datetime.now(timezone.utc)
 
         order.status = "open"
         db.add(order)
