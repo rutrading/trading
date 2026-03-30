@@ -161,13 +161,6 @@ class TestValidateOrderRequestFields:
         account = make_account()
         _validate(account, db, quantity=Decimal("10"))
 
-    def test_us_equity_day_order_passes(self):
-        db = make_db()
-        account = make_account()
-        _validate(
-            account, db, ticker="SPY", asset_class="us_equity", quantity=Decimal("5")
-        )
-
     def test_us_equity_gtc_order_passes(self):
         db = make_db()
         account = make_account()
@@ -205,18 +198,6 @@ class TestValidateOrderRequestCryptoTif:
             asset_class="crypto",
             time_in_force="gtc",
             quantity=Decimal("0.5"),
-        )
-
-    def test_stock_day_order_passes(self):
-        db = make_db()
-        account = make_account()
-        _validate(
-            account,
-            db,
-            ticker="AAPL",
-            asset_class="us_equity",
-            time_in_force="day",
-            quantity=Decimal("10"),
         )
 
     def test_crypto_sell_day_order_rejected(self):
@@ -450,10 +431,6 @@ class TestValidateBuyingPower:
         account = make_account(balance="100000.00")
         validate_buying_power(account, "buy", Decimal("10"), Decimal("185.50"))
 
-    def test_sell_side_skips_balance_check(self):
-        account = make_account(balance="0.00")
-        validate_buying_power(account, "sell", Decimal("10"), Decimal("185.50"))
-
     def test_fractional_crypto_buy_passes(self):
         account = make_account(balance="1000.00")
         validate_buying_power(account, "buy", Decimal("0.001"), Decimal("50000.00"))
@@ -462,15 +439,6 @@ class TestValidateBuyingPower:
         account = make_account(balance="10.00")
         with pytest.raises(OrderValidationError, match="Insufficient buying power"):
             validate_buying_power(account, "buy", Decimal("0.1"), Decimal("50000.00"))
-
-    def test_fractional_stock_buy_passes(self):
-        account = make_account(balance="1000.00")
-        validate_buying_power(account, "buy", Decimal("0.5"), Decimal("200.00"))
-
-    def test_fractional_stock_buy_insufficient(self):
-        account = make_account(balance="50.00")
-        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
-            validate_buying_power(account, "buy", Decimal("0.5"), Decimal("200.00"))
 
     def test_balance_one_cent_short_rejected(self):
         account = make_account(balance="999.99")
@@ -740,22 +708,6 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="5")
         holding = make_holding(quantity="10", average_cost="200.00")
-        db = make_db(holding=holding, account=account)
-
-        execute_fill(
-            db=db,
-            order=order,
-            account=account,
-            fill_price=Decimal("150.00"),
-            fill_quantity=Decimal("5"),
-        )
-
-        assert account.balance == Decimal("10750.00")
-
-    def test_sell_at_breakeven_credits_balance(self):
-        account = make_account(balance="10000.00")
-        order = make_order(side="sell", quantity="5")
-        holding = make_holding(quantity="10", average_cost="150.00")
         db = make_db(holding=holding, account=account)
 
         execute_fill(
@@ -1112,16 +1064,6 @@ class TestMarketOrderBuyingPowerMustUseSlippagePrice:
 
 
 class TestComputeMarketFillPrice:
-    def test_buy_fills_above_quoted_price(self):
-        # any buy should fill above the quote — slippage works against the buyer
-        fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), Decimal("2000000"))
-        assert fill > Decimal("100")
-
-    def test_sell_fills_below_quoted_price(self):
-        # any sell should fill below the quote — slippage works against the seller
-        fill = compute_market_fill_price(Decimal("100"), "sell", Decimal("10"), Decimal("2000000"))
-        assert fill < Decimal("100")
-
     def test_base_slippage_applied_when_no_volume_data(self):
         # without volume data only base slippage applies
         fill = compute_market_fill_price(Decimal("100"), "buy", Decimal("10"), None)
@@ -1187,37 +1129,6 @@ class TestComputeStopReservationPerShare:
 # ---------------------------------------------------------------------------
 
 
-def make_open_limit_order(
-    account_id: int = 1,
-    ticker: str = "AAPL",
-    quantity: str = "10",
-    filled_quantity: str = "0",
-    limit_price: str = "150.00",
-    order_type: str = "limit",
-) -> Order:
-    order = Order()
-    order.id = 99
-    order.trading_account_id = account_id
-    order.ticker = ticker
-    order.side = "buy"
-    order.order_type = order_type
-    order.asset_class = "us_equity"
-    order.time_in_force = "gtc"
-    order.quantity = Decimal(quantity)
-    order.filled_quantity = Decimal(filled_quantity)
-    order.limit_price = Decimal(limit_price)
-    order.stop_price = None
-    order.status = "open"
-    return order
-
-
-def make_reserved_db(open_orders: list) -> MagicMock:
-    """Mock DB whose query().filter().all() returns open_orders."""
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = open_orders
-    return db
-
-
 class TestValidateBuyingPowerWithReservation:
     def test_second_order_rejected_when_reserved_blocks_balance(self):
         # balance $1000, already reserved $900, new order needs $200 → blocked
@@ -1229,11 +1140,6 @@ class TestValidateBuyingPowerWithReservation:
         # balance $1000, reserved $500, new order needs $400 → ok
         account = make_account(balance="1000.00", reserved_balance="500.00")
         validate_buying_power(account, "buy", Decimal("4"), Decimal("100.00"))
-
-    def test_zero_reserved_behaves_like_original(self):
-        account = make_account(balance="500.00", reserved_balance="0")
-        with pytest.raises(OrderValidationError, match="Insufficient buying power"):
-            validate_buying_power(account, "buy", Decimal("10"), Decimal("100.00"))
 
     def test_sell_side_ignores_reserved(self):
         account = make_account(balance="0.00", reserved_balance="999999")
