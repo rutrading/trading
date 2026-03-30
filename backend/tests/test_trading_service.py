@@ -69,10 +69,12 @@ def make_holding(
     return holding
 
 
-def make_db(holding: Holding | None = None) -> MagicMock:
+def make_db(holding: Holding | None = None, account: TradingAccount | None = None) -> MagicMock:
     db = MagicMock()
     query_chain = db.query.return_value.filter.return_value
     query_chain.first.return_value = holding
+    # wire the with_for_update() path used by execute_fill's internal account re-fetch
+    query_chain.with_for_update.return_value.first.return_value = account
     return db
 
 
@@ -469,7 +471,7 @@ class TestExecuteFillFirstBuy:
     def test_creates_holding_on_first_buy(self):
         account = make_account(balance="100000.00")
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -489,7 +491,7 @@ class TestExecuteFillFirstBuy:
     def test_balance_deducted_on_first_buy(self):
         account = make_account(balance="100000.00")
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -504,7 +506,7 @@ class TestExecuteFillFirstBuy:
     def test_order_status_filled_on_full_fill(self):
         account = make_account()
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -521,7 +523,7 @@ class TestExecuteFillFirstBuy:
     def test_transaction_created_on_fill(self):
         account = make_account()
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         txn = execute_fill(
             db=db,
@@ -540,7 +542,7 @@ class TestExecuteFillFirstBuy:
     def test_transaction_linked_to_order_and_account(self):
         account = make_account(account_id=7)
         order = make_order(side="buy", quantity="5", account_id=7)
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         txn = execute_fill(
             db=db,
@@ -559,7 +561,7 @@ class TestExecuteFillFirstBuy:
         order = make_order(
             ticker="BTC/USD", side="buy", quantity="0.00000001", asset_class="crypto"
         )
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -581,7 +583,7 @@ class TestExecuteFillSubsequentBuy:
         account = make_account(balance="100000.00")
         order = make_order(side="buy", quantity="5")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -598,7 +600,7 @@ class TestExecuteFillSubsequentBuy:
         account = make_account(balance="100000.00")
         order = make_order(side="buy", quantity="5")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -614,7 +616,7 @@ class TestExecuteFillSubsequentBuy:
         account = make_account()
         order = make_order(side="buy", quantity="10")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -632,7 +634,7 @@ class TestExecuteFillSubsequentBuy:
         account = make_account()
         order = make_order(side="buy", quantity="10")
         holding = make_holding(quantity="10", average_cost="200.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -657,7 +659,7 @@ class TestExecuteFillSubsequentBuy:
             average_cost="40000.00",
             asset_class="crypto",
         )
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -679,7 +681,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="3")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -695,7 +697,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="3")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -711,7 +713,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="3")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -727,7 +729,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="5")
         holding = make_holding(quantity="10", average_cost="200.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -743,7 +745,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="5")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -759,7 +761,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="10")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -775,7 +777,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="5")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -793,7 +795,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="10")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(
             db=db,
@@ -810,7 +812,7 @@ class TestExecuteFillSell:
         account = make_account(balance="10000.00")
         order = make_order(side="sell", quantity="3")
         holding = make_holding(quantity="10", average_cost="150.00")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         txn = execute_fill(
             db=db,
@@ -831,7 +833,7 @@ class TestExecuteFillPartial:
     def test_partial_fill_sets_partially_filled_status(self):
         account = make_account()
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -850,7 +852,7 @@ class TestExecuteFillPartial:
         order.filled_quantity = Decimal("6")
         order.average_fill_price = Decimal("150.00")
         order.status = "partially_filled"
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -870,7 +872,7 @@ class TestExecuteFillPartial:
         order.filled_quantity = Decimal("6")
         order.average_fill_price = Decimal("150.00")
         order.status = "partially_filled"
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -886,7 +888,7 @@ class TestExecuteFillPartial:
         # 6 shares × $150 = $900 deducted, not 10 × $150
         account = make_account(balance="100000.00")
         order = make_order(side="buy", quantity="10")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -1244,7 +1246,7 @@ class TestExecuteFillReleasesReservedBalance:
         account = make_account(balance="10000.00", reserved_balance="20.00")
         order = make_order(side="buy", quantity="10")
         order.reserved_per_share = Decimal("2.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("1.50"), fill_quantity=Decimal("10"))
 
@@ -1255,7 +1257,7 @@ class TestExecuteFillReleasesReservedBalance:
         account = make_account(balance="10000.00", reserved_balance="20.00")
         order = make_order(side="buy", quantity="10")
         order.reserved_per_share = Decimal("2.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("1.50"), fill_quantity=Decimal("4"))
 
@@ -1266,7 +1268,7 @@ class TestExecuteFillReleasesReservedBalance:
         account = make_account(balance="10000.00", reserved_balance="500.00")
         order = make_order(side="buy", quantity="5")
         order.reserved_per_share = None
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("100.00"), fill_quantity=Decimal("5"))
 
@@ -1278,7 +1280,7 @@ class TestExecuteFillReleasesReservedBalance:
         account = make_account(balance="10000.00", reserved_balance="10.00")
         order = make_order(side="buy", quantity="10")
         order.reserved_per_share = Decimal("5.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(
             db=db,
@@ -1295,7 +1297,7 @@ class TestExecuteFillReleasesReservedBalance:
         order = make_order(side="sell", quantity="5")
         order.reserved_per_share = None
         holding = make_holding(ticker="AAPL", quantity="10")
-        db = make_db(holding=holding)
+        db = make_db(holding=holding, account=account)
 
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("100.00"), fill_quantity=Decimal("5"))
 
@@ -1311,7 +1313,7 @@ class TestExecuteFillInsufficientFundsAtFillTime:
         account = make_account(balance="100.00", reserved_balance="100.00")
         order = make_order(side="buy", quantity="2")
         order.reserved_per_share = Decimal("50.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         result = execute_fill(db=db, order=order, account=account, fill_price=Decimal("80.00"), fill_quantity=Decimal("2"))
 
@@ -1324,7 +1326,7 @@ class TestExecuteFillInsufficientFundsAtFillTime:
         account = make_account(balance="100.00", reserved_balance="100.00")
         order = make_order(side="buy", quantity="2")
         order.reserved_per_share = Decimal("50.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("80.00"), fill_quantity=Decimal("2"))
 
@@ -1342,7 +1344,7 @@ class TestExecuteFillInsufficientFundsAtFillTime:
         order.average_fill_price = Decimal("55.00")
         order.status = "partially_filled"
         order.reserved_per_share = Decimal("50.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         result = execute_fill(
             db=db,
@@ -1363,7 +1365,7 @@ class TestExecuteFillInsufficientFundsAtFillTime:
         order.average_fill_price = Decimal("55.00")
         order.status = "partially_filled"
         order.reserved_per_share = Decimal("50.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         result = execute_fill(
             db=db,
@@ -1381,7 +1383,7 @@ class TestExecuteFillInsufficientFundsAtFillTime:
         account = make_account(balance="10000.00", reserved_balance="100.00")
         order = make_order(side="buy", quantity="2")
         order.reserved_per_share = Decimal("50.00")
-        db = make_db(holding=None)
+        db = make_db(holding=None, account=account)
 
         result = execute_fill(db=db, order=order, account=account, fill_price=Decimal("50.00"), fill_quantity=Decimal("2"))
 
