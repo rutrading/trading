@@ -118,6 +118,16 @@ def place_order(
         stop_price=stop_price,
     )
 
+    # lock the account row before any balance/reservation reads or writes so
+    # concurrent orders cannot race past the buying-power check and together
+    # overdraw the account
+    account = (
+        db.query(TradingAccount)
+        .filter(TradingAccount.id == account.id)
+        .with_for_update()
+        .first()
+    )
+
     # for non-market buy orders, compute rps before the buying power check so
     # the check validates against the actual reservation amount — not just the
     # raw stop/limit price. for stop orders rps > stop_price (ATR buffer), so
