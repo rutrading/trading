@@ -316,6 +316,9 @@ export const holding = pgTable(
     quantity: numeric("quantity", { precision: 16, scale: 8 })
       .notNull()
       .default("0"),
+    reservedQuantity: numeric("reserved_quantity", { precision: 16, scale: 8 })
+      .notNull()
+      .default("0"),
     averageCost: numeric("average_cost", { precision: 14, scale: 2 })
       .notNull()
       .default("0"),
