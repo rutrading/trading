@@ -21,6 +21,7 @@ STOP_RESERVATION_K = Decimal("1.5")   # 1.5× ATR multiplier
 
 MARKET_BASE_SLIPPAGE = Decimal("0.0005")  # 0.05% — simulates the bid-ask spread
 MARKET_IMPACT_FACTOR = Decimal("0.05")    # 5% — scales order size vs. daily volume
+MARKET_MAX_SLIPPAGE = Decimal("0.02")     # 2% ceiling — prevents unrealistic fills on illiquid names
 
 
 class OrderValidationError(Exception):
@@ -133,9 +134,8 @@ def compute_market_fill_price(
 
     Falls back to base slippage alone when no daily volume data is available.
     """
-    slippage = MARKET_BASE_SLIPPAGE
-    if daily_volume and daily_volume > 0:
-        slippage += (quantity / daily_volume) * MARKET_IMPACT_FACTOR
+    impact = (quantity / daily_volume) * MARKET_IMPACT_FACTOR if daily_volume and daily_volume > 0 else Decimal("0")
+    slippage = min(MARKET_BASE_SLIPPAGE + impact, MARKET_MAX_SLIPPAGE)
     if side == "buy":
         return quote_price * (1 + slippage)
     return quote_price * (1 - slippage)
@@ -176,6 +176,16 @@ def execute_fill(
 
     Must be called within a db transaction (caller handles commit).
     """
+    # re-fetch with a row lock so the balance check and mutations below always
+    # see the latest committed state, even when called from a background worker
+    # that didn't lock the account itself
+    account = (
+        db.query(TradingAccount)
+        .filter(TradingAccount.id == account.id)
+        .with_for_update()
+        .first()
+    )
+
     total = fill_quantity * fill_price
 
     # pre-fill balance check for buy orders — safety net in case funds were
