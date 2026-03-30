@@ -55,6 +55,7 @@ def make_order(
 def make_holding(
     ticker: str = "AAPL",
     quantity: str = "10",
+    reserved_quantity: str = "0",
     average_cost: str = "150.00",
     account_id: int = 1,
     asset_class: str = "us_equity",
@@ -65,16 +66,26 @@ def make_holding(
     holding.ticker = ticker
     holding.asset_class = asset_class
     holding.quantity = Decimal(quantity)
+    holding.reserved_quantity = Decimal(reserved_quantity)
     holding.average_cost = Decimal(average_cost)
     return holding
 
 
 def make_db(holding: Holding | None = None, account: TradingAccount | None = None) -> MagicMock:
     db = MagicMock()
-    query_chain = db.query.return_value.filter.return_value
-    query_chain.first.return_value = holding
-    # wire the with_for_update() path used by execute_fill's internal account re-fetch
-    query_chain.with_for_update.return_value.first.return_value = account
+
+    def query_side_effect(model):
+        mock_query = MagicMock()
+        if model is TradingAccount:
+            mock_query.filter.return_value.with_for_update.return_value.first.return_value = account
+            mock_query.filter.return_value.first.return_value = account
+        else:
+            # Holding and any other model — both locked and unlocked paths return holding
+            mock_query.filter.return_value.with_for_update.return_value.first.return_value = holding
+            mock_query.filter.return_value.first.return_value = holding
+        return mock_query
+
+    db.query.side_effect = query_side_effect
     return db
 
 
@@ -1389,3 +1400,182 @@ class TestExecuteFillInsufficientFundsAtFillTime:
 
         assert result is not None
         assert order.status == "filled"
+
+
+# ---------------------------------------------------------------------------
+# Gap 1 — Extraneous price fields
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOrderRequestForbiddenPriceFields:
+    def test_market_order_with_limit_price_rejected(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="limit_price is not valid for market orders"):
+            _validate(account, db, order_type="market", limit_price=Decimal("150.00"))
+
+    def test_market_order_with_stop_price_rejected(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="stop_price is not valid for market orders"):
+            _validate(account, db, order_type="market", stop_price=Decimal("145.00"))
+
+    def test_limit_order_with_stop_price_rejected(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="stop_price is not valid for limit orders"):
+            _validate(
+                account, db,
+                order_type="limit",
+                time_in_force="gtc",
+                limit_price=Decimal("150.00"),
+                stop_price=Decimal("145.00"),
+            )
+
+    def test_stop_order_with_limit_price_rejected(self):
+        db = make_db()
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="limit_price is not valid for stop orders"):
+            _validate(
+                account, db,
+                order_type="stop",
+                time_in_force="gtc",
+                stop_price=Decimal("145.00"),
+                limit_price=Decimal("150.00"),
+            )
+
+    def test_stop_limit_order_with_both_prices_passes(self):
+        # stop_limit requires both — neither is forbidden
+        db = make_db()
+        account = make_account()
+        _validate(
+            account, db,
+            order_type="stop_limit",
+            time_in_force="gtc",
+            stop_price=Decimal("148.00"),
+            limit_price=Decimal("150.00"),
+        )
+
+    def test_market_order_with_no_price_fields_passes(self):
+        db = make_db()
+        account = make_account()
+        _validate(account, db, order_type="market")
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — Double-sell / reserved_quantity validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOrderRequestSellReservedQuantity:
+    def test_sell_passes_when_no_shares_reserved(self):
+        holding = make_holding(quantity="10", reserved_quantity="0")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(account, db, side="sell", quantity=Decimal("10"))
+
+    def test_sell_rejected_when_all_shares_reserved(self):
+        # all 10 shares committed to an existing open sell order
+        holding = make_holding(quantity="10", reserved_quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="available to sell"):
+            _validate(account, db, side="sell", quantity=Decimal("1"))
+
+    def test_sell_rejected_when_partial_reservation_leaves_insufficient(self):
+        # 8 shares reserved, only 2 available — trying to sell 5
+        holding = make_holding(quantity="10", reserved_quantity="8")
+        db = make_db(holding=holding)
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="available to sell"):
+            _validate(account, db, side="sell", quantity=Decimal("5"))
+
+    def test_sell_passes_when_enough_unreserved_shares_remain(self):
+        # 5 reserved, 5 available — selling 5 is fine
+        holding = make_holding(quantity="10", reserved_quantity="5")
+        db = make_db(holding=holding)
+        account = make_account()
+        _validate(account, db, side="sell", quantity=Decimal("5"))
+
+    def test_market_sell_also_checks_reserved_quantity(self):
+        # market sells fill immediately but must still respect reserved_quantity
+        holding = make_holding(quantity="10", reserved_quantity="10")
+        db = make_db(holding=holding)
+        account = make_account()
+        with pytest.raises(OrderValidationError, match="available to sell"):
+            _validate(account, db, side="sell", order_type="market", quantity=Decimal("1"))
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — reserved_quantity released at fill
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteFillReleasesReservedQuantity:
+    def test_non_market_sell_fill_releases_reserved_quantity(self):
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="limit", quantity="10")
+        holding = make_holding(quantity="10", reserved_quantity="10")
+        db = make_db(holding=holding, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("10"))
+
+        assert holding.reserved_quantity == Decimal("0")
+
+    def test_partial_sell_fill_releases_proportional_reserved_quantity(self):
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="limit", quantity="10")
+        holding = make_holding(quantity="10", reserved_quantity="10")
+        db = make_db(holding=holding, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("4"))
+
+        assert holding.reserved_quantity == Decimal("6")
+
+    def test_market_sell_fill_does_not_touch_reserved_quantity(self):
+        # market sells never had a reservation — reserved_quantity must stay unchanged
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="market", quantity="5")
+        holding = make_holding(quantity="10", reserved_quantity="5")
+        db = make_db(holding=holding, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("5"))
+
+        assert holding.reserved_quantity == Decimal("5")
+
+    def test_reserved_quantity_cannot_go_below_zero(self):
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="limit", quantity="10")
+        holding = make_holding(quantity="10", reserved_quantity="3")
+        db = make_db(holding=holding, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("10"))
+
+        assert holding.reserved_quantity == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — ghost-fill protection: sell fill with no holding cancels the order
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteFillSellWithNoHolding:
+    def test_sell_fill_returns_none_when_holding_missing(self):
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="limit", quantity="5")
+        db = make_db(holding=None, account=account)
+
+        result = execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("5"))
+
+        assert result is None
+        assert order.status == "cancelled"
+        assert order.rejection_reason is not None
+
+    def test_sell_fill_does_not_credit_balance_when_holding_missing(self):
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="limit", quantity="5")
+        db = make_db(holding=None, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("5"))
+
+        assert account.balance == Decimal("10000.00")
