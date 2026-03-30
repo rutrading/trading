@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import Order, get_db
-from app.db.models import DailyBar, Quote, TradingAccount
+from app.db.models import DailyBar, Holding, Quote, TradingAccount
 from app.dependencies import get_trading_account
 from app.schemas import (
     OrderDetailResponse,
@@ -212,6 +212,22 @@ def place_order(
             account.reserved_balance += quantity * rps
             account.updated_at = datetime.now(timezone.utc)
 
+        # for non-market sell orders, commit the shares so concurrent sell orders
+        # cannot exceed the available position (mirrors reserved_balance for buys)
+        if payload.side == "sell":
+            holding = (
+                db.query(Holding)
+                .filter(
+                    Holding.trading_account_id == account.id,
+                    Holding.ticker == payload.ticker,
+                )
+                .with_for_update()
+                .first()
+            )
+            if holding is not None:
+                holding.reserved_quantity += quantity
+                holding.updated_at = datetime.now(timezone.utc)
+
         order.status = "open"
         db.add(order)
         db.commit()
@@ -322,6 +338,25 @@ def cancel_order(
             account.reserved_balance - remaining * order.reserved_per_share,
         )
         account.updated_at = datetime.now(timezone.utc)
+
+    # release reserved_quantity for open non-market sell orders
+    if order.side == "sell" and order.order_type != "market":
+        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+        holding = (
+            db.query(Holding)
+            .filter(
+                Holding.trading_account_id == order.trading_account_id,
+                Holding.ticker == order.ticker,
+            )
+            .with_for_update()
+            .first()
+        )
+        if holding is not None:
+            holding.reserved_quantity = max(
+                Decimal("0"),
+                holding.reserved_quantity - remaining,
+            )
+            holding.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
     db.commit()

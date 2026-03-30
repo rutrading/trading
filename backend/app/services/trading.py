@@ -68,6 +68,16 @@ def validate_order_request(
     if asset_class == "crypto" and time_in_force in ("opg", "cls"):
         raise OrderValidationError("Crypto orders cannot use 'opg' or 'cls' time-in-force")
 
+    # reject extraneous price fields — storing them corrupts order semantics
+    if order_type == "market" and limit_price is not None:
+        raise OrderValidationError("limit_price is not valid for market orders")
+    if order_type == "market" and stop_price is not None:
+        raise OrderValidationError("stop_price is not valid for market orders")
+    if order_type == "limit" and stop_price is not None:
+        raise OrderValidationError("stop_price is not valid for limit orders")
+    if order_type == "stop" and limit_price is not None:
+        raise OrderValidationError("limit_price is not valid for stop orders")
+
     # limit price required for limit and stop_limit orders
     if order_type in ("limit", "stop_limit") and limit_price is None:
         raise OrderValidationError(f"limit_price is required for {order_type} orders")
@@ -91,7 +101,7 @@ def validate_order_request(
                 "For sell stop-limit orders, stop_price must be >= limit_price"
             )
 
-    # sell validation: must own enough of the position
+    # sell validation: must have enough shares available (not already committed to open sell orders)
     if side == "sell":
         holding = (
             db.query(Holding)
@@ -99,12 +109,18 @@ def validate_order_request(
                 Holding.trading_account_id == account.id,
                 Holding.ticker == ticker,
             )
+            .with_for_update()
             .first()
         )
-        if holding is None or holding.quantity < quantity:
-            owned = holding.quantity if holding else Decimal("0")
+        if holding is None:
             raise OrderValidationError(
-                f"Insufficient position: you own {owned} of {ticker}, tried to sell {quantity}"
+                f"Insufficient position: you own 0 of {ticker}, tried to sell {quantity}"
+            )
+        # available = total held minus shares already committed to open sell orders
+        available = holding.quantity - holding.reserved_quantity
+        if available < quantity:
+            raise OrderValidationError(
+                f"Insufficient position: {available} shares available to sell of {ticker}, tried to sell {quantity}"
             )
 
 
@@ -270,12 +286,25 @@ def execute_fill(
             )
 
     elif order.side == "sell":
-        if holding is not None:
-            holding.quantity -= fill_quantity
-            holding.updated_at = datetime.now(timezone.utc)
-            # remove holding row if fully sold
-            if holding.quantity <= 0:
-                db.delete(holding)
+        if holding is None:
+            # position was closed by another order before this one filled —
+            # cancel rather than ghost-crediting proceeds for shares not owned
+            order.status = "cancelled"
+            order.rejection_reason = "Position no longer exists at fill time"
+            order.updated_at = datetime.now(timezone.utc)
+            return None
+
+        holding.quantity -= fill_quantity
+        # release the reserved_quantity for the filled shares (non-market sell orders)
+        if order.order_type != "market":
+            holding.reserved_quantity = max(
+                Decimal("0"),
+                holding.reserved_quantity - fill_quantity,
+            )
+        holding.updated_at = datetime.now(timezone.utc)
+        # remove holding row if fully sold
+        if holding.quantity <= 0:
+            db.delete(holding)
 
         # add proceeds to balance
         account.balance += total

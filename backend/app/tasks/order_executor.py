@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.db.models import DailyBar, Order, Quote, TradingAccount
+from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
 from app.services.trading import execute_fill
 
@@ -124,7 +124,8 @@ def _process_open_orders() -> None:
                         price,
                     )
             elif _should_expire(order, now_et):
-                # release reserved balance before cancelling
+                remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+                # release reserved balance for buy orders
                 if order.side == "buy" and order.reserved_per_share is not None:
                     account = (
                         db.query(TradingAccount)
@@ -133,12 +134,28 @@ def _process_open_orders() -> None:
                         .first()
                     )
                     if account is not None:
-                        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                         account.reserved_balance = max(
                             Decimal("0"),
                             account.reserved_balance - remaining * order.reserved_per_share,
                         )
                         account.updated_at = datetime.now(timezone.utc)
+                # release reserved_quantity for non-market sell orders
+                if order.side == "sell" and order.order_type != "market":
+                    holding = (
+                        db.query(Holding)
+                        .filter(
+                            Holding.trading_account_id == order.trading_account_id,
+                            Holding.ticker == order.ticker,
+                        )
+                        .with_for_update()
+                        .first()
+                    )
+                    if holding is not None:
+                        holding.reserved_quantity = max(
+                            Decimal("0"),
+                            holding.reserved_quantity - remaining,
+                        )
+                        holding.updated_at = datetime.now(timezone.utc)
                 order.status = "cancelled"
                 db.commit()
                 logger.info(

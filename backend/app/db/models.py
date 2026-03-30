@@ -284,6 +284,7 @@ class Holding(Base):
     ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
     asset_class: Mapped[str] = mapped_column(asset_class_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
+    reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
     average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
