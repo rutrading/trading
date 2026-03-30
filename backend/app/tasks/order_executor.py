@@ -99,6 +99,19 @@ def _process_open_orders() -> None:
                 )
                 if account is None:
                     continue
+                # Re-fetch the order with a row lock after acquiring the account
+                # lock. A concurrent cancel_order request could have committed
+                # between when open_orders was loaded and now — without this
+                # re-fetch the stale in-memory order would pass the status check
+                # and execute_fill would overwrite the cancellation.
+                order = (
+                    db.query(Order)
+                    .filter(Order.id == order.id)
+                    .with_for_update()
+                    .first()
+                )
+                if order is None or order.status not in ("open", "partially_filled"):
+                    continue
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
                 result = execute_fill(
