@@ -178,7 +178,9 @@ export function StockChart({ ticker }: { ticker: string }) {
       setBars(result.data.bars);
       currentCandleRef.current = null;
     }
-    fetchBars();
+    fetchBars().catch((err) => {
+      console.error("Failed to fetch bars:", err);
+    });
   }, [ticker, timeframe]);
 
   useEffect(() => {
@@ -187,7 +189,7 @@ export function StockChart({ ticker }: { ticker: string }) {
 
     const chart = createChart(container, {
       width: container.clientWidth,
-      height: 520,
+      height: container.clientHeight,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
       },
@@ -312,7 +314,7 @@ export function StockChart({ ticker }: { ticker: string }) {
         ))}
       </div>
 
-      <div ref={chartContainerRef} />
+      <div ref={chartContainerRef} style={{ width: "100%", height: "400px" }} />
     </div>
   );
 }

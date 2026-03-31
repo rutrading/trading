@@ -206,6 +206,8 @@ export function useConnectionStatus(_ticker?: string): ConnectionStatus {
         return "delayed";
       }
       return "offline";
+    default:
+      return "offline";
   }
 }
 
