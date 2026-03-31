@@ -18,7 +18,7 @@ class news_source_interface():
     def news_source_sample_df(self, sample_size: int, seed: int = None) -> pd.DataFrame:
         if seed == None:
             time = datetime.now()
-            seed = time.month + time.day + time.year%time.hour*time.month + time.day * time.year * time.hour
+            seed = time.month + time.day + time.year%(time.hour+1)*time.month + time.day * time.year * (time.hour+1)
         for i in range(0, len(news_feeds)):
             news_feeds[i].reduce_random(sample_size, seed)
             news_feeds[i].add_article_body_df()

@@ -21,21 +21,20 @@ class News_Source:
             guid = d['entries'][i].get('guid')
             authors = d['entries'][i].get('authors')
 
-            if authors == None:
+            if authors is None:
                 arr = None
             else:
                 leng2 = len(authors)
                 arr = []
                 for j in range(0, leng2):
                     arr.insert(0, authors[j]['name'])
-
             new_row = [
                 {
                     'title': d['entries'][i]['title'],
                     'link': d['entries'][i]['link'],
-                    'pub_year': val[0] if val != None else None,
-                    'pub_month': val[1] if val != None else None,
-                    'pub_day': val[2] if val != None else None,
+                    'pub_year': val[0] if val is not None else None,
+                    'pub_month': val[1] if val is not None else None,
+                    'pub_day': val[2] if val is not None else None,
                     'guid': guid,
                     'authors': arr,
                     'source': self.source_name
@@ -55,7 +54,7 @@ class News_Source:
 
     def format_article_text(self, text: str) -> str: # helper function to format article body text for long entries
         
-        if text == None:
+        if text is None:
             text = "No body text available."
         elif len(text) > 300:
             return text[0:297] + "..."
@@ -102,7 +101,7 @@ class News_Source_NBC(News_Source):
         soup = BeautifulSoup(html.text, features='html.parser')
         article_json = soup.find("script", type="application/ld+json")
         article_body = json.loads(article_json.string).get('articleBody')
-        if article_body == None:
+        if article_body is None:
             article_body = "Video Content, no article body text available."
         return article_body
     
@@ -114,7 +113,7 @@ class News_Source_ABC(News_Source):
     def get_article_body_link(self, article_link: str) -> str:
         html = requests.get(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
-        if soup != None:
+        if soup is not None:
             article_p_tags = soup.find_all("p")
             article_text = ""
             for p_tag in article_p_tags:
@@ -141,7 +140,7 @@ class News_Source_invescom(News_Source):
         html = session.get(article_link, headers=headers)
         soup = BeautifulSoup(html.text, features='html.parser')
         found_art = soup.find("div", id='article')
-        if found_art != None:
+        if found_art is not None:
             article_p_tags = found_art.find_all("p")
             article_text = ""
             for p_tag in article_p_tags:
