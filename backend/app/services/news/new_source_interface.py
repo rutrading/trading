@@ -12,8 +12,8 @@ class news_source_interface():
     def __init__(self):
         self.ttl = 600
         self.last_update = datetime.now().timestamp()
-        self.df = None
-        self.news_set = None
+        self.df = pd.DataFrame()
+        self.news_set = [dict]
 
     def news_source_sample_df(self, sample_size: int, seed: int = None) -> pd.DataFrame:
         if seed == None:
@@ -44,7 +44,7 @@ class news_source_interface():
         return result
 
     def news_set_arr(self, sample_size: int=2, seed: int = None, all_articles: bool = False, chunk_access: int = None, i: int = 0) -> list[dict]:
-        if (datetime.now().timestamp() - self.last_update  > self.ttl or self.df == None):
+        if (datetime.now().timestamp() - self.last_update  > self.ttl or self.df.empty):
             if all_articles:
                 self.df = self.all_news_samples_df()
             else:
@@ -62,4 +62,4 @@ iface = news_source_interface()
 def get_interface_singleton(ttl: int):
     if ttl != iface.ttl:
         iface.ttl = ttl
-    return news_source_interface()
+    return iface
