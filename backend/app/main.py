@@ -25,6 +25,7 @@ from app.ws.feeds.base import BaseFeed
 from app.ws.flush import flush_quotes_loop
 from app.ws.manager import ConnectionManager
 from app.ws.feeds.mock import MockFeed
+from app.tasks.order_executor import run_order_executor
 from app.ws.router import router as ws_router, set_manager
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -71,12 +72,19 @@ async def lifespan(app: FastAPI):
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
+    executor_task = asyncio.create_task(run_order_executor())
+
     yield
 
     await feed.stop()
     flush_task.cancel()
+    executor_task.cancel()
     try:
         await flush_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await executor_task
     except asyncio.CancelledError:
         pass
     await close_redis()
