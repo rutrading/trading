@@ -119,11 +119,11 @@ function timeframeToStartDate(tf: TimeframeValue): Date {
     case "30Min":
       return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 30);
     case "1Hour":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 30);
-    case "1Day":
       return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 60);
+    case "1Day":
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
     case "1Week":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 120);
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
     case "1Month":
       return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
     case "3Month":
@@ -137,8 +137,7 @@ function timeframeToStartDate(tf: TimeframeValue): Date {
   }
 }
 
-// TODO: Fix 1 year button
-// TODO: Update zoom accordingly
+// TODO: Fix real-time updates on some time ranges
 export function StockChart({ ticker }: { ticker: string }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi>(null);
@@ -215,7 +214,10 @@ export function StockChart({ ticker }: { ticker: string }) {
     });
 
     candleSeries.setData([]);
-    chart.timeScale().fitContent();
+    chart.timeScale().applyOptions({
+      barSpacing: 10,
+      minBarSpacing: 0.5,
+    });
     chartRef.current = chart;
     seriesRef.current = candleSeries;
 
@@ -240,7 +242,10 @@ export function StockChart({ ticker }: { ticker: string }) {
     const series = seriesRef.current;
     if (!chart || !series) return;
     series.setData(chartData);
-    chart.timeScale().fitContent();
+    chart.timeScale().applyOptions({
+      barSpacing: 10,
+      minBarSpacing: 0.5,
+    });
   }, [chartData]);
 
   useEffect(() => {
@@ -307,7 +312,7 @@ export function StockChart({ ticker }: { ticker: string }) {
         ))}
       </div>
 
-      <div ref={chartContainerRef} style={{ width: "100%", height: "400px" }} />
+      <div ref={chartContainerRef} />
     </div>
   );
 }
