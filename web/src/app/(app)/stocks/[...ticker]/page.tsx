@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/app/actions/auth";
-import { StockChart } from "./client";
+import { StockChart } from "@/components/StockChart";
 
 export async function generateMetadata({
   params,
