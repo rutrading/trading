@@ -1,6 +1,6 @@
 import feedparser
+import httpx
 import pandas as pd
-import requests
 from bs4 import BeautifulSoup
 import json
 
@@ -42,10 +42,10 @@ class News_Source:
             ]
             self.df = pd.concat([self.df, pd.DataFrame(new_row)], ignore_index=True)
 
-    def add_article_body_df(self): # decorator function to add a column for article body text to the dataframe saves time as adding article body text is expensive
+    async def add_article_body_df(self): # decorator function to add a column for article body text to the dataframe saves time as adding article body text is expensive
         self.df['body'] = None
-        for i in range(0, len(self.df), 1):
-            article_body = self.get_article_body(i)
+        for i in range(len(self.df)):
+            article_body = await self.get_article_body(i)
             self.df.loc[i, 'body'] = self.format_article_text(article_body)
     
     def reduce_random(self, n: int, seed: int): # helper function to reduce the dataframe to n random entries for testing purposes
@@ -53,7 +53,6 @@ class News_Source:
             self.df = self.df.sample(n, random_state=seed).reset_index(drop=True)
 
     def format_article_text(self, text: str) -> str: # helper function to format article body text for long entries
-        
         if text is None:
             text = "No body text available."
         elif len(text) > 300:
@@ -72,22 +71,25 @@ class News_Source:
         else:
             return self.df['link'][index]
         
-    
-    def get_article_body(self, index: int) -> str: #Default method returns raw html 
-        if index > len(self.df)-1 or index < 0:
-            return None
-        else:
-            return self.get_article_body_link(self.df['link'][index])
-    
-    def get_article_body_link(self, article_link: str) -> str: #Default method returns raw html 
+    async def get_article_html(self, article_link: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                             "(KHTML, like Gecko) Chrome/121.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": "https://www.google.com/"
         }
-        session = requests.Session()
-        html = session.get(article_link, headers=headers)
+        async with httpx.AsyncClient(headers=headers, verify=False) as client: #TODO: Change verify to use actual SSL certificates at some point
+            html = await client.get(article_link)
+        return html
+    
+    async def get_article_body(self, index: int) -> str: #Default method returns raw html 
+        if index > len(self.df)-1 or index < 0:
+            return None
+        else:
+            return await self.get_article_body_link(self.df['link'][index])
+    
+    async def get_article_body_link(self, article_link: str) -> str: #Default method returns raw html 
+        html = await self.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         return soup
 
@@ -96,8 +98,8 @@ class News_Source_NBC(News_Source):
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="NBC")
         
-    def get_article_body_link(self, article_link: str) -> str:
-        html = requests.get(article_link)
+    async def get_article_body_link(self, article_link: str) -> str:
+        html = await self.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         article_json = soup.find("script", type="application/ld+json")
         article_body = json.loads(article_json.string).get('articleBody')
@@ -110,8 +112,8 @@ class News_Source_ABC(News_Source):
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="ABC")
     
-    def get_article_body_link(self, article_link: str) -> str:
-        html = requests.get(article_link)
+    async def get_article_body_link(self, article_link: str) -> str:
+        html = await self.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         if soup is not None:
             article_p_tags = soup.find_all("p")
@@ -129,15 +131,8 @@ class News_Source_invescom(News_Source):
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="INVESCOM")
     
-    def get_article_body_link(self, article_link: str) -> str:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "(KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.google.com/"
-        }
-        session = requests.Session()
-        html = session.get(article_link, headers=headers)
+    async def get_article_body_link(self, article_link: str) -> str:
+        html = await self.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         found_art = soup.find("div", id='article')
         if found_art is not None:

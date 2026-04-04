@@ -35,3 +35,6 @@ nul
 # Docker
 postgres_data/
 .ruff_cache/
+
+#Dev Scripts
+uvsync.bat

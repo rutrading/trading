@@ -10,5 +10,5 @@ router = APIRouter()
 
 @router.get("/news")
 async def get_news(user: dict = Depends(get_current_user)):
-    print(f"{user.get('sub')}\n\n")
-    return {"news": ns_iface.get_interface_singleton(600).news_set_arr(all_articles=True, i=0),"next_page_token": None}
+    news_dict = await ns_iface.get_interface_singleton(600).news_set_arr(all_articles=True, i=0)
+    return {"news": news_dict,"next_page_token": None}
