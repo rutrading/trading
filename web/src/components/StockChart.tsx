@@ -12,6 +12,7 @@ import {
 } from "lightweight-charts";
 import { getHistoricalBars } from "@/app/actions/bars";
 import { useQuote } from "@/components/ws-provider";
+import { toIsoStart, toIsoEnd } from "@/components/iso-helper";
 
 type HistoricalBar = {
   time: number;
@@ -53,58 +54,63 @@ const TIMEFRAME_OPTIONS: TimeframeOption[] = [
   { label: "1 YEAR", value: "1Year" },
 ];
 
-function toIsoStart(date: Date): string {
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      0,
-      0,
-      0,
-    ),
-  ).toISOString();
-}
+// Normalize a timestamp to the start of the current interval based on the timeframe
+// Mirrors what the backend uses (PostgreSQL date_trunc) so the dates are aligned
+function normalizeToIntervalStart(
+  nowMs: number,
+  tf: TimeframeValue,
+): UTCTimestamp {
+  const d = new Date(nowMs);
 
-function toIsoEnd(date: Date): string {
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      23,
-      59,
-      59,
-    ),
-  ).toISOString();
-}
-
-function timeframeToSeconds(tf: TimeframeValue) {
   switch (tf) {
-    case "1Min":
-      return 60;
-    case "5Min":
-      return 60 * 5;
-    case "15Min":
-      return 60 * 15;
-    case "30Min":
-      return 60 * 30;
-    case "1Hour":
-      return 60 * 60;
-    case "1Day":
-      return 60 * 60 * 24;
-    case "1Week":
-      return 60 * 60 * 24 * 7;
-    case "1Month":
-      return 60 * 60 * 24 * 30;
-    case "3Month":
-      return 60 * 60 * 24 * 30 * 3;
-    case "6Month":
-      return 60 * 60 * 24 * 30 * 6;
-    case "1Year":
-      return 60 * 60 * 24 * 365;
-    default:
-      return 60 * 15; // 15 mins
+    case "1Min": {
+      return (Math.floor(nowMs / (60 * 1000)) * 60) as UTCTimestamp;
+    }
+    case "5Min": {
+      return (Math.floor(nowMs / (5 * 60 * 1000)) * (5 * 60)) as UTCTimestamp;
+    }
+    case "15Min": {
+      return (Math.floor(nowMs / (15 * 60 * 1000)) * (15 * 60)) as UTCTimestamp;
+    }
+    case "30Min": {
+      return (Math.floor(nowMs / (30 * 60 * 1000)) * (30 * 60)) as UTCTimestamp;
+    }
+    case "1Hour": {
+      return (Math.floor(nowMs / (60 * 60 * 1000)) * (60 * 60)) as UTCTimestamp;
+    }
+    case "1Day": {
+      return (Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) /
+        1000) as UTCTimestamp;
+    }
+    case "1Week": {
+      const day = d.getUTCDay();
+      const daysToMonday = day === 0 ? 6 : day - 1;
+      return (Date.UTC(
+        d.getUTCFullYear(),
+        d.getUTCMonth(),
+        d.getUTCDate() - daysToMonday,
+      ) / 1000) as UTCTimestamp;
+    }
+    case "1Month": {
+      return (Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) /
+        1000) as UTCTimestamp;
+    }
+    case "3Month": {
+      const quarterMonth = Math.floor(d.getUTCMonth() / 3) * 3;
+      return (Date.UTC(d.getUTCFullYear(), quarterMonth, 1) /
+        1000) as UTCTimestamp;
+    }
+    case "6Month": {
+      const halfMonth = Math.floor(d.getUTCMonth() / 6) * 6;
+      return (Date.UTC(d.getUTCFullYear(), halfMonth, 1) /
+        1000) as UTCTimestamp;
+    }
+    case "1Year": {
+      return (Date.UTC(d.getUTCFullYear(), 0, 1) / 1000) as UTCTimestamp;
+    }
+    default: {
+      return (Math.floor(nowMs / (15 * 60 * 1000)) * (15 * 60)) as UTCTimestamp;
+    }
   }
 }
 
@@ -123,13 +129,13 @@ function timeframeToStartDate(tf: TimeframeValue): Date {
     case "1Day":
       return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
     case "1Week":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 2);
     case "1Month":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365);
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 10);
     case "3Month":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 36 * 2);
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 10);
     case "6Month":
-      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 4);
+      return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 10);
     case "1Year":
       return new Date(new Date().getTime() - 24 * 60 * 60 * 1000 * 365 * 10);
     default:
@@ -137,7 +143,8 @@ function timeframeToStartDate(tf: TimeframeValue): Date {
   }
 }
 
-// TODO: Fix real-time updates on some time ranges
+// TODO: Auto-update chart when user goes back in time
+// TODO: Change zoom when interval changes
 export function StockChart({ ticker }: { ticker: string }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi>(null);
@@ -178,9 +185,7 @@ export function StockChart({ ticker }: { ticker: string }) {
       setBars(result.data.bars);
       currentCandleRef.current = null;
     }
-    fetchBars().catch((err) => {
-      console.error("Failed to fetch bars:", err);
-    });
+    fetchBars();
   }, [ticker, timeframe]);
 
   useEffect(() => {
@@ -254,15 +259,17 @@ export function StockChart({ ticker }: { ticker: string }) {
     if (!quote || !seriesRef.current) return;
 
     // match selected timeframe
-    const intervalSec = timeframeToSeconds(timeframe);
-    const intervalTime = (Math.floor(quote.timestamp / intervalSec) *
-      intervalSec) as UTCTimestamp;
+    const rawMs =
+      typeof quote.timestamp === "string"
+        ? new Date(quote.timestamp).getTime()
+        : Number(quote.timestamp) > 1e10
+          ? Number(quote.timestamp)
+          : Number(quote.timestamp) * 1000;
+
+    const intervalTime = normalizeToIntervalStart(rawMs, timeframe);
 
     if (!currentCandleRef.current) {
-      // First candle
-      // find the most recent historical bar at or before the intervalTime
-      const previousHistorical = bars.findLast((b) => b.time <= intervalTime);
-
+      const previousHistorical = bars.at(-1);
       const openPrice = previousHistorical?.open ?? quote.price;
       const highPrice = previousHistorical?.high ?? quote.price;
       const lowPrice = previousHistorical?.low ?? quote.price;
@@ -273,9 +280,11 @@ export function StockChart({ ticker }: { ticker: string }) {
         low: Math.min(openPrice, lowPrice),
         close: quote.price,
       };
-    } else if (currentCandleRef.current.time < (intervalTime as number)) {
+    } else if (
+      (currentCandleRef.current.time as number) < (intervalTime as number)
+    ) {
       // New candle
-      const openPrice = currentCandleRef.current?.close ?? quote.price;
+      const openPrice = currentCandleRef.current.close ?? quote.price;
       currentCandleRef.current = {
         time: intervalTime,
         open: openPrice,
@@ -296,6 +305,19 @@ export function StockChart({ ticker }: { ticker: string }) {
       );
     }
 
+    const lastBar = bars.at(-1);
+    if (
+      lastBar &&
+      (currentCandleRef.current.time as number) < (lastBar.time as number)
+    ) {
+      console.warn(
+        "Trying to update a candle older than historical data. currentCandleRef.current.time: ",
+        currentCandleRef.current.time,
+        "lastBar.time: ",
+        lastBar.time,
+      );
+      return; // don't try to update a candle older than historical data
+    }
     seriesRef.current.update(currentCandleRef.current);
   }, [quote, bars, timeframe]);
 
