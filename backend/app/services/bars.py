@@ -1,7 +1,7 @@
 """Historical bar service layer."""
 
 import logging
-from datetime import datetime, date, timezone
+from datetime import date, datetime, timezone
 
 import httpx
 from sqlalchemy import text
@@ -78,7 +78,7 @@ async def _fetch_alpaca_bars(
         extra_params = {"symbols": ticker}
     else:
         base_path = f"/v2/stocks/{ticker}/bars"
-        extra_params = {"feed": config.alpaca_feed}
+        extra_params = {"feed": config.alpaca_feed, "adjustment": "all"}
 
     all_bars: list[dict] = []
     page_token: str | None = None
@@ -92,7 +92,6 @@ async def _fetch_alpaca_bars(
                 "timeframe": timeframe,
                 "start": start,
                 "end": end,
-                "adjustment": "all",
                 "sort": "asc",
                 "limit": 10000,
                 **extra_params,
