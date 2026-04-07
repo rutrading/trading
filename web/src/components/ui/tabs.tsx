@@ -78,6 +78,7 @@ function TabsPanel({ className, ...props }: TabsPrimitive.Panel.Props) {
 }
 
 export {
+  TabsPrimitive,
   Tabs,
   TabsList,
   TabsTab,
