@@ -54,9 +54,9 @@ export default function WatchlistPage() {
                   className="group border-b border-border last:border-0 transition-colors hover:bg-muted/30"
                 >
                   <td className="px-4 py-3">
-                    <Link href={`/test/stocks/${w.ticker}`} className="flex items-center gap-2">
-                      <Star size={14} weight="fill" className="text-amber-400" />
-                      <span className="text-sm font-semibold">{w.ticker}</span>
+                    <Link href={`/test/stocks/${w.ticker}`} className="inline-flex items-center gap-2">
+                      <Star size={14} weight="fill" className="shrink-0 text-amber-400" />
+                      <span className="text-sm font-semibold leading-none">{w.ticker}</span>
                     </Link>
                   </td>
                   <td className="px-4 py-3">
