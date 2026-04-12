@@ -46,7 +46,7 @@ function getActiveTab(pathname: string) {
       item.href === pathname ||
       (item.href !== "/" && pathname.startsWith(item.href)),
   );
-  return match?.label ?? "Dashboard";
+  return match?.label ?? null;
 }
 
 export function Header({ userName, userImage }: { userName: string; userImage?: string | null }) {
@@ -72,9 +72,9 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
       </Link>
 
       <Tabs value={active}>
-        <TabsList className="bg-transparent">
+        <TabsList className="bg-transparent *:data-[slot=tab-indicator]:bg-muted *:data-[slot=tab-indicator]:dark:bg-input">
           {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
-            <TabsTab key={label} value={label} render={<Link href={href} />} nativeButton={false}>
+            <TabsTab key={label} value={label} render={<Link href={href} />} nativeButton={false} className="text-foreground/60 data-active:text-foreground">
               <Icon size={16} />
               {label}
             </TabsTab>
@@ -84,7 +84,7 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
             value={SETTINGS_TAB.label}
             render={<Link href={SETTINGS_TAB.href} />}
             nativeButton={false}
-            className="hidden md:inline-flex"
+            className="hidden md:inline-flex text-foreground/60 data-active:text-foreground"
           >
             <GearSix size={16} />
             Settings

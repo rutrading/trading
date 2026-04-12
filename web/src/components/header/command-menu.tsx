@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChartLine,
@@ -10,6 +10,7 @@ import {
   GearSix,
   SignOut,
   MagnifyingGlass,
+  Star,
 } from "@phosphor-icons/react";
 import {
   CommandDialog,
@@ -22,33 +23,69 @@ import {
   CommandGroup,
   CommandGroupLabel,
   CommandItem,
+  CommandCollection,
   CommandSeparator,
   CommandFooter,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { getWatchlist } from "@/app/actions/watchlist";
+import { getTrendingSymbols, searchSymbols } from "@/app/actions/symbols";
 
-const PAGES = [
-  { label: "Dashboard", href: "/", icon: ChartLine, keywords: "home overview" },
-  { label: "Portfolio", href: "/portfolio", icon: Briefcase, keywords: "holdings stocks positions" },
-  { label: "News", href: "/news", icon: Newspaper, keywords: "articles headlines market" },
-  { label: "Watchlist", href: "/watchlist", icon: Binoculars, keywords: "tracked favorites saved" },
-  { label: "Settings", href: "/settings", icon: GearSix, keywords: "account profile preferences" },
+interface PageItem {
+  value: string;
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+}
+
+interface StockItem {
+  value: string;
+  ticker: string;
+  name: string;
+}
+
+interface ActionItem {
+  value: string;
+  label: string;
+}
+
+interface Group {
+  value: string;
+  items: (PageItem | StockItem | ActionItem)[];
+}
+
+const PAGES: PageItem[] = [
+  { value: "dashboard home overview", label: "Dashboard", href: "/", icon: ChartLine },
+  { value: "portfolio holdings stocks positions", label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { value: "news articles headlines market", label: "News", href: "/news", icon: Newspaper },
+  { value: "watchlist tracked favorites saved", label: "Watchlist", href: "/watchlist", icon: Binoculars },
+  { value: "settings account profile preferences", label: "Settings", href: "/settings", icon: GearSix },
 ];
 
-const STOCKS = [
-  { ticker: "AAPL", name: "Apple Inc." },
-  { ticker: "GOOGL", name: "Alphabet Inc." },
-  { ticker: "AMZN", name: "Amazon.com Inc." },
-  { ticker: "NVDA", name: "NVIDIA Corporation" },
-  { ticker: "MSFT", name: "Microsoft Corporation" },
-  { ticker: "META", name: "Meta Platforms Inc." },
-  { ticker: "TSLA", name: "Tesla Inc." },
-  { ticker: "NFLX", name: "Netflix Inc." },
+const ACTIONS: ActionItem[] = [
+  { value: "sign out logout", label: "Sign Out" },
 ];
+
+function isPageItem(item: PageItem | StockItem | ActionItem): item is PageItem {
+  return "href" in item && "icon" in item;
+}
+
+function isStockItem(item: PageItem | StockItem | ActionItem): item is StockItem {
+  return "ticker" in item;
+}
+
+function toStockItem(s: { ticker: string; name: string }): StockItem {
+  return { value: `${s.ticker.toLowerCase()} ${s.name.toLowerCase()}`, ticker: s.ticker, name: s.name };
+}
 
 export function CommandMenu() {
   const [open, setOpen] = useState(false);
+  const [watchlistTickers, setWatchlistTickers] = useState<Set<string>>(new Set());
+  const [stocks, setStocks] = useState<StockItem[]>([]);
+  const [, startTransition] = useTransition();
   const router = useRouter();
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -60,6 +97,20 @@ export function CommandMenu() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    startTransition(async () => {
+      const [watchlistRes, trending] = await Promise.all([
+        getWatchlist(),
+        getTrendingSymbols(),
+      ]);
+      if (watchlistRes.ok) {
+        setWatchlistTickers(new Set(watchlistRes.data.watchlist.map((w) => w.ticker)));
+      }
+      setStocks(trending.map(toStockItem));
+    });
+  }, [open]);
+
   const navigate = useCallback(
     (href: string) => {
       setOpen(false);
@@ -68,59 +119,106 @@ export function CommandMenu() {
     [router],
   );
 
+  const handleSearch = useCallback((query: string) => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    const q = query.trim();
+    if (!q) {
+      startTransition(async () => {
+        const trending = await getTrendingSymbols();
+        setStocks(trending.map(toStockItem));
+      });
+      return;
+    }
+    searchTimeout.current = setTimeout(() => {
+      startTransition(async () => {
+        const results = await searchSymbols(q);
+        setStocks(results.map(toStockItem));
+      });
+    }, 200);
+  }, []);
+
+  const groups = useMemo<Group[]>(() => {
+    const watchlistStocks = stocks.filter((s) => watchlistTickers.has(s.ticker));
+    const otherStocks = stocks.filter((s) => !watchlistTickers.has(s.ticker));
+
+    const result: Group[] = [
+      { value: "Pages", items: PAGES },
+      { value: "Actions", items: ACTIONS },
+    ];
+
+    if (watchlistStocks.length > 0) {
+      result.push({ value: "Watchlist", items: watchlistStocks });
+    }
+
+    if (otherStocks.length > 0) {
+      result.push({ value: "Stocks", items: otherStocks });
+    }
+
+    return result;
+  }, [watchlistTickers, stocks]);
+
   return (
     <>
-      <Button variant="ghost" size="icon-sm" onClick={() => setOpen(true)}>
-        <MagnifyingGlass size={18} />
+      <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
+        <MagnifyingGlass />
       </Button>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandDialogPopup>
-          <Command>
-            <CommandInput placeholder="Search stocks, pages..." />
+          <Command items={groups}>
+            <CommandInput placeholder="Search stocks, pages..." onChange={(e) => handleSearch(e.target.value)} />
             <CommandPanel>
+              <CommandEmpty>No results found.</CommandEmpty>
               <CommandList>
-                <CommandEmpty>No results found.</CommandEmpty>
-
-                <CommandGroup>
-                  <CommandGroupLabel>Pages</CommandGroupLabel>
-                  {PAGES.map((page) => (
-                    <CommandItem
-                      key={page.href}
-                      value={`${page.label} ${page.keywords}`}
-                      onClick={() => navigate(page.href)}
-                    >
-                      <page.icon size={16} className="opacity-60" />
-                      {page.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-
-                <CommandSeparator />
-
-                <CommandGroup>
-                  <CommandGroupLabel>Stocks</CommandGroupLabel>
-                  {STOCKS.map((stock) => (
-                    <CommandItem
-                      key={stock.ticker}
-                      value={`${stock.ticker} ${stock.name}`}
-                      onClick={() => navigate(`/stocks/${stock.ticker}`)}
-                    >
-                      <span className="w-12 text-xs font-semibold">{stock.ticker}</span>
-                      <span className="text-muted-foreground">{stock.name}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-
-                <CommandSeparator />
-
-                <CommandGroup>
-                  <CommandGroupLabel>Actions</CommandGroupLabel>
-                  <CommandItem value="sign out logout" onClick={() => navigate("/auth/login")}>
-                    <SignOut size={16} className="opacity-60" />
-                    Sign Out
-                  </CommandItem>
-                </CommandGroup>
+                {(group: Group) => (
+                  <Fragment key={group.value}>
+                    <CommandGroup items={group.items}>
+                      <CommandGroupLabel>{group.value}</CommandGroupLabel>
+                      <CommandCollection>
+                        {(item: PageItem | StockItem | ActionItem) => {
+                          if (isPageItem(item)) {
+                            const Icon = item.icon;
+                            return (
+                              <CommandItem
+                                key={item.value}
+                                value={item.value}
+                                onClick={() => navigate(item.href)}
+                              >
+                                <Icon size={16} className="opacity-60" />
+                                {item.label}
+                              </CommandItem>
+                            );
+                          }
+                          if (isStockItem(item)) {
+                            const isWatched = watchlistTickers.has(item.ticker);
+                            return (
+                              <CommandItem
+                                key={item.value}
+                                value={item.value}
+                                onClick={() => navigate(`/stocks/${item.ticker}`)}
+                              >
+                                {isWatched && <Star size={14} weight="fill" className="text-amber-400" />}
+                                <span className="w-12 text-xs font-semibold">{item.ticker}</span>
+                                <span className="text-muted-foreground">{item.name}</span>
+                              </CommandItem>
+                            );
+                          }
+                          return (
+                            <CommandItem
+                              key={item.value}
+                              value={item.value}
+                              onClick={() => navigate("/auth/login")}
+                            >
+                              <SignOut size={16} className="opacity-60" />
+                              {(item as ActionItem).label}
+                            </CommandItem>
+                          );
+                        }}
+                      </CommandCollection>
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </Fragment>
+                )}
               </CommandList>
             </CommandPanel>
             <CommandFooter>
