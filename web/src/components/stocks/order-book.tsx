@@ -34,9 +34,11 @@ export const OrderBook = ({ price }: { price: number }) => {
           </div>
         ))}
 
-        <div className="my-2 flex items-center justify-center gap-2 rounded-md bg-muted py-1.5 text-xs font-semibold tabular-nums">
-          ${fmt(price)}
-          <span className="text-[10px] text-muted-foreground">LAST PRICE</span>
+        <div className="my-2 flex items-center justify-center rounded-md bg-muted py-1.5">
+          <div className="text-center">
+            <p className="text-xs font-semibold tabular-nums">${fmt(price)}</p>
+            <p className="text-[10px] text-muted-foreground">LAST PRICE</p>
+          </div>
         </div>
 
         {ORDER_BOOK_BIDS.map((row, i) => (
