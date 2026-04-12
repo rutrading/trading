@@ -24,16 +24,15 @@ import {
   CommandItem,
   CommandSeparator,
   CommandFooter,
-  CommandShortcut,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 
 const PAGES = [
-  { label: "Dashboard", href: "/test", icon: ChartLine, keywords: "home overview" },
-  { label: "Portfolio", href: "/test/portfolio", icon: Briefcase, keywords: "holdings stocks positions" },
-  { label: "News", href: "/test/news", icon: Newspaper, keywords: "articles headlines market" },
-  { label: "Watchlist", href: "/test/watchlist", icon: Binoculars, keywords: "tracked favorites saved" },
-  { label: "Settings", href: "/test/settings", icon: GearSix, keywords: "account profile preferences" },
+  { label: "Dashboard", href: "/", icon: ChartLine, keywords: "home overview" },
+  { label: "Portfolio", href: "/portfolio", icon: Briefcase, keywords: "holdings stocks positions" },
+  { label: "News", href: "/news", icon: Newspaper, keywords: "articles headlines market" },
+  { label: "Watchlist", href: "/watchlist", icon: Binoculars, keywords: "tracked favorites saved" },
+  { label: "Settings", href: "/settings", icon: GearSix, keywords: "account profile preferences" },
 ];
 
 const STOCKS = [
@@ -105,7 +104,7 @@ export function CommandMenu() {
                     <CommandItem
                       key={stock.ticker}
                       value={`${stock.ticker} ${stock.name}`}
-                      onClick={() => navigate(`/test/stocks/${stock.ticker}`)}
+                      onClick={() => navigate(`/stocks/${stock.ticker}`)}
                     >
                       <span className="w-12 text-xs font-semibold">{stock.ticker}</span>
                       <span className="text-muted-foreground">{stock.name}</span>
