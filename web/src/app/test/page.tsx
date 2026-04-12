@@ -1,121 +1,114 @@
-import type { Metadata } from "next";
+"use client";
+
 import Link from "next/link";
 import {
-  ArrowUp,
-  ArrowDown,
-  CaretRight,
-} from "@phosphor-icons/react/ssr";
+  PencilSimple,
+  Trash,
+} from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { ChartSection } from "./_components/chart-section";
 
-export const metadata: Metadata = { title: "Dashboard - R U Trading" };
+type Holding = {
+  ticker: string;
+  qty: number;
+  avgCost: number;
+};
 
-const HOLDINGS = [
-  { ticker: "AAPL", name: "Apple Inc.", qty: 50, avgCost: 145.0, current: 178.5, change: 23.1 },
-  { ticker: "MSFT", name: "Microsoft", qty: 30, avgCost: 280.0, current: 415.2, change: 48.3 },
-  { ticker: "GOOGL", name: "Alphabet", qty: 20, avgCost: 120.0, current: 155.8, change: 29.8 },
-  { ticker: "TSLA", name: "Tesla", qty: 15, avgCost: 220.0, current: 195.4, change: -11.2 },
+type Account = {
+  id: number;
+  name: string;
+  type: "investment" | "crypto";
+  balance: number;
+  isJoint: boolean;
+  holdings: Holding[];
+};
+
+const ACCOUNTS: Account[] = [
+  {
+    id: 1, name: "Main Portfolio", type: "investment", balance: 100000, isJoint: false,
+    holdings: [
+      { ticker: "AAPL", qty: 50, avgCost: 145.0 },
+      { ticker: "MSFT", qty: 30, avgCost: 280.0 },
+      { ticker: "GOOGL", qty: 20, avgCost: 120.0 },
+    ],
+  },
+  {
+    id: 2, name: "Crypto Trading", type: "crypto", balance: 25000, isJoint: false,
+    holdings: [
+      { ticker: "BTC", qty: 0.5, avgCost: 42000 },
+      { ticker: "ETH", qty: 8, avgCost: 2800 },
+    ],
+  },
+  {
+    id: 3, name: "Joint Investment", type: "investment", balance: 50000, isJoint: true,
+    holdings: [],
+  },
 ];
 
-function fmt(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const fmt = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function DashboardPage() {
-  const totalValue = HOLDINGS.reduce((s, h) => s + h.qty * h.current, 0);
-  const totalCost = HOLDINGS.reduce((s, h) => s + h.qty * h.avgCost, 0);
-  const totalGain = totalValue - totalCost;
-  const totalGainPct = (totalGain / totalCost) * 100;
-  const cashBalance = 50000;
-
+function AccountCard({ acct }: { acct: Account }) {
   return (
-    <div className="space-y-8">
-      <div className="space-y-4">
-        <div className="flex items-baseline gap-4">
-          <h1 className="text-5xl font-bold tabular-nums tracking-tight">
-            ${fmt(totalValue + cashBalance)}
-          </h1>
-          <span
-            className={`flex items-center gap-1 text-2xl font-semibold tabular-nums ${
-              totalGain >= 0 ? "text-emerald-500" : "text-red-500"
-            }`}
-          >
-            {totalGain >= 0 ? (
-              <ArrowUp size={20} weight="bold" />
-            ) : (
-              <ArrowDown size={20} weight="bold" />
-            )}
-            {Math.abs(totalGainPct).toFixed(2)}%
+    <div className="rounded-2xl bg-accent p-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <p className="font-semibold">{acct.name}</p>
+          <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+            {acct.type}
           </span>
-          <p className="text-sm text-muted-foreground">Total Value</p>
+          {acct.isJoint && (
+            <span className="rounded bg-info/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-info-foreground">
+              Joint
+            </span>
+          )}
         </div>
-
-        <div className="flex items-end justify-between gap-8">
-          <div className="flex gap-8">
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">{HOLDINGS.length}</p>
-              <p className="text-xs text-muted-foreground">Holdings</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">${fmt(cashBalance)}</p>
-              <p className="text-xs text-muted-foreground">Cash Balance</p>
-            </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">
-                {totalGain >= 0 ? "+" : "-"}${fmt(Math.abs(totalGain))}
-              </p>
-              <p className="text-xs text-muted-foreground">Total Gain/Loss</p>
-            </div>
-          </div>
-
-          <ChartSection />
-        </div>
+        <p className="text-2xl font-bold tabular-nums">${fmt(acct.balance)}</p>
       </div>
 
-      <div className="rounded-2xl bg-accent p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Holdings</h2>
-          <Link href="/test/portfolio">
-            <Button variant="ghost" size="sm">
-              See All <CaretRight size={14} />
-            </Button>
-          </Link>
-        </div>
+      <div className="mt-2 flex justify-end gap-2">
+        <Button variant="ghost" size="sm">
+          <PencilSimple size={14} />
+          Edit
+        </Button>
+        <Button variant="ghost" size="sm" className="text-destructive">
+          <Trash size={14} />
+          Delete
+        </Button>
+      </div>
 
-        <div className="space-y-1">
-          {HOLDINGS.map((h) => (
+      {acct.holdings.length > 0 && (
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          {acct.holdings.map((h) => (
             <Link
               key={h.ticker}
-              href={`/test/stocks/${h.ticker}`}
-              className="flex items-center justify-between rounded-xl bg-card px-4 py-3 transition-colors hover:bg-card/80"
+              href={`/stocks/${h.ticker}`}
+              className="rounded-xl bg-card p-4 transition-colors hover:bg-card/80"
             >
-              <div>
-                <p className="text-sm font-medium">{h.ticker}</p>
-                <p className="text-xs text-muted-foreground">
-                  {h.qty} shares @ ${fmt(h.avgCost)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-medium tabular-nums">
-                  ${fmt(h.qty * h.current)}
-                </p>
-                <div className="flex items-center justify-end gap-0.5 text-xs font-medium">
-                  {h.change >= 0 ? (
-                    <>
-                      <ArrowUp size={10} weight="bold" className="text-emerald-400" />
-                      <span className="text-emerald-400">+{h.change}%</span>
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDown size={10} weight="bold" className="text-red-400" />
-                      <span className="text-red-400">{h.change}%</span>
-                    </>
-                  )}
-                </div>
-              </div>
+              <p className="text-sm font-semibold">{h.ticker}</p>
+              <p className="mt-1 text-lg font-bold tabular-nums">${fmt(h.qty * h.avgCost)}</p>
+              <p className="text-xs text-muted-foreground">{h.qty} @ ${fmt(h.avgCost)}</p>
             </Link>
           ))}
         </div>
+      )}
+
+      {acct.holdings.length === 0 && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">No holdings yet</p>
+      )}
+    </div>
+  );
+}
+
+export default function TestPage() {
+  return (
+    <div className="space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Accounts (Test)</h1>
+        <p className="text-sm text-muted-foreground">Account management demo.</p>
+      </div>
+
+      <div className="space-y-3">
+        {ACCOUNTS.map((a) => <AccountCard key={a.id} acct={a} />)}
       </div>
     </div>
   );
