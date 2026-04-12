@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getNews } from "@/app/actions/news";
 import { TickerNews } from "@/components/news/ticker-news";
 
 type Props = { params: Promise<{ symbol: string }> };
@@ -10,5 +11,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function SymbolNewsPage({ params }: Props) {
   const { symbol } = await params;
-  return <TickerNews ticker={symbol} />;
+  const { articles } = await getNews({ ticker: symbol.toUpperCase() });
+  return <TickerNews ticker={symbol} articles={articles} />;
 }

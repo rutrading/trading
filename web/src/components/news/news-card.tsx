@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ArrowUpRight } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
-import type { NewsItem } from "./news-data";
+import type { NewsArticle } from "@/app/actions/news";
 
-export const NewsCard = ({ item }: { item: NewsItem }) => {
+export const NewsCard = ({ item }: { item: NewsArticle }) => {
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
       <div className="p-2">
@@ -20,8 +20,9 @@ export const NewsCard = ({ item }: { item: NewsItem }) => {
               </span>
             </Link>
           )}
-          <span className="text-xs text-muted-foreground">{item.source}</span>
-          <span className="text-xs text-muted-foreground">{item.timestamp}</span>
+          {item.source && (
+            <span className="text-xs text-muted-foreground">{item.source}</span>
+          )}
         </div>
         <h3 className="mb-1 text-sm font-semibold leading-snug">
           {item.headline}
