@@ -4,52 +4,48 @@ import { ArrowUp, ArrowDown, CaretRight } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
 import { ChartSection } from "@/components/dashboard/chart-section";
 import { HoldingsList } from "@/components/dashboard/holdings-list";
+import { getAccounts } from "@/app/actions/auth";
+import { getHoldings, type Holding } from "@/app/actions/portfolio";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
-
-const HOLDINGS = [
-  { ticker: "AAPL", name: "Apple Inc.", qty: 50, avgCost: 145.0, current: 178.5, change: 23.1 },
-  { ticker: "MSFT", name: "Microsoft", qty: 30, avgCost: 280.0, current: 415.2, change: 48.3 },
-  { ticker: "GOOGL", name: "Alphabet", qty: 20, avgCost: 120.0, current: 155.8, change: 29.8 },
-  { ticker: "TSLA", name: "Tesla", qty: 15, avgCost: 220.0, current: 195.4, change: -11.2 },
-];
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function DashboardPage() {
-  const totalValue = HOLDINGS.reduce((s, h) => s + h.qty * h.current, 0);
-  const totalCost = HOLDINGS.reduce((s, h) => s + h.qty * h.avgCost, 0);
-  const totalGain = totalValue - totalCost;
-  const totalGainPct = (totalGain / totalCost) * 100;
-  const cashBalance = 50000;
+export default async function DashboardPage() {
+  const accounts = await getAccounts();
+  const accountId = accounts[0]?.tradingAccount.id;
+
+  let holdings: Holding[] = [];
+  let cashBalance = 0;
+
+  if (accountId) {
+    const res = await getHoldings(accountId);
+    if (res.ok) {
+      holdings = res.data.holdings;
+      cashBalance = parseFloat(res.data.cash_balance);
+    }
+  }
+
+  const totalCost = holdings.reduce(
+    (s, h) => s + parseFloat(h.quantity) * parseFloat(h.average_cost),
+    0,
+  );
 
   return (
     <div className="space-y-8">
       <div className="space-y-4">
         <div className="flex items-baseline gap-4">
           <h1 className="text-5xl font-bold tabular-nums tracking-tight">
-            ${fmt(totalValue + cashBalance)}
+            ${fmt(totalCost + cashBalance)}
           </h1>
-          <span
-            className={`flex items-center gap-1 text-2xl font-semibold tabular-nums ${
-              totalGain >= 0 ? "text-emerald-500" : "text-red-500"
-            }`}
-          >
-            {totalGain >= 0 ? (
-              <ArrowUp size={20} weight="bold" />
-            ) : (
-              <ArrowDown size={20} weight="bold" />
-            )}
-            {Math.abs(totalGainPct).toFixed(2)}%
-          </span>
-          <p className="text-sm text-muted-foreground">Total Value</p>
+          <p className="text-sm text-muted-foreground">Portfolio Value</p>
         </div>
 
         <div className="flex items-end justify-between gap-8">
           <div className="flex gap-8">
             <div>
-              <p className="text-2xl font-semibold tabular-nums">{HOLDINGS.length}</p>
+              <p className="text-2xl font-semibold tabular-nums">{holdings.length}</p>
               <p className="text-xs text-muted-foreground">Holdings</p>
             </div>
             <div>
@@ -57,10 +53,8 @@ export default function DashboardPage() {
               <p className="text-xs text-muted-foreground">Cash Balance</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold tabular-nums">
-                {totalGain >= 0 ? "+" : "-"}${fmt(Math.abs(totalGain))}
-              </p>
-              <p className="text-xs text-muted-foreground">Total Gain/Loss</p>
+              <p className="text-2xl font-semibold tabular-nums">${fmt(totalCost)}</p>
+              <p className="text-xs text-muted-foreground">Invested</p>
             </div>
           </div>
           <ChartSection />
@@ -76,7 +70,7 @@ export default function DashboardPage() {
             </Button>
           </Link>
         </div>
-        <HoldingsList holdings={HOLDINGS} />
+        <HoldingsList holdings={holdings} />
       </div>
     </div>
   );

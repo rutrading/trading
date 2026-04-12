@@ -1,3 +1,4 @@
+import { ClockCounterClockwise } from "@phosphor-icons/react/ssr";
 import {
   Table,
   TableBody,
@@ -7,19 +8,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-
-type Transaction = {
-  date: string;
-  action: string;
-  ticker: string;
-  qty: number;
-  price: number;
-};
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import type { Transaction } from "@/app/actions/portfolio";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const TransactionHistory = ({ transactions }: { transactions: Transaction[] }) => {
+  if (transactions.length === 0) {
+    return (
+      <div className="rounded-2xl bg-accent p-6">
+        <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><ClockCounterClockwise /></EmptyMedia>
+            <EmptyTitle>No transactions</EmptyTitle>
+            <EmptyDescription>Your trade history will appear here.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl bg-accent p-6">
       <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
@@ -28,7 +38,7 @@ export const TransactionHistory = ({ transactions }: { transactions: Transaction
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead>Side</TableHead>
               <TableHead>Symbol</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Price</TableHead>
@@ -36,22 +46,28 @@ export const TransactionHistory = ({ transactions }: { transactions: Transaction
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transactions.map((t, i) => (
-              <TableRow key={i}>
-                <TableCell className="text-muted-foreground">{t.date}</TableCell>
+            {transactions.map((t) => (
+              <TableRow key={t.id}>
+                <TableCell className="text-muted-foreground">
+                  {new Date(t.created_at).toLocaleDateString()}
+                </TableCell>
                 <TableCell>
                   <Badge
-                    variant={t.action === "BUY" ? "success" : "error"}
+                    variant={t.side === "buy" ? "success" : "error"}
                     size="sm"
                   >
-                    {t.action}
+                    {t.side.toUpperCase()}
                   </Badge>
                 </TableCell>
                 <TableCell className="font-medium">{t.ticker}</TableCell>
-                <TableCell className="text-right tabular-nums">{t.qty}</TableCell>
-                <TableCell className="text-right tabular-nums">${fmt(t.price)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  ${fmt(t.qty * t.price)}
+                  {parseFloat(t.quantity)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  ${fmt(parseFloat(t.price))}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  ${fmt(parseFloat(t.total))}
                 </TableCell>
               </TableRow>
             ))}

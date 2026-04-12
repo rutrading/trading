@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Briefcase } from "@phosphor-icons/react/ssr";
 import {
   Table,
   TableBody,
@@ -7,20 +8,28 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-
-type Holding = {
-  ticker: string;
-  name: string;
-  qty: number;
-  avgCost: number;
-  current: number;
-};
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import type { Holding } from "@/app/actions/portfolio";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
+  if (holdings.length === 0) {
+    return (
+      <div className="rounded-2xl bg-accent p-6">
+        <h2 className="mb-4 text-lg font-semibold">Holdings</h2>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><Briefcase /></EmptyMedia>
+            <EmptyTitle>No holdings</EmptyTitle>
+            <EmptyDescription>Place a trade to see your positions here.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl bg-accent p-6">
       <h2 className="mb-4 text-lg font-semibold">Holdings</h2>
@@ -29,22 +38,19 @@ export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
           <TableHeader>
             <TableRow>
               <TableHead>Symbol</TableHead>
-              <TableHead>Name</TableHead>
+              <TableHead>Asset Class</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Avg Cost</TableHead>
-              <TableHead className="text-right">Current Price</TableHead>
-              <TableHead className="text-right">Total Value</TableHead>
-              <TableHead className="text-right">Gain/Loss</TableHead>
+              <TableHead className="text-right">Total Cost</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {holdings.map((h) => {
-              const value = h.qty * h.current;
-              const cost = h.qty * h.avgCost;
-              const gain = value - cost;
-              const gainPct = (gain / cost) * 100;
+              const qty = parseFloat(h.quantity);
+              const avgCost = parseFloat(h.average_cost);
+              const totalCost = qty * avgCost;
               return (
-                <TableRow key={h.ticker} className="cursor-pointer">
+                <TableRow key={h.id}>
                   <TableCell>
                     <Link
                       href={`/stocks/${h.ticker}`}
@@ -53,16 +59,12 @@ export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
                       {h.ticker}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{h.name}</TableCell>
-                  <TableCell className="text-right tabular-nums">{h.qty}</TableCell>
-                  <TableCell className="text-right tabular-nums">${fmt(h.avgCost)}</TableCell>
-                  <TableCell className="text-right tabular-nums">${fmt(h.current)}</TableCell>
-                  <TableCell className="text-right tabular-nums">${fmt(value)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    <Badge variant={gain >= 0 ? "success" : "error"} size="sm">
-                      {gain >= 0 ? "+" : ""}{gainPct.toFixed(2)}%
-                    </Badge>
+                  <TableCell className="text-muted-foreground">
+                    {h.asset_class === "crypto" ? "Crypto" : "US Equity"}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums">{qty}</TableCell>
+                  <TableCell className="text-right tabular-nums">${fmt(avgCost)}</TableCell>
+                  <TableCell className="text-right tabular-nums">${fmt(totalCost)}</TableCell>
                 </TableRow>
               );
             })}
