@@ -3,7 +3,6 @@
 import logging
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth import get_current_user
@@ -11,6 +10,13 @@ from app.config import get_config
 from app.db import Quote, db_session
 from app.db.redis import get_redis
 from app.schemas import QuoteData, QuoteResponse
+from app.services.alpaca_rest import (
+    AlpacaMissingCredentials,
+    AlpacaRateLimited,
+    AlpacaRequestFailed,
+    AlpacaTickerNotFound,
+    fetch_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,95 +80,17 @@ def _read_from_postgres(ticker: str) -> QuoteData | None:
 
 
 async def _fetch_from_alpaca(ticker: str) -> QuoteData:
-    """Fetch a snapshot from Alpaca REST and return a normalized quote dict."""
-    config = get_config()
-
-    # no keys configured
-    if not config.alpaca_api_key or not config.alpaca_secret_key:
-        raise HTTPException(status_code=502, detail="Missing Alpaca API credentials")
-
-    headers = {
-        "APCA-API-KEY-ID": config.alpaca_api_key,
-        "APCA-API-SECRET-KEY": config.alpaca_secret_key,
-    }
-
-    # crypto tickers contain a slash (e.g. "BTC/USD")
-    is_crypto = "/" in ticker
-
+    """Wrapper around the shared snapshot fetcher that maps exceptions to HTTPException."""
     try:
-        async with httpx.AsyncClient(
-            base_url=config.alpaca_data_base_url, timeout=10.0
-        ) as client:
-            if is_crypto:
-                # crypto snapshot endpoint uses query param
-                res = await client.get(
-                    "/v1beta3/crypto/us/snapshots",
-                    params={"symbols": ticker},
-                    headers=headers,
-                )
-            else:
-                # stock snapshot endpoint uses path param
-                res = await client.get(
-                    f"/v2/stocks/{ticker}/snapshot",
-                    params={"feed": config.alpaca_feed},
-                    headers=headers,
-                )
-            res.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        status = exc.response.status_code
-        if status in (401, 403):
-            raise HTTPException(status_code=502, detail="Alpaca authentication failed")
-        if status == 404:
-            raise HTTPException(status_code=404, detail=f"Ticker {ticker} not found")
-        if status == 422:
-            raise HTTPException(status_code=400, detail="Invalid snapshot request")
-        if status == 429:
-            raise HTTPException(status_code=429, detail="Alpaca rate limit exceeded")
-        raise HTTPException(status_code=503, detail=f"Alpaca request failed ({status})")
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Alpaca request failed: {exc}")
-
-    body = res.json()
-
-    if is_crypto:
-        # crypto response: {"snapshots": {"BTC/USD": {...}}}
-        snap = body.get("snapshots", {}).get(ticker, {})
-    else:
-        # stock response is the snapshot object directly
-        snap = body
-
-    latest_trade = snap.get("latestTrade", {})
-    latest_quote = snap.get("latestQuote", {})
-    daily_bar = snap.get("dailyBar", {})
-    prev_daily_bar = snap.get("prevDailyBar", {})
-
-    price = float(latest_trade.get("p", 0))
-    prev_close = float(prev_daily_bar.get("c", 0))
-    change = price - prev_close if prev_close else 0
-    change_pct = (change / prev_close * 100) if prev_close else 0
-
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-
-    return QuoteData(
-        ticker=ticker,
-        price=price,
-        bid_price=float(latest_quote.get("bp", 0)),
-        bid_size=float(latest_quote.get("bs", 0)),
-        ask_price=float(latest_quote.get("ap", 0)),
-        ask_size=float(latest_quote.get("as", 0)),
-        open=float(daily_bar.get("o", 0)),
-        high=float(daily_bar.get("h", 0)),
-        low=float(daily_bar.get("l", 0)),
-        close=float(daily_bar.get("c", 0)),
-        volume=float(daily_bar.get("v", 0)),
-        trade_count=int(daily_bar.get("n", 0)),
-        vwap=float(daily_bar.get("vw", 0)),
-        previous_close=prev_close,
-        change=round(change, 4),
-        change_percent=round(change_pct, 4),
-        source="alpaca_rest",
-        timestamp=now_ts,
-    )
+        return await fetch_snapshot(ticker)
+    except AlpacaMissingCredentials:
+        raise HTTPException(status_code=502, detail="Missing Alpaca API credentials")
+    except AlpacaTickerNotFound:
+        raise HTTPException(status_code=404, detail=f"Ticker {ticker} not found")
+    except AlpacaRateLimited:
+        raise HTTPException(status_code=429, detail="Alpaca rate limit exceeded")
+    except AlpacaRequestFailed as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @router.get("/quote", response_model=QuoteResponse)

@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +49,43 @@ def _has_alpaca_credentials() -> bool:
     }
 
 
+async def _log_alpaca_account_info() -> None:
+    """Best-effort startup call to Alpaca /v2/account. Logs account status
+    plus the per-minute rate-limit headers so you know the tier at a glance.
+    Swallows all errors — must never block startup."""
+    try:
+        async with httpx.AsyncClient(
+            base_url=config.alpaca_base_url, timeout=5.0
+        ) as client:
+            res = await client.get(
+                "/v2/account",
+                headers={
+                    "APCA-API-KEY-ID": config.alpaca_api_key,
+                    "APCA-API-SECRET-KEY": config.alpaca_secret_key,
+                },
+            )
+            if res.status_code != 200:
+                logger.warning(
+                    "Alpaca /v2/account returned %s: %s",
+                    res.status_code,
+                    res.text[:200],
+                )
+                return
+
+            body = res.json()
+            rate_limit = res.headers.get("X-Ratelimit-Limit", "?")
+            rate_remaining = res.headers.get("X-Ratelimit-Remaining", "?")
+
+            logger.info(
+                "Alpaca account: status=%s rate_limit=%s/min (remaining=%s)",
+                body.get("status", "?"),
+                rate_limit,
+                rate_remaining,
+            )
+    except Exception as exc:
+        logger.warning("Alpaca account info lookup failed: %s", exc)
+
+
 manager = ConnectionManager()
 feed: BaseFeed
 if _has_alpaca_credentials():
@@ -62,7 +100,9 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     set_manager(manager)
-    if not _has_alpaca_credentials():
+    if _has_alpaca_credentials():
+        await _log_alpaca_account_info()
+    else:
         logger.warning(
             "Alpaca credentials not set, using mock market-data feed for local development."
         )
