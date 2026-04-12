@@ -73,6 +73,20 @@ order_status_enum = Enum(
 )
 
 
+class User(Base):
+    """Minimal reflection of the Better-Auth user table.
+
+    The actual table is managed by Drizzle; this model only exists so
+    SQLAlchemy can resolve foreign keys that reference user.id.
+    """
+
+    __tablename__ = "user"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    email: Mapped[str] = mapped_column(String)
+
+
 class Symbol(Base):
     __tablename__ = "symbol"
 

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import SKIP_AUTH, get_current_user
 from app.db import Transaction, get_db
 from app.dependencies import get_trading_account
 from app.schemas import TransactionResponse, TransactionsResponse
@@ -21,6 +21,14 @@ def list_transactions(
     db: Session = Depends(get_db),
 ):
     """List transaction history for a trading account with optional ticker filter."""
+
+    if SKIP_AUTH:
+        return TransactionsResponse(
+            transactions=[],
+            total=0,
+            page=page,
+            per_page=per_page,
+        )
 
     get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
 
