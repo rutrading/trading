@@ -1,6 +1,7 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+from app.ws import manager as ws_manager
 from app.ws.manager import ConnectionManager
 
 
@@ -250,7 +251,8 @@ class TestGracePeriod:
 
         assert "user1" not in manager._grace_tasks
 
-    async def test_grace_expire_removes_tickers(self):
+    async def test_grace_expire_removes_tickers(self, monkeypatch):
+        monkeypatch.setattr(ws_manager, "GRACE_SECONDS", 0)
         manager = ConnectionManager()
         ws = make_ws()
         await manager.connect(ws, "user1")
