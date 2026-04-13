@@ -2,6 +2,7 @@ import { resolve } from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   devIndicators: false,
   reactCompiler: true,
   turbopack: {
