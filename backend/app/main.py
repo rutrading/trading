@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_config
 from app.db.redis import close_redis, get_redis
 from app.routers import (
+    company,
     health,
     historical_bars,
     holdings,
@@ -21,13 +22,14 @@ from app.routers import (
     transactions,
     watchlist,
 )
+from app.tasks.order_executor import run_order_executor
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
+from app.ws.feeds.mock import MockFeed
 from app.ws.flush import flush_quotes_loop
 from app.ws.manager import ConnectionManager
-from app.ws.feeds.mock import MockFeed
-from app.tasks.order_executor import run_order_executor
-from app.ws.router import router as ws_router, set_manager
+from app.ws.router import router as ws_router
+from app.ws.router import set_manager
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 config = get_config()
@@ -151,3 +153,4 @@ app.include_router(symbols.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
+app.include_router(company.router, prefix="/api")

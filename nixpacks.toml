@@ -11,7 +11,7 @@ cacheDirectories = ['/root/.bun/install/cache']
 
 [phases.build]
 dependsOn = ['install']
-cmds = ['bun run --cwd web build']
+cmds = ['bun --cwd web run build']
 
 [start]
-cmd = 'bun run --cwd web start'
+cmd = 'bun --cwd web run start'
