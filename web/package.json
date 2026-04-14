@@ -8,6 +8,7 @@
     "start": "node .next/standalone/web/server.js",
     "lint": "eslint",
     "db:push": "bunx drizzle-kit push",
+    "db:generate": "bunx drizzle-kit generate && bun run scripts/idempotent-migrations.ts",
     "db:migrate": "bunx drizzle-kit migrate"
   },
   "dependencies": {

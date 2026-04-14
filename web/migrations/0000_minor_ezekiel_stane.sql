@@ -1,10 +1,10 @@
-CREATE TYPE "public"."account_type" AS ENUM('investment', 'crypto');--> statement-breakpoint
-CREATE TYPE "public"."asset_class" AS ENUM('us_equity', 'crypto');--> statement-breakpoint
-CREATE TYPE "public"."order_side" AS ENUM('buy', 'sell');--> statement-breakpoint
-CREATE TYPE "public"."order_status" AS ENUM('pending', 'open', 'partially_filled', 'filled', 'cancelled', 'rejected');--> statement-breakpoint
-CREATE TYPE "public"."order_type" AS ENUM('market', 'limit', 'stop', 'stop_limit');--> statement-breakpoint
-CREATE TYPE "public"."time_in_force" AS ENUM('day', 'gtc');--> statement-breakpoint
-CREATE TABLE "account" (
+DO $$ BEGIN CREATE TYPE "public"."account_type" AS ENUM('investment', 'crypto'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."asset_class" AS ENUM('us_equity', 'crypto'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."order_side" AS ENUM('buy', 'sell'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."order_status" AS ENUM('pending', 'open', 'partially_filled', 'filled', 'cancelled', 'rejected'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."order_type" AS ENUM('market', 'limit', 'stop', 'stop_limit'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."time_in_force" AS ENUM('day', 'gtc'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "account" (
 	"id" text PRIMARY KEY NOT NULL,
 	"accountId" text NOT NULL,
 	"providerId" text NOT NULL,
@@ -20,13 +20,13 @@ CREATE TABLE "account" (
 	"updatedAt" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "account_member" (
+CREATE TABLE IF NOT EXISTS "account_member" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"account_id" integer NOT NULL,
 	"user_id" text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "daily_bar" (
+CREATE TABLE IF NOT EXISTS "daily_bar" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"ticker" text NOT NULL,
 	"date" date NOT NULL,
@@ -39,7 +39,7 @@ CREATE TABLE "daily_bar" (
 	"vwap" double precision
 );
 --> statement-breakpoint
-CREATE TABLE "holding" (
+CREATE TABLE IF NOT EXISTS "holding" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"trading_account_id" integer NOT NULL,
 	"ticker" text NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE "holding" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "jwks" (
+CREATE TABLE IF NOT EXISTS "jwks" (
 	"id" text PRIMARY KEY NOT NULL,
 	"publicKey" text NOT NULL,
 	"privateKey" text NOT NULL,
@@ -58,7 +58,7 @@ CREATE TABLE "jwks" (
 	"expiresAt" timestamp with time zone
 );
 --> statement-breakpoint
-CREATE TABLE "order" (
+CREATE TABLE IF NOT EXISTS "order" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"trading_account_id" integer NOT NULL,
 	"ticker" text NOT NULL,
@@ -77,7 +77,7 @@ CREATE TABLE "order" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "quote" (
+CREATE TABLE IF NOT EXISTS "quote" (
 	"ticker" text PRIMARY KEY NOT NULL,
 	"price" double precision,
 	"bid_price" double precision,
@@ -99,7 +99,7 @@ CREATE TABLE "quote" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "session" (
+CREATE TABLE IF NOT EXISTS "session" (
 	"id" text PRIMARY KEY NOT NULL,
 	"expiresAt" timestamp with time zone NOT NULL,
 	"token" text NOT NULL,
@@ -111,7 +111,7 @@ CREATE TABLE "session" (
 	CONSTRAINT "session_token_unique" UNIQUE("token")
 );
 --> statement-breakpoint
-CREATE TABLE "symbol" (
+CREATE TABLE IF NOT EXISTS "symbol" (
 	"ticker" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"exchange" text,
@@ -122,7 +122,7 @@ CREATE TABLE "symbol" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "trading_account" (
+CREATE TABLE IF NOT EXISTS "trading_account" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"type" "account_type" NOT NULL,
@@ -132,7 +132,7 @@ CREATE TABLE "trading_account" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "transaction" (
+CREATE TABLE IF NOT EXISTS "transaction" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"order_id" integer NOT NULL,
 	"trading_account_id" integer NOT NULL,
@@ -144,7 +144,7 @@ CREATE TABLE "transaction" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "user" (
+CREATE TABLE IF NOT EXISTS "user" (
 	"id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"email" text NOT NULL,
@@ -155,7 +155,7 @@ CREATE TABLE "user" (
 	CONSTRAINT "user_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
-CREATE TABLE "verification" (
+CREATE TABLE IF NOT EXISTS "verification" (
 	"id" text PRIMARY KEY NOT NULL,
 	"identifier" text NOT NULL,
 	"value" text NOT NULL,
@@ -164,50 +164,50 @@ CREATE TABLE "verification" (
 	"updatedAt" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "watchlist_item" (
+CREATE TABLE IF NOT EXISTS "watchlist_item" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
 	"ticker" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "account" ADD CONSTRAINT "account_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "account_member" ADD CONSTRAINT "account_member_account_id_trading_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "account_member" ADD CONSTRAINT "account_member_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "daily_bar" ADD CONSTRAINT "daily_bar_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "holding" ADD CONSTRAINT "holding_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "holding" ADD CONSTRAINT "holding_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "order" ADD CONSTRAINT "order_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "order" ADD CONSTRAINT "order_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "quote" ADD CONSTRAINT "quote_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "session" ADD CONSTRAINT "session_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transaction" ADD CONSTRAINT "transaction_order_id_order_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."order"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transaction" ADD CONSTRAINT "transaction_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "transaction" ADD CONSTRAINT "transaction_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "watchlist_item" ADD CONSTRAINT "watchlist_item_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "watchlist_item" ADD CONSTRAINT "watchlist_item_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "account_userId_idx" ON "account" USING btree ("userId");--> statement-breakpoint
-CREATE INDEX "account_member_accountId_idx" ON "account_member" USING btree ("account_id");--> statement-breakpoint
-CREATE INDEX "account_member_userId_idx" ON "account_member" USING btree ("user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "daily_bar_ticker_date_idx" ON "daily_bar" USING btree ("ticker","date");--> statement-breakpoint
-CREATE INDEX "daily_bar_ticker_idx" ON "daily_bar" USING btree ("ticker");--> statement-breakpoint
-CREATE INDEX "daily_bar_date_idx" ON "daily_bar" USING btree ("date");--> statement-breakpoint
-CREATE UNIQUE INDEX "holding_account_ticker_idx" ON "holding" USING btree ("trading_account_id","ticker");--> statement-breakpoint
-CREATE INDEX "holding_trading_account_id_idx" ON "holding" USING btree ("trading_account_id");--> statement-breakpoint
-CREATE INDEX "holding_ticker_idx" ON "holding" USING btree ("ticker");--> statement-breakpoint
-CREATE INDEX "order_trading_account_id_idx" ON "order" USING btree ("trading_account_id");--> statement-breakpoint
-CREATE INDEX "order_ticker_idx" ON "order" USING btree ("ticker");--> statement-breakpoint
-CREATE INDEX "order_status_idx" ON "order" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "order_created_at_idx" ON "order" USING btree ("created_at");--> statement-breakpoint
-CREATE INDEX "session_userId_idx" ON "session" USING btree ("userId");--> statement-breakpoint
-CREATE INDEX "symbol_asset_class_idx" ON "symbol" USING btree ("asset_class");--> statement-breakpoint
-CREATE INDEX "symbol_name_idx" ON "symbol" USING btree ("name");--> statement-breakpoint
-CREATE INDEX "trading_account_type_idx" ON "trading_account" USING btree ("type");--> statement-breakpoint
-CREATE INDEX "transaction_trading_account_id_idx" ON "transaction" USING btree ("trading_account_id");--> statement-breakpoint
-CREATE INDEX "transaction_order_id_idx" ON "transaction" USING btree ("order_id");--> statement-breakpoint
-CREATE INDEX "transaction_ticker_idx" ON "transaction" USING btree ("ticker");--> statement-breakpoint
-CREATE INDEX "transaction_created_at_idx" ON "transaction" USING btree ("created_at");--> statement-breakpoint
-CREATE INDEX "verification_identifier_idx" ON "verification" USING btree ("identifier");--> statement-breakpoint
-CREATE UNIQUE INDEX "watchlist_item_user_ticker_idx" ON "watchlist_item" USING btree ("user_id","ticker");--> statement-breakpoint
-CREATE INDEX "watchlist_item_user_id_idx" ON "watchlist_item" USING btree ("user_id");--> statement-breakpoint
-CREATE INDEX "watchlist_item_ticker_idx" ON "watchlist_item" USING btree ("ticker");
+DO $$ BEGIN ALTER TABLE "account" ADD CONSTRAINT "account_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "account_member" ADD CONSTRAINT "account_member_account_id_trading_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "account_member" ADD CONSTRAINT "account_member_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "daily_bar" ADD CONSTRAINT "daily_bar_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "holding" ADD CONSTRAINT "holding_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "holding" ADD CONSTRAINT "holding_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "order" ADD CONSTRAINT "order_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "order" ADD CONSTRAINT "order_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "quote" ADD CONSTRAINT "quote_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "session" ADD CONSTRAINT "session_userId_user_id_fk" FOREIGN KEY ("userId") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transaction" ADD CONSTRAINT "transaction_order_id_order_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."order"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transaction" ADD CONSTRAINT "transaction_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "transaction" ADD CONSTRAINT "transaction_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "watchlist_item" ADD CONSTRAINT "watchlist_item_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "watchlist_item" ADD CONSTRAINT "watchlist_item_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "account_userId_idx" ON "account" USING btree ("userId");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "account_member_accountId_idx" ON "account_member" USING btree ("account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "account_member_userId_idx" ON "account_member" USING btree ("user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "daily_bar_ticker_date_idx" ON "daily_bar" USING btree ("ticker","date");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "daily_bar_ticker_idx" ON "daily_bar" USING btree ("ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "daily_bar_date_idx" ON "daily_bar" USING btree ("date");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "holding_account_ticker_idx" ON "holding" USING btree ("trading_account_id","ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "holding_trading_account_id_idx" ON "holding" USING btree ("trading_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "holding_ticker_idx" ON "holding" USING btree ("ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "order_trading_account_id_idx" ON "order" USING btree ("trading_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "order_ticker_idx" ON "order" USING btree ("ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "order_status_idx" ON "order" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "order_created_at_idx" ON "order" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "session_userId_idx" ON "session" USING btree ("userId");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "symbol_asset_class_idx" ON "symbol" USING btree ("asset_class");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "symbol_name_idx" ON "symbol" USING btree ("name");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "trading_account_type_idx" ON "trading_account" USING btree ("type");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "transaction_trading_account_id_idx" ON "transaction" USING btree ("trading_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "transaction_order_id_idx" ON "transaction" USING btree ("order_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "transaction_ticker_idx" ON "transaction" USING btree ("ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "transaction_created_at_idx" ON "transaction" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "verification_identifier_idx" ON "verification" USING btree ("identifier");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "watchlist_item_user_ticker_idx" ON "watchlist_item" USING btree ("user_id","ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "watchlist_item_user_id_idx" ON "watchlist_item" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "watchlist_item_ticker_idx" ON "watchlist_item" USING btree ("ticker");
