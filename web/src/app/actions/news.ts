@@ -41,6 +41,9 @@ export async function getNews(params?: {
   const session = await getSession();
   if (!session) return { articles: [], nextPageToken: null };
 
+  // TODO(Sean): default /news feed should pull the 25 most recent articles
+  // (no ticker filter) ordered by published desc. Backend currently returns
+  // whatever order it wants and ignores limit defaults.
   const res = await api.get<BackendResponse>("/news", {
     ticker: params?.ticker,
     limit: params?.limit?.toString(),
