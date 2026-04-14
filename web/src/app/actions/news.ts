@@ -8,7 +8,7 @@ export type NewsArticle = {
   summary: string;
   source: string;
   url: string;
-  symbol: string | null;
+  symbols: string[] | null;
 };
 
 type BackendArticle = {
@@ -16,6 +16,7 @@ type BackendArticle = {
   link: string;
   authors: string[] | null;
   body: string;
+  stock_tickers: string[] | null;
 };
 
 type BackendResponse = {
@@ -29,7 +30,7 @@ function transform(article: BackendArticle): NewsArticle {
     summary: article.body,
     source: article.authors?.join(", ") || "",
     url: article.link,
-    symbol: null,
+    symbols: article.stock_tickers || null,
   };
 }
 
