@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "setup": "bun run scripts/setup.ts",
+    "build": "cd web && bun run build",
+    "start": "cd web && bun run start",
     "dev": "concurrently --kill-others --timestamp-format HH:mm:ss.SSS --prefix \"{time} [{name}]\" -n web,api -c cyan,red \"bun run --cwd web dev\" \"bun run scripts/dev-api.ts\"",
     "db:generate": "bun run --cwd web bunx drizzle-kit generate",
     "db:migrate": "bun run --cwd web bunx drizzle-kit migrate",
