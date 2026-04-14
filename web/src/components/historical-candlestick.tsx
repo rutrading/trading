@@ -26,10 +26,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { toIsoStart, toIsoEnd } from "@/components/iso-helper";
 
 type TimeframeOption = {
   label: string;
-  value: "1Min" | "5Min" | "15Min" | "30Min" | "1Hour" | "1Day" | "1Week" | "1Month" | "3Month" | "6Month" | "1Year";
+  value:
+    | "1Min"
+    | "5Min"
+    | "15Min"
+    | "30Min"
+    | "1Hour"
+    | "1Day"
+    | "1Week"
+    | "1Month"
+    | "3Month"
+    | "6Month"
+    | "1Year";
 };
 
 const TIMEFRAME_OPTIONS: TimeframeOption[] = [
@@ -57,32 +69,6 @@ type HistoricalBar = {
 function formatDate(date?: Date): string {
   if (!date) return "Select date";
   return date.toLocaleDateString();
-}
-
-function toIsoStart(date: Date): string {
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      0,
-      0,
-      0,
-    ),
-  ).toISOString();
-}
-
-function toIsoEnd(date: Date): string {
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      23,
-      59,
-      59,
-    ),
-  ).toISOString();
 }
 
 export function HistoricalCandlestick() {

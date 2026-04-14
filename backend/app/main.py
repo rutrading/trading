@@ -21,6 +21,7 @@ from app.routers import (
     transactions,
     watchlist,
 )
+from app.tasks.order_executor import run_order_executor
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
 from app.ws.feeds.mock import MockFeed
@@ -73,12 +74,19 @@ async def lifespan(app: FastAPI):
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
+    executor_task = asyncio.create_task(run_order_executor())
+
     yield
 
     await feed.stop()
     flush_task.cancel()
+    executor_task.cancel()
     try:
         await flush_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await executor_task
     except asyncio.CancelledError:
         pass
     await close_redis()

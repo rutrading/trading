@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
 export type QuoteData = {
@@ -45,24 +39,23 @@ export function WebSocketProvider({
   const refCounts = useRef(new Map<string, number>());
 
   // append token as query param when available
-  const wsUrl = token ? `${WS_BASE}?token=${encodeURIComponent(token)}` : WS_BASE;
+  const wsUrl = token
+    ? `${WS_BASE}?token=${encodeURIComponent(token)}`
+    : WS_BASE;
 
-  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
-    wsUrl,
-    {
-      shouldReconnect: () => true,
-      reconnectAttempts: Infinity,
-      reconnectInterval: (attempt) =>
-        Math.min(Math.pow(2, attempt) * 1000, 10000),
-      share: true,
-      heartbeat: {
-        message: JSON.stringify({ type: "ping" }),
-        returnMessage: JSON.stringify({ type: "pong" }),
-        timeout: 60000,
-        interval: 25000,
-      },
+  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(wsUrl, {
+    shouldReconnect: () => true,
+    reconnectAttempts: Infinity,
+    reconnectInterval: (attempt) =>
+      Math.min(Math.pow(2, attempt) * 1000, 10000),
+    share: true,
+    heartbeat: {
+      message: JSON.stringify({ type: "ping" }),
+      returnMessage: JSON.stringify({ type: "pong" }),
+      timeout: 60000,
+      interval: 25000,
     },
-  );
+  });
 
   // handle incoming messages
   useEffect(() => {
@@ -130,7 +123,9 @@ export function WebSocketProvider({
   }
 
   return (
-    <WSContext.Provider value={{ subscribe, quotes, readyState, restoredTickers }}>
+    <WSContext.Provider
+      value={{ subscribe, quotes, readyState, restoredTickers }}
+    >
       {children}
     </WSContext.Provider>
   );
@@ -168,13 +163,15 @@ export function useQuotes(tickers: string[]): Map<string, QuoteData> {
 
 export function useWSReadyState(): ReadyState {
   const ctx = useContext(WSContext);
-  if (!ctx) throw new Error("useWSReadyState must be used within WebSocketProvider");
+  if (!ctx)
+    throw new Error("useWSReadyState must be used within WebSocketProvider");
   return ctx.readyState;
 }
 
 export function useRestoredTickers(): string[] {
   const ctx = useContext(WSContext);
-  if (!ctx) throw new Error("useRestoredTickers must be used within WebSocketProvider");
+  if (!ctx)
+    throw new Error("useRestoredTickers must be used within WebSocketProvider");
   return ctx.restoredTickers;
 }
 
@@ -185,10 +182,33 @@ export type ConnectionStatus = "connecting" | "live" | "delayed" | "offline";
 // "delayed"   — WebSocket is closed but we have cached quote data (stale prices)
 // "connecting"— WebSocket is in the process of connecting or reconnecting
 // "offline"   — no connection and no cached data at all
-// Josh: implement this using useWSReadyState() and the quotes map from context
 export function useConnectionStatus(_ticker?: string): ConnectionStatus {
-  // TODO
-  throw new Error("useConnectionStatus not implemented");
+  const ctx = useContext(WSContext);
+  if (!ctx)
+    throw new Error(
+      "useConnectionStatus must be used within WebSocketProvider",
+    );
+
+  const readyState = ctx.readyState;
+  const quotes = ctx.quotes;
+
+  switch (readyState) {
+    case ReadyState.OPEN:
+      return "live";
+    case ReadyState.UNINSTANTIATED:
+    case ReadyState.CONNECTING:
+      return "connecting";
+    case ReadyState.CLOSING:
+    case ReadyState.CLOSED:
+      if (_ticker && quotes.get(_ticker)) {
+        return "delayed";
+      } else if (!_ticker && quotes.size > 0) {
+        return "delayed";
+      }
+      return "offline";
+    default:
+      return "offline";
+  }
 }
 
 export { ReadyState };

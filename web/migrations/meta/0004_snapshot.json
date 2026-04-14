@@ -1,6 +1,6 @@
 {
-  "id": "1cc28707-7dbb-4d75-8f11-d46c4165a6e9",
-  "prevId": "e92cb759-f5e9-4a39-b88b-2d75e151cafa",
+  "id": "eddcf337-3fdb-4915-bc46-5aff7c7c9e93",
+  "prevId": "d49c07b8-54ff-485a-8020-83d2c2688ca7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -215,6 +215,63 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.company": {
+      "name": "company",
+      "schema": "",
+      "columns": {
+        "ticker": {
+          "name": "ticker",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sector": {
+          "name": "sector",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "industry": {
+          "name": "industry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo_url": {
+          "name": "logo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "company_ticker_symbol_ticker_fk": {
+          "name": "company_ticker_symbol_ticker_fk",
+          "tableFrom": "company",
+          "tableTo": "symbol",
+          "columnsFrom": [
+            "ticker"
+          ],
+          "columnsTo": [
+            "ticker"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.daily_bar": {
       "name": "daily_bar",
       "schema": "",
@@ -385,6 +442,13 @@
         },
         "quantity": {
           "name": "quantity",
+          "type": "numeric(16, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "reserved_quantity": {
+          "name": "reserved_quantity",
           "type": "numeric(16, 8)",
           "primaryKey": false,
           "notNull": true,
@@ -634,6 +698,12 @@
         "rejection_reason": {
           "name": "rejection_reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reserved_per_share": {
+          "name": "reserved_per_share",
+          "type": "numeric(14, 6)",
           "primaryKey": false,
           "notNull": false
         },
@@ -1116,6 +1186,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'100000'"
+        },
+        "reserved_balance": {
+          "name": "reserved_balance",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
         },
         "is_joint": {
           "name": "is_joint",

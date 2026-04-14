@@ -1,6 +1,6 @@
 {
-  "id": "1cc28707-7dbb-4d75-8f11-d46c4165a6e9",
-  "prevId": "e92cb759-f5e9-4a39-b88b-2d75e151cafa",
+  "id": "d49c07b8-54ff-485a-8020-83d2c2688ca7",
+  "prevId": "34b511f4-52a0-4f20-bbcf-a957a9825dfb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -390,6 +390,13 @@
           "notNull": true,
           "default": "'0'"
         },
+        "reserved_quantity": {
+          "name": "reserved_quantity",
+          "type": "numeric(16, 8)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
         "average_cost": {
           "name": "average_cost",
           "type": "numeric(14, 2)",
@@ -634,6 +641,12 @@
         "rejection_reason": {
           "name": "rejection_reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reserved_per_share": {
+          "name": "reserved_per_share",
+          "type": "numeric(14, 6)",
           "primaryKey": false,
           "notNull": false
         },
@@ -1116,6 +1129,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'100000'"
+        },
+        "reserved_balance": {
+          "name": "reserved_balance",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
         },
         "is_joint": {
           "name": "is_joint",

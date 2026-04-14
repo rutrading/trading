@@ -14,7 +14,14 @@ from app.db.models import Holding, Order, TradingAccount, Transaction
 VALID_ASSET_CLASSES = {"us_equity", "crypto"}
 VALID_SIDES = {"buy", "sell"}
 VALID_ORDER_TYPES = {"market", "limit", "stop", "stop_limit"}
-VALID_TIME_IN_FORCE = {"day", "gtc"}
+VALID_TIME_IN_FORCE = {"day", "gtc", "opg", "cls"}
+
+STOP_RESERVATION_P = Decimal("0.02")  # 2% price buffer
+STOP_RESERVATION_K = Decimal("1.5")   # 1.5× ATR multiplier
+
+MARKET_BASE_SLIPPAGE = Decimal("0.0005")  # 0.05% — simulates the bid-ask spread
+MARKET_IMPACT_FACTOR = Decimal("0.05")    # 5% — scales order size vs. daily volume
+MARKET_MAX_SLIPPAGE = Decimal("0.02")     # 2% ceiling — prevents unrealistic fills on illiquid names
 
 
 class OrderValidationError(Exception):
@@ -57,6 +64,20 @@ def validate_order_request(
     if asset_class == "crypto" and time_in_force == "day":
         raise OrderValidationError("Crypto orders must use 'gtc' time-in-force")
 
+    # crypto cannot use open/close TIF (no market open/close for 24/7 markets)
+    if asset_class == "crypto" and time_in_force in ("opg", "cls"):
+        raise OrderValidationError("Crypto orders cannot use 'opg' or 'cls' time-in-force")
+
+    # reject extraneous price fields — storing them corrupts order semantics
+    if order_type == "market" and limit_price is not None:
+        raise OrderValidationError("limit_price is not valid for market orders")
+    if order_type == "market" and stop_price is not None:
+        raise OrderValidationError("stop_price is not valid for market orders")
+    if order_type == "limit" and stop_price is not None:
+        raise OrderValidationError("stop_price is not valid for limit orders")
+    if order_type == "stop" and limit_price is not None:
+        raise OrderValidationError("limit_price is not valid for stop orders")
+
     # limit price required for limit and stop_limit orders
     if order_type in ("limit", "stop_limit") and limit_price is None:
         raise OrderValidationError(f"limit_price is required for {order_type} orders")
@@ -69,7 +90,18 @@ def validate_order_request(
     if stop_price is not None and stop_price <= 0:
         raise OrderValidationError("stop_price must be greater than 0")
 
-    # sell validation: must own enough of the position
+    # stop-limit price relationship validation
+    if order_type == "stop_limit" and stop_price is not None and limit_price is not None:
+        if side == "buy" and stop_price > limit_price:
+            raise OrderValidationError(
+                "For buy stop-limit orders, stop_price must be <= limit_price"
+            )
+        if side == "sell" and stop_price < limit_price:
+            raise OrderValidationError(
+                "For sell stop-limit orders, stop_price must be >= limit_price"
+            )
+
+    # sell validation: must have enough shares available (not already committed to open sell orders)
     if side == "sell":
         holding = (
             db.query(Holding)
@@ -77,13 +109,52 @@ def validate_order_request(
                 Holding.trading_account_id == account.id,
                 Holding.ticker == ticker,
             )
+            .with_for_update()
             .first()
         )
-        if holding is None or holding.quantity < quantity:
-            owned = holding.quantity if holding else Decimal("0")
+        if holding is None:
             raise OrderValidationError(
-                f"Insufficient position: you own {owned} of {ticker}, tried to sell {quantity}"
+                f"Insufficient position: you own 0 of {ticker}, tried to sell {quantity}"
             )
+        # available = total held minus shares already committed to open sell orders
+        available = holding.quantity - holding.reserved_quantity
+        if available < quantity:
+            raise OrderValidationError(
+                f"Insufficient position: {available} shares available to sell of {ticker}, tried to sell {quantity}"
+            )
+
+
+def compute_stop_reservation_per_share(stop_price: Decimal, atr: Decimal) -> Decimal:
+    """Per-share reservation for a stop buy order using an ATR-based buffer.
+
+    Uses max(stop × (1 + p), stop + k × ATR) so that:
+    - volatile stocks: ATR term dominates, reserving more headroom
+    - calm stocks: percentage floor kicks in
+    """
+    option_a = stop_price * (1 + STOP_RESERVATION_P)
+    option_b = stop_price + STOP_RESERVATION_K * atr
+    return max(option_a, option_b)
+
+
+def compute_market_fill_price(
+    quote_price: Decimal,
+    side: str,
+    quantity: Decimal,
+    daily_volume: Decimal | None,
+) -> Decimal:
+    """Return the slippage-adjusted fill price for a market order.
+
+    Slippage = base spread + market impact proportional to order size vs. daily volume.
+    Buys fill slightly above the quoted price; sells fill slightly below — both work
+    against the trader, which is correct.
+
+    Falls back to base slippage alone when no daily volume data is available.
+    """
+    impact = (quantity / daily_volume) * MARKET_IMPACT_FACTOR if daily_volume and daily_volume > 0 else Decimal("0")
+    slippage = min(MARKET_BASE_SLIPPAGE + impact, MARKET_MAX_SLIPPAGE)
+    if side == "buy":
+        return quote_price * (1 + slippage)
+    return quote_price * (1 - slippage)
 
 
 def validate_buying_power(
@@ -92,12 +163,16 @@ def validate_buying_power(
     quantity: Decimal,
     price: Decimal,
 ) -> None:
-    """Check that the account has enough cash for a buy order at the given price."""
+    """Check that the account has enough buying power for a buy order.
+
+    Reads account.reserved_balance directly — no extra DB query needed.
+    """
     if side == "buy":
         total_cost = quantity * price
-        if account.balance < total_cost:
+        available = account.balance - account.reserved_balance
+        if available < total_cost:
             raise OrderValidationError(
-                f"Insufficient buying power: need ${total_cost:.2f}, have ${account.balance:.2f}"
+                f"Insufficient buying power: need ${total_cost:.2f}, have ${available:.2f} available"
             )
 
 
@@ -108,12 +183,44 @@ def execute_fill(
     account: TradingAccount,
     fill_price: Decimal,
     fill_quantity: Decimal,
-) -> Transaction:
+) -> "Transaction | None":
     """Execute a fill against an order. Updates order, holding, balance, and creates a transaction.
+
+    Returns None if the fill is rejected because the account no longer has sufficient funds
+    (order is cancelled and reservation released). Caller must not commit in that case since
+    execute_fill already updates the order and account — just commit to persist the cancellation.
 
     Must be called within a db transaction (caller handles commit).
     """
+    # re-fetch with a row lock so the balance check and mutations below always
+    # see the latest committed state, even when called from a background worker
+    # that didn't lock the account itself
+    account = (
+        db.query(TradingAccount)
+        .filter(TradingAccount.id == account.id)
+        .with_for_update()
+        .first()
+    )
+
     total = fill_quantity * fill_price
+
+    # pre-fill balance check for buy orders — safety net in case funds were
+    # consumed by other orders between placement and execution
+    if order.side == "buy":
+        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+        per_share = order.reserved_per_share or Decimal("0")
+        # subtract this order's own reservation to get what other orders need
+        other_reserved = account.reserved_balance - remaining * per_share
+        available = account.balance - other_reserved
+        if available < total:
+            order.status = "cancelled"
+            order.rejection_reason = "Insufficient buying power at fill time"
+            account.reserved_balance = max(
+                Decimal("0"),
+                account.reserved_balance - remaining * per_share,
+            )
+            account.updated_at = datetime.now(timezone.utc)
+            return None
 
     # update order fill tracking
     old_filled = order.filled_quantity or Decimal("0")
@@ -171,13 +278,33 @@ def execute_fill(
         # deduct from balance
         account.balance -= total
 
+        # release the per-share reservation for the filled quantity
+        if order.reserved_per_share is not None:
+            account.reserved_balance = max(
+                Decimal("0"),
+                account.reserved_balance - fill_quantity * order.reserved_per_share,
+            )
+
     elif order.side == "sell":
-        if holding is not None:
-            holding.quantity -= fill_quantity
-            holding.updated_at = datetime.now(timezone.utc)
-            # remove holding row if fully sold
-            if holding.quantity <= 0:
-                db.delete(holding)
+        if holding is None:
+            # position was closed by another order before this one filled —
+            # cancel rather than ghost-crediting proceeds for shares not owned
+            order.status = "cancelled"
+            order.rejection_reason = "Position no longer exists at fill time"
+            order.updated_at = datetime.now(timezone.utc)
+            return None
+
+        holding.quantity -= fill_quantity
+        # release the reserved_quantity for the filled shares (non-market sell orders)
+        if order.order_type != "market":
+            holding.reserved_quantity = max(
+                Decimal("0"),
+                holding.reserved_quantity - fill_quantity,
+            )
+        holding.updated_at = datetime.now(timezone.utc)
+        # remove holding row if fully sold
+        if holding.quantity <= 0:
+            db.delete(holding)
 
         # add proceeds to balance
         account.balance += total

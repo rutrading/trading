@@ -12,8 +12,29 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1775143265216,
-      "tag": "0001_shiny_storm",
+      "when": 1774557799346,
+      "tag": "0001_wandering_scourge",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774579842016,
+      "tag": "0002_marvelous_arclight",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774897873741,
+      "tag": "0003_left_payback",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776128259772,
+      "tag": "0004_open_beyonder",
       "breakpoints": true
     }
   ]
