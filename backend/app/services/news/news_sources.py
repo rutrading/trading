@@ -3,6 +3,7 @@ import httpx
 import pandas as pd
 from bs4 import BeautifulSoup
 import json
+import spacy
 
 class News_Source:
 
@@ -12,6 +13,7 @@ class News_Source:
         column_names = ['title', 'link', 'pub_year', 'pub_month', 'pub_day', 'guid', 'authors', 'source']
         self.df = pd.DataFrame(columns=column_names)
         self.add_from_feed(feed_url)
+        News_Source.stock_map = None
 
     def add_from_feed(self, feed_url: str):
         d = feedparser.parse(feed_url)
@@ -42,12 +44,22 @@ class News_Source:
             ]
             self.df = pd.concat([self.df, pd.DataFrame(new_row)], ignore_index=True)
 
-    async def add_article_body_df(self): # decorator function to add a column for article body text to the dataframe saves time as adding article body text is expensive
-        self.df['body'] = None
-        for i in range(len(self.df)):
-            article_body = await self.get_article_body(i)
-            self.df.loc[i, 'body'] = self.format_article_text(article_body)
+    async def add_article_body_df(self, format_text: bool = False): # decorator function to add a column for article body text to the dataframe saves time as adding article body text is expensive
+        if 'body' not in self.df.columns:
+            self.df['body'] = None
+            for i in range(len(self.df)):
+                article_body = await self.get_article_body(i)
+                self.df.loc[i, 'body'] = self.format_article_text(article_body) if format_text else article_body
     
+    async def add_stock_tickers_df(self): # decorator function to add a column for stock tickers using NLP on each article body text in the dataframe
+        if 'stock_tickers' not in self.df.columns:
+            await self.add_article_body_df() # Ensure article body text is added before attempting to get stock tickers
+            self.df['stock_tickers'] = None
+            for i in range(len(self.df)):
+                article_text = self.df.loc[i, 'body']
+                stock_tickers = await self.nlp_get_stock_tickers(article_text) if article_text is not None else None
+                self.df.at[i, 'stock_tickers'] = stock_tickers
+
     def reduce_random(self, n: int, seed: int): # helper function to reduce the dataframe to n random entries for testing purposes
         if n < len(self.df):
             self.df = self.df.sample(n, random_state=seed).reset_index(drop=True)
@@ -78,7 +90,7 @@ class News_Source:
             "Accept-Language": "en-US,en;q=0.9",
             "Referer": "https://www.google.com/"
         }
-        async with httpx.AsyncClient(headers=headers, verify=False) as client: #TODO: Change verify to use actual SSL certificates at some point
+        async with httpx.AsyncClient(headers=headers, verify=False, timeout=10.0) as client: #TODO: Change verify to use actual SSL certificates at some point
             html = await client.get(article_link)
         return html
     
@@ -92,6 +104,41 @@ class News_Source:
         html = await self.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         return soup
+    
+    async def get_stock_map(self): # Decortator function to get stock map for use in nlp sentiment analysis lies dormant until stock sentimenent analysis is needed
+        async with httpx.AsyncClient(verify=False) as client: #TODO: Change verify to use actual SSL certificates at some point
+            response = await client.get("https://raw.githubusercontent.com/ahmeterenodaci/Nasdaq-Stock-Exchange-including-Symbols-and-Logos/refs/heads/main/without_logo.min.json")
+        News_Source.stock_map = response.json()
+    
+    async def nlp_get_stock_tickers(self, article_text: str) -> list:
+        if News_Source.stock_map is None:
+            await self.get_stock_map()
+        nlp = spacy.load("en_core_web_sm")
+        
+        doc = nlp(article_text)
+
+        blacklist = [
+            "AI",
+            "InvestingPro",
+            "InvestingPro Tips",
+            "Overvalued"
+        ]
+
+        companies = []
+        tickers = []
+        for ent in doc.ents:
+            if ent.label_ == "ORG":
+                if ent.text not in blacklist:
+                    companies.append(ent.text)
+        for company in companies:
+            for stock in News_Source.stock_map:
+                if company in stock["name"]:
+                    symbol = stock["symbol"]
+                    if symbol not in tickers:
+                        tickers.append(symbol)
+                    
+
+        return tickers
 
 class News_Source_NBC(News_Source):
     
