@@ -1,10 +1,11 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/app/actions/auth";
-import * as api from "@/lib/api";
+import type { Metadata } from "next";
+import { getNews } from "@/app/actions/news";
+import { NewsContent } from "@/components/news/news-content";
 
-export const metadata = { title: "News - R U Trading" };
+export const metadata: Metadata = { title: "News - R U Trading" };
 
 export default async function NewsPage() {
+  /*
   const session = await getSession();
   if (!session) redirect("/auth/login");
   type NewsResponse = {
@@ -36,4 +37,7 @@ export default async function NewsPage() {
       </div>
     </div>
   );
+  */
+  const { articles } = await getNews();
+  return <NewsContent articles={articles} />;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
-import { MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -118,7 +118,7 @@ function CommandInput({
         )}
         placeholder={placeholder}
         size="lg"
-        startAddon={<MagnifyingGlassIcon />}
+        startAddon={<MagnifyingGlass />}
         {...props}
       />
     </div>
@@ -198,7 +198,7 @@ function CommandItem({
 }: React.ComponentProps<typeof AutocompleteItem>) {
   return (
     <AutocompleteItem
-      className={cn("py-1.5", className)}
+      className={cn("gap-2 py-1.5", className)}
       data-slot="command-item"
       {...props}
     />

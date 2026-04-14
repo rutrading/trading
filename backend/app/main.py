@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_config
 from app.db.redis import close_redis, get_redis
 from app.routers import (
+    company,
     health,
     historical_bars,
     holdings,
@@ -20,13 +22,14 @@ from app.routers import (
     transactions,
     watchlist,
 )
+from app.tasks.order_executor import run_order_executor
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
+from app.ws.feeds.mock import MockFeed
 from app.ws.flush import flush_quotes_loop
 from app.ws.manager import ConnectionManager
-from app.ws.feeds.mock import MockFeed
-from app.tasks.order_executor import run_order_executor
-from app.ws.router import router as ws_router, set_manager
+from app.ws.router import router as ws_router
+from app.ws.router import set_manager
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 config = get_config()
@@ -48,6 +51,43 @@ def _has_alpaca_credentials() -> bool:
     }
 
 
+async def _log_alpaca_account_info() -> None:
+    """Best-effort startup call to Alpaca /v2/account. Logs account status
+    plus the per-minute rate-limit headers so you know the tier at a glance.
+    Swallows all errors — must never block startup."""
+    try:
+        async with httpx.AsyncClient(
+            base_url=config.alpaca_base_url, timeout=5.0
+        ) as client:
+            res = await client.get(
+                "/v2/account",
+                headers={
+                    "APCA-API-KEY-ID": config.alpaca_api_key,
+                    "APCA-API-SECRET-KEY": config.alpaca_secret_key,
+                },
+            )
+            if res.status_code != 200:
+                logger.warning(
+                    "Alpaca /v2/account returned %s: %s",
+                    res.status_code,
+                    res.text[:200],
+                )
+                return
+
+            body = res.json()
+            rate_limit = res.headers.get("X-Ratelimit-Limit", "?")
+            rate_remaining = res.headers.get("X-Ratelimit-Remaining", "?")
+
+            logger.info(
+                "Alpaca account: status=%s rate_limit=%s/min (remaining=%s)",
+                body.get("status", "?"),
+                rate_limit,
+                rate_remaining,
+            )
+    except Exception as exc:
+        logger.warning("Alpaca account info lookup failed: %s", exc)
+
+
 manager = ConnectionManager()
 feed: BaseFeed
 if _has_alpaca_credentials():
@@ -62,7 +102,9 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     set_manager(manager)
-    if not _has_alpaca_credentials():
+    if _has_alpaca_credentials():
+        await _log_alpaca_account_info()
+    else:
         logger.warning(
             "Alpaca credentials not set, using mock market-data feed for local development."
         )
@@ -111,3 +153,4 @@ app.include_router(symbols.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
+app.include_router(company.router, prefix="/api")

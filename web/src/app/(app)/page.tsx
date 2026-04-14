@@ -1,88 +1,76 @@
-import { getSession, getAccounts } from "@/app/actions/auth";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowUp, ArrowDown, CaretRight } from "@phosphor-icons/react/ssr";
+import { Button } from "@/components/ui/button";
+import { ChartSection } from "@/components/dashboard/chart-section";
+import { HoldingsList } from "@/components/dashboard/holdings-list";
+import { getAccounts } from "@/app/actions/auth";
+import { getHoldings, type Holding } from "@/app/actions/portfolio";
 
-export const metadata = { title: "R U Trading" };
+export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 
-export default async function HomePage() {
-  const session = await getSession();
-  if (!session) return null;
+const fmt = (n: number) =>
+  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+export default async function DashboardPage() {
   const accounts = await getAccounts();
+  const accountId = accounts[0]?.tradingAccount.id;
 
-  const totalBalance = accounts.reduce(
-    (sum, a) => sum + Number(a.tradingAccount.balance),
+  let holdings: Holding[] = [];
+  let cashBalance = 0;
+
+  if (accountId) {
+    const res = await getHoldings(accountId);
+    if (res.ok) {
+      holdings = res.data.holdings;
+      cashBalance = parseFloat(res.data.cash_balance);
+    }
+  }
+
+  const totalCost = holdings.reduce(
+    (s, h) => s + parseFloat(h.quantity) * parseFloat(h.average_cost),
     0,
   );
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Welcome back, {session.user.name}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Here&apos;s an overview of your trading accounts.
-        </p>
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <div className="flex items-baseline gap-4">
+          <h1 className="text-5xl font-bold tabular-nums tracking-tight">
+            ${fmt(totalCost + cashBalance)}
+          </h1>
+          <p className="text-sm text-muted-foreground">Portfolio Value</p>
+        </div>
+
+        <div className="flex items-end justify-between gap-8">
+          <div className="flex gap-8">
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">{holdings.length}</p>
+              <p className="text-xs text-muted-foreground">Holdings</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">${fmt(cashBalance)}</p>
+              <p className="text-xs text-muted-foreground">Cash Balance</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">${fmt(totalCost)}</p>
+              <p className="text-xs text-muted-foreground">Invested</p>
+            </div>
+          </div>
+          <ChartSection />
+        </div>
       </div>
 
-      <div className="rounded-xl border border-border p-6">
-        <p className="text-sm text-muted-foreground">Total Cash Balance</p>
-        <p className="text-3xl font-semibold tabular-nums tracking-tight">
-          $
-          {totalBalance.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {accounts.map((a) => (
-          <Card key={a.id}>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">
-                  {a.tradingAccount.name}
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  {a.tradingAccount.isJoint && (
-                    <Badge variant="secondary" size="sm">
-                      Joint
-                    </Badge>
-                  )}
-                  <Badge
-                    variant={
-                      a.tradingAccount.type === "investment"
-                        ? "default"
-                        : "outline"
-                    }
-                    size="sm"
-                  >
-                    {a.tradingAccount.type === "investment"
-                      ? "Stocks"
-                      : "Crypto"}
-                  </Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-semibold tabular-nums tracking-tight">
-                $
-                {Number(a.tradingAccount.balance).toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </p>
-              <p className="text-xs text-muted-foreground">Cash balance</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="rounded-2xl bg-accent p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Holdings</h2>
+          <Link href="/portfolio">
+            <Button variant="ghost" size="sm">
+              See All <CaretRight size={14} />
+            </Button>
+          </Link>
+        </div>
+        <HoldingsList holdings={holdings} />
       </div>
     </div>
   );
