@@ -15,6 +15,10 @@ class Config:
     alpaca_ws_stocks_url: str = "wss://stream.data.alpaca.markets/v2/iex"
     alpaca_ws_crypto_url: str = "wss://stream.data.alpaca.markets/v1beta3/crypto/us"
     alpaca_ws_symbol_limit: int = 30
+    alpha_vantage_api_key: str = ""
+    alpha_vantage_url: str = "https://www.alphavantage.co/query"
+    fmp_api_key: str = ""
+    fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
     quote_staleness_seconds: int = 60
     quote_flush_interval: int = 30
     log_level: str = "INFO"

@@ -1,5 +1,6 @@
 from app.db.models import (
     AccountMember,
+    Company,
     DailyBar,
     Holding,
     Order,
@@ -14,6 +15,7 @@ from app.db.session import Base, db_session, get_db, get_engine, get_session_fac
 __all__ = [
     "AccountMember",
     "Base",
+    "Company",
     "DailyBar",
     "Holding",
     "Order",

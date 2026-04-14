@@ -208,6 +208,16 @@ export const quote = pgTable("quote", {
     .defaultNow(),
 });
 
+export const company = pgTable("company", {
+  ticker: text("ticker")
+    .primaryKey()
+    .references(() => symbol.ticker, { onDelete: "cascade" }),
+  description: text("description"),
+  sector: text("sector"),
+  industry: text("industry"),
+  logoUrl: text("logo_url"),
+});
+
 export const dailyBar = pgTable(
   "daily_bar",
   {
@@ -397,12 +407,17 @@ export const accountMemberRelations = relations(accountMember, ({ one }) => ({
 }));
 
 export const symbolRelations = relations(symbol, ({ one, many }) => ({
+  company: one(company),
   quote: one(quote),
   dailyBars: many(dailyBar),
   orders: many(order),
   transactions: many(transaction),
   holdings: many(holding),
   watchlistItems: many(watchlistItem),
+}));
+
+export const companyRelations = relations(company, ({ one }) => ({
+  symbol: one(symbol, { fields: [company.ticker], references: [symbol.ticker] }),
 }));
 
 export const quoteRelations = relations(quote, ({ one }) => ({

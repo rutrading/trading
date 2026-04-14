@@ -91,6 +91,9 @@ class Symbol(Base):
     )
 
     quote: Mapped["Quote | None"] = relationship(back_populates="symbol", uselist=False)
+    company: Mapped["Company | None"] = relationship(
+        back_populates="symbol", uselist=False
+    )
     daily_bars: Mapped[list["DailyBar"]] = relationship(back_populates="symbol")
     orders: Mapped[list["Order"]] = relationship(back_populates="symbol")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="symbol")
@@ -129,6 +132,20 @@ class Quote(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship(back_populates="quote")
+
+
+class Company(Base):
+    __tablename__ = "company"
+
+    ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("symbol.ticker", ondelete="CASCADE"), primary_key=True
+    )
+    description: Mapped[str | None] = mapped_column(String, default=None)
+    sector: Mapped[str | None] = mapped_column(String, default=None)
+    industry: Mapped[str | None] = mapped_column(String, default=None)
+    logo_url: Mapped[str | None] = mapped_column(String, default=None)
+
+    symbol: Mapped["Symbol"] = relationship(back_populates="company")
 
 
 class DailyBar(Base):
