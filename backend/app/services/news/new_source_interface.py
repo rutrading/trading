@@ -21,24 +21,26 @@ class news_source_interface():
             seed = time.month + time.day + time.year%(time.hour+1)*time.month + time.day * time.year * (time.hour+1)
         for i in range(0, len(news_feeds)):
             news_feeds[i].reduce_random(sample_size, seed)
-            await news_feeds[i].add_article_body_df()
+            await news_feeds[i].add_stock_tickers_df()
         return pd.concat(news_feeds[i].df for i in range(0, len(news_feeds))).reset_index(drop=True)
 
     async def all_news_samples_df(self) -> pd.DataFrame:
         for i in range(0, len(news_feeds)):
-            await news_feeds[i].add_article_body_df()
+            await news_feeds[i].add_stock_tickers_df()
         return pd.concat(news_feeds[i].df for i in range(0, len(news_feeds))).reset_index(drop=True)
 
     def compile_result(self, df: pd.DataFrame):
         leng = len(df)
         result = []
         for i in range(0, leng):
+            body = df.loc[i, 'body']
             result.append(
                 {
                     'title': df.loc[i, 'title'],
                     'link': df.loc[i, 'link'],
                     'authors': df.loc[i, 'authors'],
-                    'body': df.loc[i, 'body']
+                    'body': body if len(body) < 200 else f"{body[:197]}...",
+                    'stock_tickers': df.loc[i, 'stock_tickers']
                 }
             )
         return result

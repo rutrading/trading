@@ -13,7 +13,7 @@ class News_Source:
         column_names = ['title', 'link', 'pub_year', 'pub_month', 'pub_day', 'guid', 'authors', 'source']
         self.df = pd.DataFrame(columns=column_names)
         self.add_from_feed(feed_url)
-        self.stock_map = None
+        News_Source.stock_map = None
 
     def add_from_feed(self, feed_url: str):
         d = feedparser.parse(feed_url)
@@ -108,12 +108,12 @@ class News_Source:
     async def get_stock_map(self): # Decortator function to get stock map for use in nlp sentiment analysis lies dormant until stock sentimenent analysis is needed
         async with httpx.AsyncClient(verify=False) as client: #TODO: Change verify to use actual SSL certificates at some point
             response = await client.get("https://raw.githubusercontent.com/ahmeterenodaci/Nasdaq-Stock-Exchange-including-Symbols-and-Logos/refs/heads/main/without_logo.min.json")
-        self.stock_map = response.json()
+        News_Source.stock_map = response.json()
     
     async def nlp_get_stock_tickers(self, article_text: str) -> list:
-        if self.stock_map is None:
+        if News_Source.stock_map is None:
             await self.get_stock_map()
-        nlp = spacy.load("en_core_web_hftrf")
+        nlp = spacy.load("en_core_web_sm")
         
         doc = nlp(article_text)
 
@@ -131,7 +131,7 @@ class News_Source:
                 if ent.text not in blacklist:
                     companies.append(ent.text)
         for company in companies:
-            for stock in self.stock_map:
+            for stock in News_Source.stock_map:
                 if company in stock["name"]:
                     symbol = stock["symbol"]
                     if symbol not in tickers:

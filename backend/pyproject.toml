@@ -20,7 +20,7 @@ dependencies = [
     "numpy>=2.4.3",
     "tzdata>=2025.3",
     "spacy>=3.8.14",
-    "en_core_web_hftrf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_hftrf-3.8.1/en_core_web_hftrf-3.8.1-py3-none-any.whl"
+    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 ]
 
 [dependency-groups]

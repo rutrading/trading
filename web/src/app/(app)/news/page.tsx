@@ -8,7 +8,7 @@ export default async function NewsPage() {
   const session = await getSession();
   if (!session) redirect("/auth/login");
   type NewsResponse = {
-    news: { title: string; link: string; authors: string[]; body: string }[];
+    news: { title: string; link: string; authors: string[]; body: string; stock_tickers: string[] }[];
   };
   const newsDict = await api.get<NewsResponse>("/news");
   if (!newsDict.ok) {
@@ -22,12 +22,13 @@ export default async function NewsPage() {
         <p className="text-sm text-muted-foreground">
           Financial news and headlines.
         </p>
-        {newsDict.data.news.map((item: { title: string; link: string; authors: string[]; body: string }, index: number) => (
+        {newsDict.data.news.map((item: { title: string; link: string; authors: string[]; body: string; stock_tickers: string[] }, index: number) => (
           <div key={index} className="py-2">
             <h2 style={{ fontSize: '20pt' }} className="text-lg font-bold">{item.title}</h2>
             <a href={item.link} target="_blank" style={{ textDecoration: 'underline' }} className="text-sm text-muted-foreground">
               Article Link
             </a>
+            <p>Relevant Stocks: {item.stock_tickers.join(", ")}</p>
             <p>{item.body}</p>
             <br></br>
           </div>
