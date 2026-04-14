@@ -1,8 +1,6 @@
 "use client";
 
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "./app-sidebar";
-import { SearchBar } from "@/components/search-bar";
+import { Header } from "@/components/header/header";
 import { WebSocketProvider } from "@/components/ws-provider";
 
 type Account = {
@@ -23,24 +21,22 @@ type Account = {
 export function AppShell({
   accounts,
   userName,
+  userImage,
   children,
 }: {
   accounts: Account[];
   userName: string;
+  userImage?: string | null;
   children: React.ReactNode;
 }) {
   return (
     <WebSocketProvider>
-      <SidebarProvider>
-        <AppSidebar accounts={accounts} userName={userName} />
-        <SidebarInset>
-          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-4 border-b border-sidebar-border bg-background px-4">
-            <SidebarTrigger className="-ml-1" />
-            <SearchBar />
-          </header>
-          <div className="flex-1 overflow-auto px-6 py-4">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <Header userName={userName} userImage={userImage} />
+          {children}
+        </div>
+      </div>
     </WebSocketProvider>
   );
 }

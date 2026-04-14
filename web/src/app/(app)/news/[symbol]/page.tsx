@@ -1,37 +1,16 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/app/actions/auth";
+import type { Metadata } from "next";
+import { getNews } from "@/app/actions/news";
+import { TickerNews } from "@/components/news/ticker-news";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ symbol: string }>;
-}) {
+type Props = { params: Promise<{ symbol: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { symbol } = await params;
   return { title: `${symbol.toUpperCase()} News - R U Trading` };
 }
 
-export default async function SymbolNewsPage({
-  params,
-}: {
-  params: Promise<{ symbol: string }>;
-}) {
-  const session = await getSession();
-  if (!session) redirect("/auth/login");
-
+export default async function SymbolNewsPage({ params }: Props) {
   const { symbol } = await params;
-
-  console.log(`should grab news for ${symbol.toUpperCase()}`);
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {symbol.toUpperCase()} News
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Latest news for {symbol.toUpperCase()}.
-        </p>
-      </div>
-    </div>
-  );
+  const { articles } = await getNews({ ticker: symbol.toUpperCase() });
+  return <TickerNews ticker={symbol} articles={articles} />;
 }

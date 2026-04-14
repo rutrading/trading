@@ -1,8 +1,11 @@
 """Alpaca market-data feed for quotes.
 
-Maintains one stock stream and one crypto stream, reconciles subscriptions from
-ConnectionManager, writes latest ticks to Redis, and broadcasts updates to
-browser clients.
+Maintains one stock stream and one crypto stream plus a drain loop that
+reconciles subscriptions from ConnectionManager. Writes ticks to Redis and
+broadcasts updates to browser clients.
+
+If the WS fails MAX_FAILURES times in a row without ever authenticating,
+the stream flips to REST polling for REST_WINDOW seconds before retrying WS.
 """
 
 from __future__ import annotations
@@ -18,6 +21,11 @@ from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from app.config import Config
+from app.services.alpaca_rest import (
+    AlpacaRequestFailed,
+    AlpacaTickerNotFound,
+    fetch_snapshot,
+)
 from app.ws.feeds.base import BaseFeed
 
 if TYPE_CHECKING:
@@ -28,7 +36,15 @@ logger = logging.getLogger(__name__)
 DRAIN_INTERVAL = 1.0
 BACKOFF_BASE = 1.0
 BACKOFF_CAP = 30.0
-ERROR_LOG_COOLDOWN = 30.0
+LOG_COOLDOWN = 60.0
+MAX_FAILURES = 5
+REST_INTERVAL = 15.0
+REST_WINDOW = 600.0
+REST_CONCURRENCY = 5
+
+
+class _StreamError(Exception):
+    """Raised when Alpaca sends an error frame on the stream."""
 
 
 class AlpacaFeed(BaseFeed):
@@ -43,71 +59,76 @@ class AlpacaFeed(BaseFeed):
         self._ws_stocks: ClientConnection | None = None
         self._ws_crypto: ClientConnection | None = None
 
-        self._last_error_log: dict[str, float] = {}
+        self._log_tracker: dict[str, float] = {}
 
     def _build_tasks(self) -> list[asyncio.Task]:
         return [
-            asyncio.create_task(
-                self._run_stream(
-                    stream_name="stocks",
-                    url=self._config.alpaca_ws_stocks_url,
-                    ws_attr="_ws_stocks",
-                    subscribed=self._subscribed_stocks,
-                )
-            ),
-            asyncio.create_task(
-                self._run_stream(
-                    stream_name="crypto",
-                    url=self._config.alpaca_ws_crypto_url,
-                    ws_attr="_ws_crypto",
-                    subscribed=self._subscribed_crypto,
-                )
-            ),
+            asyncio.create_task(self._run_stream("stocks")),
+            asyncio.create_task(self._run_stream("crypto")),
             asyncio.create_task(self._drain_loop()),
         ]
 
-    def _auth_payload(self) -> dict[str, str]:
-        return {
-            "action": "auth",
-            "key": self._config.alpaca_api_key,
-            "secret": self._config.alpaca_secret_key,
-        }
+    # ---- stream state machine ---------------------------------------------
 
-    async def _run_stream(
+    async def _run_stream(self, stream_name: str) -> None:
+        """Alternate between WS streaming and REST polling until stopped."""
+        url, ws_attr, subscribed = self._stream_config(stream_name)
+
+        while self._running:
+            authenticated = await self._ws_session(stream_name, url, ws_attr, subscribed)
+            if not self._running:
+                return
+            if authenticated:
+                # Session worked at least once; keep trying WS.
+                continue
+            # Circuit breaker tripped — poll REST for a while, then retry WS.
+            await self._poll_rest(stream_name, subscribed)
+
+    def _stream_config(self, stream_name: str) -> tuple[str, str, set[str]]:
+        if stream_name == "stocks":
+            return (
+                self._config.alpaca_ws_stocks_url,
+                "_ws_stocks",
+                self._subscribed_stocks,
+            )
+        return (
+            self._config.alpaca_ws_crypto_url,
+            "_ws_crypto",
+            self._subscribed_crypto,
+        )
+
+    # ---- WS mode -----------------------------------------------------------
+
+    async def _ws_session(
         self,
         stream_name: str,
         url: str,
         ws_attr: str,
         subscribed: MutableSet[str],
-    ) -> None:
+    ) -> bool:
+        """Run the WS connect loop. Return True if we authenticated at least once."""
         backoff = BACKOFF_BASE
+        failures = 0
+        authenticated_once = False
 
         while self._running:
             try:
                 async with connect(url) as ws:
                     setattr(self, ws_attr, ws)
-                    backoff = BACKOFF_BASE
-
-                    await self._send_json(ws, self._auth_payload())
-                    logger.info("Alpaca %s stream connected", stream_name)
-
-                    if subscribed:
-                        await self._send_action(ws, "subscribe", sorted(subscribed))
-
-                    await self._recv_loop(stream_name, ws)
-
-            except ConnectionClosed as exc:
-                self._log_rate_limited(
-                    f"disconnect:{stream_name}",
-                    logging.WARNING,
-                    "Alpaca %s stream disconnected: %s",
-                    stream_name,
-                    exc,
-                )
-            except Exception as exc:
-                self._log_rate_limited(
-                    f"error:{stream_name}",
-                    logging.ERROR,
+                    await self._send_json(ws, {
+                        "action": "auth",
+                        "key": self._config.alpaca_api_key,
+                        "secret": self._config.alpaca_secret_key,
+                    })
+                    ok = await self._recv(stream_name, ws, subscribed)
+                    if ok:
+                        authenticated_once = True
+                        failures = 0
+                        backoff = BACKOFF_BASE
+            except (_StreamError, ConnectionClosed, Exception) as exc:
+                failures += 1
+                self._log_once(
+                    f"ws-err:{stream_name}",
                     "Alpaca %s stream error: %s",
                     stream_name,
                     exc,
@@ -116,55 +137,121 @@ class AlpacaFeed(BaseFeed):
                 setattr(self, ws_attr, None)
 
             if not self._running:
-                break
+                return authenticated_once
+            if not authenticated_once and failures >= MAX_FAILURES:
+                logger.info(
+                    "Alpaca %s stream unavailable after %d attempts, switching to REST",
+                    stream_name,
+                    failures,
+                )
+                return False
 
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, BACKOFF_CAP)
 
-    async def _recv_loop(self, stream_name: str, ws: ClientConnection) -> None:
+        return authenticated_once
+
+    async def _recv(
+        self,
+        stream_name: str,
+        ws: ClientConnection,
+        subscribed: MutableSet[str],
+    ) -> bool:
+        """Read frames until the ws closes. Returns True if we saw auth success."""
+        authenticated = False
+
         async for raw in ws:
             if not self._running:
                 break
-
             try:
                 payload = json.loads(raw)
             except Exception:
-                self._log_rate_limited(
-                    f"json:{stream_name}",
-                    logging.ERROR,
-                    "Invalid JSON from Alpaca %s stream",
-                    stream_name,
-                )
                 continue
 
-            messages = payload if isinstance(payload, list) else [payload]
-            for msg in messages:
-                await self._handle_message(stream_name, msg)
+            for msg in payload if isinstance(payload, list) else [payload]:
+                msg_type = msg.get("T")
 
-    async def _handle_message(self, stream_name: str, msg: dict) -> None:
-        msg_type = msg.get("T")
+                if msg_type == "error":
+                    raise _StreamError(
+                        f"code={msg.get('code')} msg={msg.get('msg')}"
+                    )
 
-        if msg_type == "t":
-            await self._handle_trade(msg)
-            return
+                if msg_type == "success" and msg.get("msg") == "authenticated":
+                    if not authenticated:
+                        authenticated = True
+                        logger.info(
+                            "Alpaca %s stream connected (%d tickers)",
+                            stream_name,
+                            len(subscribed),
+                        )
+                        if subscribed:
+                            await self._send_action(ws, "subscribe", sorted(subscribed))
+                    continue
 
-        if msg_type == "q":
-            await self._handle_quote_tick(msg)
-            return
+                if msg_type == "t":
+                    await self._handle_trade(msg)
+                elif msg_type == "q":
+                    await self._handle_quote_tick(msg)
 
-        if msg_type == "error":
-            code = msg.get("code", "unknown")
-            self._log_rate_limited(
-                f"alpaca:{stream_name}:{code}",
-                logging.ERROR,
-                "Alpaca %s stream error: %s",
-                stream_name,
-                msg,
-            )
-            return
+        return authenticated
 
-        if msg_type in ("success", "subscription"):
-            logger.debug("Alpaca %s stream: %s", stream_name, msg)
+    # ---- REST fallback -----------------------------------------------------
+
+    async def _poll_rest(self, stream_name: str, subscribed: MutableSet[str]) -> None:
+        """Poll REST snapshots for subscribed tickers until REST_WINDOW elapses."""
+        logger.info(
+            "Alpaca %s REST polling: interval=%.0fs, retry WS in %.0fs",
+            stream_name,
+            REST_INTERVAL,
+            REST_WINDOW,
+        )
+
+        semaphore = asyncio.Semaphore(REST_CONCURRENCY)
+
+        async def poll_one(ticker: str) -> None:
+            async with semaphore:
+                try:
+                    snapshot = await fetch_snapshot(ticker)
+                except (AlpacaTickerNotFound, AlpacaRequestFailed):
+                    return
+                except Exception as exc:
+                    self._log_once(
+                        f"rest-err:{stream_name}",
+                        "Alpaca REST poll error (%s): %s",
+                        stream_name,
+                        exc,
+                    )
+                    return
+
+                await self._publish_quote(ticker, {
+                    "price": snapshot.price,
+                    "bid_price": snapshot.bid_price,
+                    "ask_price": snapshot.ask_price,
+                    "open": snapshot.open,
+                    "high": snapshot.high,
+                    "low": snapshot.low,
+                    "previous_close": snapshot.previous_close,
+                    "change": snapshot.change,
+                    "change_percent": snapshot.change_percent,
+                    "volume": snapshot.volume,
+                    "timestamp": snapshot.timestamp,
+                    "source": "alpaca_rest",
+                })
+
+        elapsed = 0.0
+        while self._running and elapsed < REST_WINDOW:
+            tickers = sorted(subscribed)
+            if tickers:
+                await asyncio.gather(
+                    *(poll_one(t) for t in tickers), return_exceptions=True
+                )
+            await asyncio.sleep(REST_INTERVAL)
+            elapsed += REST_INTERVAL
+
+        if self._running:
+            logger.info("Alpaca %s retrying WS after REST window", stream_name)
+
+    # ---- tick handlers -----------------------------------------------------
 
     async def _handle_trade(self, msg: dict) -> None:
         ticker = msg.get("S", "")
@@ -172,9 +259,7 @@ class AlpacaFeed(BaseFeed):
         if not ticker or price is None:
             return
 
-        now = int(time.time())
         redis = await self._redis()
-
         previous_close = await redis.hget(f"quote:{ticker}", "previous_close")
         change = None
         change_percent = None
@@ -187,52 +272,39 @@ class AlpacaFeed(BaseFeed):
             except ValueError:
                 pass
 
-        quote = {
+        await self._publish_quote(ticker, {
             "price": price,
             "change": change,
             "change_percent": change_percent,
-            "timestamp": now,
+            "timestamp": int(time.time()),
             "source": "alpaca_ws",
-        }
-
-        await self._publish_quote(ticker, quote)
+        })
 
     async def _handle_quote_tick(self, msg: dict) -> None:
         ticker = msg.get("S", "")
         if not ticker:
             return
 
-        bid = msg.get("bp")
-        ask = msg.get("ap")
         mapping: dict[str, str] = {}
-        if bid is not None:
+        if (bid := msg.get("bp")) is not None:
             mapping["bid_price"] = str(bid)
-        if ask is not None:
+        if (ask := msg.get("ap")) is not None:
             mapping["ask_price"] = str(ask)
-        if not mapping:
-            return
+        if mapping:
+            await self._cache_fields(ticker, mapping)
 
-        await self._cache_fields(ticker, mapping)
+    # ---- subscription reconciliation ---------------------------------------
 
     async def _drain_loop(self) -> None:
         while self._running:
             try:
                 adds, removes = self._manager.drain_pending()
-
                 for ticker in removes:
                     await self._unsubscribe_ticker(ticker)
-
                 for ticker in adds:
                     await self._subscribe_ticker(ticker)
-
             except Exception as exc:
-                self._log_rate_limited(
-                    "drain-loop",
-                    logging.ERROR,
-                    "Alpaca drain loop error: %s",
-                    exc,
-                )
-
+                self._log_once("drain", "Alpaca drain loop error: %s", exc)
             await asyncio.sleep(DRAIN_INTERVAL)
 
     async def _subscribe_ticker(self, ticker: str) -> None:
@@ -257,7 +329,6 @@ class AlpacaFeed(BaseFeed):
                 self._overflow.add(evict)
                 if self._ws_stocks:
                     await self._send_action(self._ws_stocks, "unsubscribe", [evict])
-                logger.info("Evicted %s to overflow (limit=%d)", evict, limit)
 
         self._subscribed_stocks.add(ticker)
         self._overflow.discard(ticker)
@@ -291,40 +362,30 @@ class AlpacaFeed(BaseFeed):
             self._subscribed_stocks.add(promote)
             if self._ws_stocks:
                 await self._send_action(self._ws_stocks, "subscribe", [promote])
-            logger.info("Promoted %s from overflow", promote)
+
+    # ---- helpers -----------------------------------------------------------
 
     async def _send_action(
         self, ws: ClientConnection, action: str, tickers: list[str]
     ) -> None:
         if not tickers:
             return
-
-        await self._send_json(
-            ws,
-            {
-                "action": action,
-                "trades": tickers,
-                "quotes": tickers,
-            },
-        )
+        await self._send_json(ws, {
+            "action": action,
+            "trades": tickers,
+            "quotes": tickers,
+        })
 
     async def _send_json(self, ws: ClientConnection, payload: dict) -> None:
         try:
             await ws.send(json.dumps(payload))
         except Exception as exc:
-            self._log_rate_limited(
-                "send-json",
-                logging.ERROR,
-                "Failed to send stream payload: %s",
-                exc,
-            )
+            self._log_once("send-json", "Alpaca send failed: %s", exc)
 
-    def _log_rate_limited(
-        self, key: str, level: int, message: str, *args: object
-    ) -> None:
+    def _log_once(self, key: str, message: str, *args: object) -> None:
+        """Log at most once per LOG_COOLDOWN seconds per key."""
         now = time.monotonic()
-        last = self._last_error_log.get(key, 0.0)
-        if now - last < ERROR_LOG_COOLDOWN:
+        if now - self._log_tracker.get(key, 0.0) < LOG_COOLDOWN:
             return
-        self._last_error_log[key] = now
-        logger.log(level, message, *args)
+        self._log_tracker[key] = now
+        logger.warning(message, *args)
