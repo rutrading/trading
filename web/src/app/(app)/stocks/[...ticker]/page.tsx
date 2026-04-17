@@ -4,6 +4,7 @@ import { StockHeader } from "@/components/stocks/stock-header";
 import { StockChart } from "@/components/StockChart";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm } from "@/components/stocks/order-form";
+import { RelatedNews } from "@/components/news/related-news";
 import { getSymbol } from "@/app/actions/symbols";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
@@ -60,6 +61,7 @@ export default async function StockPage({ params }: Props) {
           </div>
         </div>
         <KeyStatistics stock={stock} />
+        <RelatedNews ticker={symbol} />
       </div>
       <div className="space-y-6">
         <OrderForm ticker={symbol} price={stock.price} />
