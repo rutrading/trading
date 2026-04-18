@@ -3,35 +3,66 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateProfile } from "@/app/actions/auth";
+import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toastManager } from "@/components/ui/toast";
 
 export const ProfileForm = ({
   name: initialName,
-  email,
+  email: initialEmail,
 }: {
   name: string;
   email: string;
 }) => {
   const router = useRouter();
   const [name, setName] = useState(initialName);
+  const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const nameChanged = name !== initialName;
+  const emailChanged = email !== initialEmail;
+  const hasChanges = nameChanged || emailChanged;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const result = await updateProfile(name);
-
-    if (!result.success) {
-      setError(result.error);
-    } else {
-      router.refresh();
+    if (nameChanged) {
+      const result = await updateProfile(name);
+      if (!result.success) {
+        setError(result.error);
+        setLoading(false);
+        return;
+      }
     }
+
+    if (emailChanged) {
+      const { error: authError } = await authClient.changeEmail({
+        newEmail: email,
+        callbackURL: "/settings",
+      });
+      if (authError) {
+        setError(authError.message ?? "Failed to update email");
+        setLoading(false);
+        return;
+      }
+      toastManager.add({
+        title: "Email updated",
+        description: `Your account email is now ${email}.`,
+        type: "success",
+      });
+    }
+
+    if (nameChanged) {
+      toastManager.add({ title: "Display name updated", type: "success" });
+    }
+
     setLoading(false);
+    router.refresh();
   };
 
   return (
@@ -48,20 +79,24 @@ export const ProfileForm = ({
         />
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor="email-display">Email</Label>
-        <Input id="email-display" type="email" value={email} disabled />
-        <p className="text-xs text-muted-foreground">
-          Email cannot be changed.
-        </p>
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={loading}
+        />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button
         type="submit"
         size="sm"
-        disabled={loading || name === initialName}
+        disabled={loading || !hasChanges}
         className="self-start"
       >
-        {loading ? "Saving..." : "Update Name"}
+        {loading ? "Saving..." : "Save Changes"}
       </Button>
     </form>
   );

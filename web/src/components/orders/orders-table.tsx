@@ -1,5 +1,5 @@
-import { ClockCounterClockwise } from "@phosphor-icons/react/ssr";
 import Link from "next/link";
+import { Receipt } from "@phosphor-icons/react/ssr";
 import {
   Table,
   TableBody,
@@ -9,7 +9,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 import {
   Pagination,
   PaginationContent,
@@ -18,31 +24,41 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import type { Transaction } from "@/app/actions/portfolio";
+import { OrderStatusBadge } from "./order-status-badge";
+import type { Order } from "@/app/actions/orders";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const TransactionHistory = ({
-  transactions,
+function priceCell(order: Order) {
+  if (order.order_type === "market") return "Market";
+  const price = order.limit_price ?? order.stop_price;
+  return price ? `$${fmt(parseFloat(price))}` : "—";
+}
+
+export const OrdersTable = ({
+  orders,
   page,
   perPage,
   total,
 }: {
-  transactions: Transaction[];
+  orders: Order[];
   page: number;
   perPage: number;
   total: number;
 }) => {
-  if (transactions.length === 0) {
+  if (orders.length === 0) {
     return (
       <div className="rounded-2xl bg-accent p-6">
-        <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
         <Empty>
           <EmptyHeader>
-            <EmptyMedia variant="icon"><ClockCounterClockwise /></EmptyMedia>
-            <EmptyTitle>No transactions</EmptyTitle>
-            <EmptyDescription>Your trade history will appear here.</EmptyDescription>
+            <EmptyMedia variant="icon">
+              <Receipt />
+            </EmptyMedia>
+            <EmptyTitle>No orders yet</EmptyTitle>
+            <EmptyDescription>
+              Place a buy or sell order from any stock page and it will appear here.
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       </div>
@@ -52,46 +68,66 @@ export const TransactionHistory = ({
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
-  const pageHref = (p: number) => `/portfolio?page=${p}`;
+  const pageHref = (p: number) => `/orders?page=${p}`;
 
   return (
     <div className="rounded-2xl bg-accent p-6">
-      <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
       <div className="rounded-xl bg-card">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Side</TableHead>
+              <TableHead>Placed</TableHead>
               <TableHead>Symbol</TableHead>
-              <TableHead className="text-right">Quantity</TableHead>
+              <TableHead>Side</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
               <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Avg Fill</TableHead>
+              <TableHead>TIF</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {transactions.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="text-muted-foreground">
-                  {new Date(t.created_at).toLocaleDateString()}
+            {orders.map((o) => (
+              <TableRow key={o.id}>
+                <TableCell className="text-muted-foreground whitespace-nowrap">
+                  {new Date(o.created_at).toLocaleString()}
+                </TableCell>
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/stocks/${o.ticker}`}
+                    className="hover:underline"
+                  >
+                    {o.ticker}
+                  </Link>
                 </TableCell>
                 <TableCell>
                   <Badge
-                    variant={t.side === "buy" ? "success" : "error"}
+                    variant={o.side === "buy" ? "success" : "error"}
                     size="sm"
                   >
-                    {t.side.toUpperCase()}
+                    {o.side.toUpperCase()}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-medium">{t.ticker}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {parseFloat(t.quantity)}
+                <TableCell className="capitalize">
+                  {o.order_type.replace("_", " ")}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  ${fmt(parseFloat(t.price))}
+                  {parseFloat(o.filled_quantity)}/{parseFloat(o.quantity)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  ${fmt(parseFloat(t.total))}
+                  {priceCell(o)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {o.average_fill_price
+                    ? `$${fmt(parseFloat(o.average_fill_price))}`
+                    : "—"}
+                </TableCell>
+                <TableCell className="uppercase text-xs text-muted-foreground">
+                  {o.time_in_force}
+                </TableCell>
+                <TableCell>
+                  <OrderStatusBadge status={o.status} />
                 </TableCell>
               </TableRow>
             ))}

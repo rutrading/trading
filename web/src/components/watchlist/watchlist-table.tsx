@@ -4,14 +4,35 @@ import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const PER_PAGE = 25;
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
+  const clampedPage = Math.min(page, totalPages);
+  const pageItems = items.slice(
+    (clampedPage - 1) * PER_PAGE,
+    clampedPage * PER_PAGE,
+  );
+  const hasPrev = clampedPage > 1;
+  const hasNext = clampedPage < totalPages;
+  const pageHref = (p: number) => `/watchlist?page=${p}`;
 
   const handleRemove = async (ticker: string) => {
     const res = await removeFromWatchlist(ticker);
@@ -52,7 +73,7 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
             </tr>
           </thead>
           <tbody>
-            {items.map((w) => {
+            {pageItems.map((w) => {
               const price = w.quote?.price;
               const change = w.quote?.change_percent;
               return (
@@ -113,6 +134,30 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <Pagination className="mt-4">
+          <PaginationContent>
+            {hasPrev && (
+              <PaginationItem>
+                <PaginationPrevious render={<Link href={pageHref(clampedPage - 1)} />} />
+              </PaginationItem>
+            )}
+            <PaginationItem>
+              <PaginationLink isActive render={<Link href={pageHref(clampedPage)} />}>
+                {clampedPage}
+              </PaginationLink>
+            </PaginationItem>
+            <span className="text-xs text-muted-foreground">
+              of {totalPages}
+            </span>
+            {hasNext && (
+              <PaginationItem>
+                <PaginationNext render={<Link href={pageHref(clampedPage + 1)} />} />
+              </PaginationItem>
+            )}
+          </PaginationContent>
+        </Pagination>
+      )}
     </div>
   );
 };
