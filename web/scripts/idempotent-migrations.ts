@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const MIGRATIONS_DIR = join(import.meta.dir, "..", "migrations");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, "..", "migrations");
 
 const rewrite = (sql: string): string => {
   let out = sql;
