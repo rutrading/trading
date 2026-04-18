@@ -9,6 +9,7 @@ import {
   Newspaper,
   Binoculars,
   GearSix,
+  Receipt,
   SignOut,
   User,
   Moon,
@@ -32,6 +33,7 @@ import { useRouter } from "next/navigation";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: ChartLine },
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { label: "Orders", href: "/orders", icon: Receipt },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "Watchlist", href: "/watchlist", icon: Binoculars },
 ] as const;
