@@ -51,12 +51,14 @@ export async function getTransactions(
   tradingAccountId: number,
   page = 1,
   ticker?: string,
+  perPage = 25,
 ): Promise<api.ApiResult<TransactionsResponse>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
   return api.get<TransactionsResponse>("/transactions", {
     trading_account_id: tradingAccountId.toString(),
     page: page.toString(),
+    per_page: perPage.toString(),
     ticker,
   });
 }
