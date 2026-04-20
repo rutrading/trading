@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
+import { ArrowCounterClockwise, Trash } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,12 +29,14 @@ type Props = {
   accountId: number;
   accountName: string;
   currentLevel: Experience;
+  renderEdit?: () => React.ReactNode;
 };
 
 export const AccountActions = ({
   accountId,
   accountName,
   currentLevel,
+  renderEdit,
 }: Props) => {
   const router = useRouter();
   const [resetOpen, setResetOpen] = useState(false);
@@ -72,22 +75,27 @@ export const AccountActions = ({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {renderEdit?.()}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedLevel(currentLevel);
+              setResetOpen(true);
+            }}
+          >
+            <ArrowCounterClockwise size={14} />
+            Reset balance
+          </Button>
+        </div>
         <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setSelectedLevel(currentLevel);
-            setResetOpen(true);
-          }}
-        >
-          Reset balance
-        </Button>
-        <Button
-          variant="destructive"
+          variant="destructive-outline"
           size="sm"
           onClick={() => setDeleteOpen(true)}
         >
+          <Trash size={14} />
           Delete
         </Button>
       </div>

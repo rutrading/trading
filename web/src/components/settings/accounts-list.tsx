@@ -89,17 +89,17 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
               </div>
 
               <Separator className="my-3" />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <EditAccountName
-                  accountId={acct.id}
-                  currentName={acct.name}
-                />
-                <AccountActions
-                  accountId={acct.id}
-                  accountName={acct.name}
-                  currentLevel={acct.experienceLevel}
-                />
-              </div>
+              <AccountActions
+                accountId={acct.id}
+                accountName={acct.name}
+                currentLevel={acct.experienceLevel}
+                renderEdit={() => (
+                  <EditAccountName
+                    accountId={acct.id}
+                    currentName={acct.name}
+                  />
+                )}
+              />
             </div>
           );
         })}
