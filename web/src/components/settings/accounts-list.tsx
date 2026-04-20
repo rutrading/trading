@@ -66,6 +66,9 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                     <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                       {acct.type}
                     </span>
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                      {acct.experienceLevel}
+                    </span>
                     {acct.isJoint && (
                       <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
                         <Users size={10} />
