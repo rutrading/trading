@@ -3,72 +3,48 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateProfile } from "@/app/actions/auth";
-import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toastManager } from "@/components/ui/toast";
 
 export const ProfileForm = ({
   name: initialName,
-  email: initialEmail,
+  email,
 }: {
   name: string;
   email: string;
 }) => {
   const router = useRouter();
   const [name, setName] = useState(initialName);
-  const [email, setEmail] = useState(initialEmail);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const nameChanged = name !== initialName;
-  const emailChanged = email !== initialEmail;
-  const hasChanges = nameChanged || emailChanged;
+  const nameChanged = name.trim().length > 0 && name !== initialName;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!nameChanged) return;
     setError("");
     setLoading(true);
 
-    if (nameChanged) {
-      const result = await updateProfile(name);
-      if (!result.success) {
-        setError(result.error);
-        setLoading(false);
-        return;
-      }
+    const result = await updateProfile(name);
+    if (!result.success) {
+      setError(result.error);
+      setLoading(false);
+      return;
     }
 
-    if (emailChanged) {
-      const { error: authError } = await authClient.changeEmail({
-        newEmail: email,
-        callbackURL: "/settings",
-      });
-      if (authError) {
-        setError(authError.message ?? "Failed to update email");
-        setLoading(false);
-        return;
-      }
-      toastManager.add({
-        title: "Email updated",
-        description: `Your account email is now ${email}.`,
-        type: "success",
-      });
-    }
-
-    if (nameChanged) {
-      toastManager.add({ title: "Display name updated", type: "success" });
-    }
-
+    toastManager.add({ title: "Display name updated", type: "success" });
     setLoading(false);
     router.refresh();
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="name">Display Name</Label>
+    <Form onSubmit={handleSubmit}>
+      <Field>
+        <FieldLabel htmlFor="name">Display Name</FieldLabel>
         <Input
           id="name"
           type="text"
@@ -77,27 +53,30 @@ export const ProfileForm = ({
           required
           disabled={loading}
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="email">Email</FieldLabel>
         <Input
           id="email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={loading}
+          readOnly
+          disabled
+          aria-readonly
         />
-      </div>
+        <FieldDescription>
+          Contact support to change the email on your account.
+        </FieldDescription>
+      </Field>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button
         type="submit"
         size="sm"
-        disabled={loading || !hasChanges}
+        disabled={loading || !nameChanged}
         className="self-start"
       >
         {loading ? "Saving..." : "Save Changes"}
       </Button>
-    </form>
+    </Form>
   );
 };

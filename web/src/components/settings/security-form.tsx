@@ -4,8 +4,14 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { toastManager } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export const SecurityForm = () => {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -15,24 +21,6 @@ export const SecurityForm = () => {
   const tooShort = newPassword.length > 0 && newPassword.length < 8;
   const sameAsCurrent =
     newPassword.length > 0 && newPassword === currentPassword;
-
-  let newPasswordHint: { message: string; tone: "muted" | "error" };
-  if (sameAsCurrent) {
-    newPasswordHint = {
-      message: "New password can't match your current password.",
-      tone: "error",
-    };
-  } else if (tooShort) {
-    newPasswordHint = {
-      message: "Must be at least 8 characters.",
-      tone: "error",
-    };
-  } else {
-    newPasswordHint = {
-      message: "Must be at least 8 characters and different from your current password.",
-      tone: "muted",
-    };
-  }
 
   const canSubmit =
     !loading &&
@@ -69,9 +57,9 @@ export const SecurityForm = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="current-password">Current Password</Label>
+    <Form onSubmit={handleSubmit}>
+      <Field>
+        <FieldLabel htmlFor="current-password">Current Password</FieldLabel>
         <Input
           id="current-password"
           type="password"
@@ -82,9 +70,9 @@ export const SecurityForm = () => {
           required
           disabled={loading}
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="new-password">New Password</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="new-password">New Password</FieldLabel>
         <Input
           id="new-password"
           type="password"
@@ -96,19 +84,20 @@ export const SecurityForm = () => {
           minLength={8}
           disabled={loading}
           aria-invalid={sameAsCurrent || tooShort}
-          aria-describedby="new-password-hint"
         />
-        <p
-          id="new-password-hint"
-          className={
-            newPasswordHint.tone === "error"
-              ? "text-xs text-destructive"
-              : "text-xs text-muted-foreground"
-          }
-        >
-          {newPasswordHint.message}
-        </p>
-      </div>
+        {sameAsCurrent ? (
+          <FieldError match={true}>
+            New password can&apos;t match your current password.
+          </FieldError>
+        ) : tooShort ? (
+          <FieldError match={true}>Must be at least 8 characters.</FieldError>
+        ) : (
+          <FieldDescription>
+            Must be at least 8 characters and different from your current
+            password.
+          </FieldDescription>
+        )}
+      </Field>
       <Button
         type="submit"
         size="sm"
@@ -117,6 +106,6 @@ export const SecurityForm = () => {
       >
         {loading ? "Changing..." : "Change Password"}
       </Button>
-    </form>
+    </Form>
   );
 };
