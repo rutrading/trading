@@ -35,6 +35,7 @@ export const auth = betterAuth({
       sendVerifyEmailAction({ userEmail: user.email, verifyLink: url });
     },
   },
+  rateLimit: { enabled: false },
   plugins: [jwt(), bearer(), nextCookies()],
   experimental: { joins: true },
 });

@@ -53,28 +53,32 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
               <div className="flex min-w-0 items-center gap-3">
                 <div
                   className={cn(
-                    "flex size-9 items-center justify-center rounded-lg",
+                    "flex size-10 shrink-0 items-center justify-center rounded-lg sm:size-9 [&_svg]:size-5 sm:[&_svg]:size-[18px]",
                     acct.type === "investment"
                       ? "bg-emerald-500/10 text-emerald-500"
                       : "bg-amber-500/10 text-amber-500",
                   )}
                 >
-                  {acct.type === "investment" ? <ChartLineUp size={18} /> : <CurrencyBtc size={18} />}
+                  {acct.type === "investment" ? <ChartLineUp /> : <CurrencyBtc />}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold">{acct.name}</p>
-                  <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
-                    {acct.type}
-                  </span>
-                  <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                    {acct.experienceLevel}
-                  </span>
-                  {acct.isJoint && (
-                    <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
-                      <Users size={10} />
-                      Joint
+                <div className="flex min-w-0 flex-col gap-1">
+                  <p className="truncate text-base font-semibold leading-none sm:text-sm">
+                    {acct.name}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                      {acct.type}
                     </span>
-                  )}
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                      {acct.experienceLevel}
+                    </span>
+                    {acct.isJoint && (
+                      <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+                        <Users size={10} />
+                        Joint
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
