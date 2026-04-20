@@ -5,7 +5,10 @@ import { bearer } from "better-auth/plugins/bearer";
 import { nextCookies } from "better-auth/next-js";
 import { db } from "../db";
 import * as schema from "../db/schema";
-import { sendResetPasswordAction } from "./email/actions";
+import {
+  sendChangeEmailAction,
+  sendResetPasswordAction,
+} from "./email/actions";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -23,6 +26,14 @@ export const auth = betterAuth({
   user: {
     changeEmail: {
       enabled: true,
+      sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+        // Not awaited to avoid timing attacks
+        sendChangeEmailAction({
+          currentEmail: user.email,
+          newEmail,
+          confirmLink: url,
+        });
+      },
     },
   },
   plugins: [jwt(), bearer(), nextCookies()],
