@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, LayoutGroup } from "motion/react";
 import {
@@ -199,13 +200,9 @@ export function OnboardingForm() {
   return (
     <>
       <header className="mx-auto flex h-16 w-full max-w-5xl items-center px-6">
-        <button
-          className="text-lg font-semibold tracking-tight"
-          onClick={() => router.refresh()}
-          type="button"
-        >
+        <Link href="/" className="text-lg font-semibold tracking-tight">
           R U Trading
-        </button>
+        </Link>
       </header>
 
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 pb-16">
