@@ -36,6 +36,13 @@
       "when": 1776128259772,
       "tag": "0004_open_beyonder",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776651540314,
+      "tag": "0005_gorgeous_stardust",
+      "breakpoints": true
     }
   ]
 }

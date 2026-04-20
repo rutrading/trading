@@ -16,6 +16,13 @@ import {
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
 
+export const experienceLevelEnum = pgEnum("experience_level", [
+  "beginner",
+  "intermediate",
+  "advanced",
+  "expert",
+]);
+
 export const assetClassEnum = pgEnum("asset_class", ["us_equity", "crypto"]);
 
 export const orderSideEnum = pgEnum("order_side", ["buy", "sell"]);
@@ -126,6 +133,9 @@ export const tradingAccount = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
     type: accountTypeEnum("type").notNull(),
+    experienceLevel: experienceLevelEnum("experience_level")
+      .notNull()
+      .default("beginner"),
     balance: numeric("balance", { precision: 14, scale: 2 })
       .notNull()
       .default("100000"),

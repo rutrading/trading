@@ -1,0 +1,2 @@
+DO $ BEGIN CREATE TYPE "public"."experience_level" AS ENUM('beginner', 'intermediate', 'advanced', 'expert'); EXCEPTION WHEN duplicate_object THEN NULL; END $;--> statement-breakpoint
+ALTER TABLE "trading_account" ADD COLUMN IF NOT EXISTS "experience_level" "experience_level" DEFAULT 'beginner' NOT NULL;
