@@ -20,6 +20,7 @@ type Account = {
     name: string;
     type: "investment" | "crypto";
     balance: string;
+    reservedBalance: string;
     isJoint: boolean;
     experienceLevel: Experience;
   };
@@ -44,6 +45,8 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
         {accounts.map((m) => {
           const acct = m.tradingAccount;
           const balance = Number(acct.balance);
+          const reserved = Number(acct.reservedBalance);
+          const available = balance - reserved;
           return (
             <div key={m.id} className="rounded-xl bg-card p-4">
               <div className="flex items-center justify-between gap-3">
@@ -80,7 +83,7 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
               <div className="mt-3 grid grid-cols-2 gap-4 border-t border-border pt-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Available</p>
-                  <p className="text-sm font-medium tabular-nums">${fmt(balance)}</p>
+                  <p className="text-sm font-medium tabular-nums">${fmt(available)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Total</p>
