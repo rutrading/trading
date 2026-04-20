@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.db import TradingAccount, get_db
 from app.dependencies import get_trading_account
-from app.experience import EXPERIENCE_OPTIONS, ExperienceLevel
+from app.experience import BALANCE_MAP, EXPERIENCE_OPTIONS, ExperienceLevel
 
 router = APIRouter()
 
@@ -53,9 +53,9 @@ def update_account(
 ) -> AccountMutationResponse:
     """Update an account's name and/or experience level.
 
-    Resetting the balance, clearing positions, orders, and transactions
-    on an experience-level change is intentionally not implemented here
-    — that belongs to a follow-up task.
+    Changing the experience level resets the available cash to the level's
+    starting balance while preserving cash already reserved by open orders,
+    so outstanding orders and holdings are untouched.
     """
 
     account = get_trading_account(
@@ -64,6 +64,13 @@ def update_account(
 
     if name is not None:
         account.name = name.strip()
+
+    if experience_level is not None:
+        account.experience_level = experience_level
+        # Available cash = balance - reserved_balance. We want available to
+        # equal the level's starting balance, so set balance = starting +
+        # reserved. Open orders keep their reservation; holdings stay.
+        account.balance = BALANCE_MAP[experience_level] + account.reserved_balance
 
     db.commit()
     db.refresh(account)
