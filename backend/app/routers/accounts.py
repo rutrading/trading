@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth import SKIP_AUTH, get_current_user
+from app.auth import get_current_user
 from app.db import TradingAccount, get_db
 from app.dependencies import get_trading_account
 from app.experience import EXPERIENCE_OPTIONS, ExperienceLevel
@@ -84,9 +84,6 @@ def delete_account(
 ) -> AccountDeleteResponse:
     """Delete a trading account. Cascades remove members, orders, holdings,
     and transactions via the Drizzle schema's ON DELETE CASCADE rules."""
-
-    if SKIP_AUTH:
-        return AccountDeleteResponse(id=account_id, deleted=True)
 
     account = get_trading_account(
         trading_account_id=account_id, user=user, db=db
