@@ -106,6 +106,7 @@ export const AccountActions = ({
             <div className="space-y-3">
               {EXPERIENCE_OPTIONS.map((opt) => {
                 const selected = selectedLevel === opt.value;
+                const isCurrent = currentLevel === opt.value;
                 return (
                   <button
                     key={opt.value}
@@ -122,7 +123,14 @@ export const AccountActions = ({
                     )}
                     <div className="flex w-full items-start justify-between gap-4">
                       <div className="flex-1">
-                        <p className="text-sm font-semibold">{opt.label}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold">{opt.label}</p>
+                          {isCurrent && (
+                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                              Current
+                            </span>
+                          )}
+                        </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {opt.description}
                         </p>
