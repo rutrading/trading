@@ -8,6 +8,7 @@ import * as schema from "../db/schema";
 import {
   sendChangeEmailAction,
   sendResetPasswordAction,
+  sendVerifyEmailAction,
 } from "./email/actions";
 
 export const auth = betterAuth({
@@ -34,6 +35,13 @@ export const auth = betterAuth({
           confirmLink: url,
         });
       },
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      // Not awaited to avoid timing attacks
+      sendVerifyEmailAction({ userEmail: user.email, verifyLink: url });
     },
   },
   plugins: [jwt(), bearer(), nextCookies()],
