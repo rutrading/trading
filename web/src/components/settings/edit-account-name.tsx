@@ -51,15 +51,15 @@ export const EditAccountName = ({ accountId, currentName }: Props) => {
   return (
     <>
       <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label="Rename account"
+        variant="outline"
+        size="sm"
         onClick={() => {
           setName(currentName);
           setOpen(true);
         }}
       >
         <PencilSimple size={14} />
+        Edit name
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

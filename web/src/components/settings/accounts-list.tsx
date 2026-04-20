@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AccountActions } from "@/components/settings/account-actions";
 import { EditAccountName } from "@/components/settings/edit-account-name";
+import { cn } from "@/lib/utils";
 
 type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 
@@ -45,26 +46,29 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
           const balance = Number(acct.balance);
           return (
             <div key={m.id} className="rounded-xl bg-card p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`flex size-9 items-center justify-center rounded-lg ${
-                    acct.type === "investment" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"
-                  }`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-lg",
+                      acct.type === "investment"
+                        ? "bg-emerald-500/10 text-emerald-500"
+                        : "bg-amber-500/10 text-amber-500",
+                    )}
+                  >
                     {acct.type === "investment" ? <ChartLineUp size={18} /> : <CurrencyBtc size={18} />}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold">{acct.name}</p>
-                      <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
-                        {acct.type}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold">{acct.name}</p>
+                    <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                      {acct.type}
+                    </span>
+                    {acct.isJoint && (
+                      <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+                        <Users size={10} />
+                        Joint
                       </span>
-                      {acct.isJoint && (
-                        <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
-                          <Users size={10} />
-                          Joint
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
                 <EditAccountName
