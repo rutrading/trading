@@ -12,8 +12,37 @@ export const SecurityForm = () => {
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const tooShort = newPassword.length > 0 && newPassword.length < 8;
+  const sameAsCurrent =
+    newPassword.length > 0 && newPassword === currentPassword;
+
+  let newPasswordHint: { message: string; tone: "muted" | "error" };
+  if (sameAsCurrent) {
+    newPasswordHint = {
+      message: "New password can't match your current password.",
+      tone: "error",
+    };
+  } else if (tooShort) {
+    newPasswordHint = {
+      message: "Must be at least 8 characters.",
+      tone: "error",
+    };
+  } else {
+    newPasswordHint = {
+      message: "Must be at least 8 characters and different from your current password.",
+      tone: "muted",
+    };
+  }
+
+  const canSubmit =
+    !loading &&
+    currentPassword.length > 0 &&
+    newPassword.length >= 8 &&
+    !sameAsCurrent;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) return;
     setLoading(true);
 
     const { error } = await authClient.changePassword({
@@ -66,15 +95,24 @@ export const SecurityForm = () => {
           required
           minLength={8}
           disabled={loading}
+          aria-invalid={sameAsCurrent || tooShort}
+          aria-describedby="new-password-hint"
         />
-        <p className="text-xs text-muted-foreground">
-          Must be at least 8 characters
+        <p
+          id="new-password-hint"
+          className={
+            newPasswordHint.tone === "error"
+              ? "text-xs text-destructive"
+              : "text-xs text-muted-foreground"
+          }
+        >
+          {newPasswordHint.message}
         </p>
       </div>
       <Button
         type="submit"
         size="sm"
-        disabled={loading || !currentPassword || !newPassword}
+        disabled={!canSubmit}
         className="self-start"
       >
         {loading ? "Changing..." : "Change Password"}
