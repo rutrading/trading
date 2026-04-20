@@ -1,9 +1,8 @@
 """Trading account mutations: rename, reset balance, delete."""
 
-from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -14,13 +13,6 @@ from app.dependencies import get_trading_account
 router = APIRouter()
 
 ExperienceLevel = Literal["beginner", "intermediate", "advanced", "expert"]
-
-BALANCE_MAP: dict[ExperienceLevel, Decimal] = {
-    "beginner": Decimal("100000"),
-    "intermediate": Decimal("50000"),
-    "advanced": Decimal("25000"),
-    "expert": Decimal("10000"),
-}
 
 
 class AccountMutationResponse(BaseModel):
@@ -43,20 +35,16 @@ def update_account(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AccountMutationResponse:
-    """Update an account's experience level (resets balance) and/or name.
+    """Update an account's name and/or experience level.
 
-    Positions, orders, and transactions are not yet cleared on reset —
-    that belongs to a follow-up task.
+    Resetting the balance, clearing positions, orders, and transactions
+    on an experience-level change is intentionally not implemented here
+    — that belongs to a follow-up task.
     """
 
     account = get_trading_account(
         trading_account_id=account_id, user=user, db=db
     )
-
-    if experience_level is not None:
-        account.experience_level = experience_level
-        account.balance = BALANCE_MAP[experience_level]
-        account.reserved_balance = Decimal("0")
 
     if name is not None:
         account.name = name.strip()
