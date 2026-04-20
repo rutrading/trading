@@ -51,7 +51,7 @@ export const EditAccountName = ({ accountId, currentName }: Props) => {
   return (
     <>
       <Button
-        variant="outline"
+        variant="ghost"
         size="sm"
         onClick={() => {
           setName(currentName);
