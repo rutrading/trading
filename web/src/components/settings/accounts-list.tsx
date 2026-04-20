@@ -7,8 +7,9 @@ import {
 } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { AccountActions } from "@/components/settings/account-actions";
 import { EditAccountName } from "@/components/settings/edit-account-name";
+import { ResetBalance } from "@/components/settings/reset-balance";
+import { DeleteAccount } from "@/components/settings/delete-account";
 import { cn } from "@/lib/utils";
 
 type Experience = "beginner" | "intermediate" | "advanced" | "expert";
@@ -89,17 +90,23 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
               </div>
 
               <Separator className="my-3" />
-              <AccountActions
-                accountId={acct.id}
-                accountName={acct.name}
-                currentLevel={acct.experienceLevel}
-                renderEdit={() => (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
                   <EditAccountName
                     accountId={acct.id}
                     currentName={acct.name}
                   />
-                )}
-              />
+                  <ResetBalance
+                    accountId={acct.id}
+                    accountName={acct.name}
+                    currentLevel={acct.experienceLevel}
+                  />
+                </div>
+                <DeleteAccount
+                  accountId={acct.id}
+                  accountName={acct.name}
+                />
+              </div>
             </div>
           );
         })}
