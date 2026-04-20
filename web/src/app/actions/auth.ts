@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { del, put } from "@/lib/api";
+import { BALANCE_MAP, type Experience } from "@/lib/experience";
 
 type ActionResult = { success: true } | { success: false; error: string };
 
@@ -39,17 +40,10 @@ export async function updateProfile(name: string): Promise<ActionResult> {
   }
 }
 
-const BALANCE_MAP = {
-  beginner: "100000",
-  intermediate: "50000",
-  advanced: "25000",
-  expert: "10000",
-} as const;
-
 export async function createAccount(
   name: string,
   type: "investment" | "crypto",
-  experience: "beginner" | "intermediate" | "advanced" | "expert",
+  experience: Experience,
   partnerEmail?: string,
 ): Promise<ActionResult> {
   const session = await getSession();
@@ -110,7 +104,7 @@ async function assertAccountMember(accountId: number, userId: string) {
 
 export async function resetAccountBalance(
   accountId: number,
-  experience: "beginner" | "intermediate" | "advanced" | "expert",
+  experience: Experience,
 ): Promise<ActionResult> {
   const session = await getSession();
   if (!session) return { success: false, error: "Not authenticated" };

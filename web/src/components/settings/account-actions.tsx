@@ -16,40 +16,11 @@ import {
 import { Label } from "@/components/ui/label";
 import { resetAccountBalance, deleteAccount } from "@/app/actions/auth";
 import { toast } from "@/lib/toasts";
-
-type Experience = "beginner" | "intermediate" | "advanced" | "expert";
-
-const EXPERIENCE_OPTIONS: {
-  value: Experience;
-  label: string;
-  balance: string;
-  description: string;
-}[] = [
-  {
-    value: "beginner",
-    label: "Beginner",
-    balance: "$100,000",
-    description: "Start with more capital to learn without pressure.",
-  },
-  {
-    value: "intermediate",
-    label: "Intermediate",
-    balance: "$50,000",
-    description: "A balanced starting point to build your strategy.",
-  },
-  {
-    value: "advanced",
-    label: "Advanced",
-    balance: "$25,000",
-    description: "Less room for error, more room to grow.",
-  },
-  {
-    value: "expert",
-    label: "Expert",
-    balance: "$10,000",
-    description: "Prove your skill with limited capital.",
-  },
-];
+import {
+  EXPERIENCE_OPTIONS,
+  getExperienceOption,
+  type Experience,
+} from "@/lib/experience";
 
 const snappyEase = [0.22, 1, 0.36, 1] as const;
 
@@ -79,7 +50,7 @@ export const AccountActions = ({
       }
       toast.success(
         "Balance reset",
-        `${accountName} restored to ${EXPERIENCE_OPTIONS.find((o) => o.value === selectedLevel)?.balance}.`,
+        `${accountName} restored to ${getExperienceOption(selectedLevel).balance}.`,
       );
       setResetOpen(false);
       router.refresh();
