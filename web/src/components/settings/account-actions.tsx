@@ -21,7 +21,6 @@ import {
   getExperienceOption,
   type Experience,
 } from "@/lib/experience";
-import { cn } from "@/lib/utils";
 
 const snappyEase = [0.22, 1, 0.36, 1] as const;
 
@@ -107,26 +106,14 @@ export const AccountActions = ({
             <div className="space-y-3">
               {EXPERIENCE_OPTIONS.map((opt) => {
                 const selected = selectedLevel === opt.value;
-                const currentStart = Number(
-                  getExperienceOption(currentLevel).startingBalance,
-                );
-                const optStart = Number(opt.startingBalance);
-                const locked = optStart < currentStart;
                 return (
                   <button
                     key={opt.value}
                     type="button"
-                    disabled={locked}
-                    aria-disabled={locked}
-                    onClick={() => !locked && setSelectedLevel(opt.value)}
-                    className={cn(
-                      "relative flex w-full flex-col rounded-lg border border-border px-4 py-3 text-left transition-colors duration-150",
-                      locked
-                        ? "cursor-not-allowed opacity-50"
-                        : "cursor-pointer hover:bg-muted/50",
-                    )}
+                    onClick={() => setSelectedLevel(opt.value)}
+                    className="relative flex w-full cursor-pointer flex-col rounded-lg border border-border px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/50"
                   >
-                    {selected && !locked && (
+                    {selected && (
                       <motion.div
                         layoutId="reset-level-accent"
                         className="absolute inset-y-0 left-0 w-1 rounded-l-lg bg-primary"
@@ -137,9 +124,7 @@ export const AccountActions = ({
                       <div className="flex-1">
                         <p className="text-sm font-semibold">{opt.label}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {locked
-                            ? "Locked — can't reset to a lower balance than your current level."
-                            : opt.description}
+                          {opt.description}
                         </p>
                       </div>
                       <span className="shrink-0 text-sm font-semibold text-emerald-600">
