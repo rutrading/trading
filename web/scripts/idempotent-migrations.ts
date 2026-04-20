@@ -18,12 +18,12 @@ const rewrite = (sql: string): string => {
 
   out = out.replace(
     /^(CREATE TYPE [^;]+;)/gm,
-    "DO $$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    "DO $$$$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$$$;",
   );
 
   out = out.replace(
     /^(ALTER TABLE "[^"]+" ADD CONSTRAINT [^;]+;)/gm,
-    "DO $$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    "DO $$$$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$$$;",
   );
 
   return out;
