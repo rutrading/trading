@@ -1,7 +1,5 @@
 """Trading account mutations: rename, reset balance, delete."""
 
-from typing import Literal
-
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -9,10 +7,28 @@ from sqlalchemy.orm import Session
 from app.auth import SKIP_AUTH, get_current_user
 from app.db import TradingAccount, get_db
 from app.dependencies import get_trading_account
+from app.experience import EXPERIENCE_OPTIONS, ExperienceLevel
 
 router = APIRouter()
 
-ExperienceLevel = Literal["beginner", "intermediate", "advanced", "expert"]
+
+class ExperienceLevelResponse(BaseModel):
+    value: ExperienceLevel
+    label: str
+    balance: str
+    starting_balance: str
+    description: str
+
+
+@router.get(
+    "/accounts/experience-levels",
+    response_model=list[ExperienceLevelResponse],
+)
+def list_experience_levels() -> list[ExperienceLevelResponse]:
+    """Return the experience levels and their starting balances. The web
+    and the server share this list so labels and amounts stay in sync."""
+
+    return [ExperienceLevelResponse(**o.to_dict()) for o in EXPERIENCE_OPTIONS]
 
 
 class AccountMutationResponse(BaseModel):
