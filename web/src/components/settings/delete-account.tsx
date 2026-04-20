@@ -55,8 +55,8 @@ export const DeleteAccount = ({ accountId, accountName }: Props) => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete account</AlertDialogTitle>
             <AlertDialogDescription>
-              Permanently delete {accountName}. All positions, orders, and
-              history will be removed. This cannot be undone.
+              Permanently delete {accountName} and all its positions, orders,
+              and history — this cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
