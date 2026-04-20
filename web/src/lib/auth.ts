@@ -6,7 +6,6 @@ import { nextCookies } from "better-auth/next-js";
 import { db } from "../db";
 import * as schema from "../db/schema";
 import {
-  sendChangeEmailAction,
   sendResetPasswordAction,
   sendVerifyEmailAction,
 } from "./email/actions";
@@ -27,14 +26,6 @@ export const auth = betterAuth({
   user: {
     changeEmail: {
       enabled: true,
-      sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
-        // Not awaited to avoid timing attacks
-        sendChangeEmailAction({
-          currentEmail: user.email,
-          newEmail,
-          confirmLink: url,
-        });
-      },
     },
   },
   emailVerification: {
