@@ -7,6 +7,10 @@ import {
   PencilSimple,
 } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { AccountActions } from "@/components/settings/account-actions";
+
+type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 
 type Account = {
   id: number;
@@ -16,6 +20,7 @@ type Account = {
     type: "investment" | "crypto";
     balance: string;
     isJoint: boolean;
+    experienceLevel: Experience;
   };
 };
 
@@ -76,6 +81,15 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                   <p className="text-xs text-muted-foreground">Total</p>
                   <p className="text-sm font-medium tabular-nums">${fmt(balance)}</p>
                 </div>
+              </div>
+
+              <Separator className="my-3" />
+              <div className="flex justify-end">
+                <AccountActions
+                  accountId={acct.id}
+                  accountName={acct.name}
+                  currentLevel={acct.experienceLevel}
+                />
               </div>
             </div>
           );

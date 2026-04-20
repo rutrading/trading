@@ -6,7 +6,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { SecurityForm } from "@/components/settings/security-form";
 import { AccountsList } from "@/components/settings/accounts-list";
-import { AccountActions } from "@/components/settings/account-actions";
 
 export const metadata: Metadata = { title: "Settings - R U Trading" };
 
@@ -69,8 +68,6 @@ export default async function SettingsPage() {
             <SecurityForm />
           </div>
         </div>
-
-        <AccountActions />
       </div>
     </div>
   );
