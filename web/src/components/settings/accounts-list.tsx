@@ -4,11 +4,11 @@ import {
   CurrencyBtc,
   Users,
   Plus,
-  PencilSimple,
 } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AccountActions } from "@/components/settings/account-actions";
+import { EditAccountName } from "@/components/settings/edit-account-name";
 
 type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 
@@ -67,9 +67,10 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                     </div>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon-xs">
-                  <PencilSimple size={14} />
-                </Button>
+                <EditAccountName
+                  accountId={acct.id}
+                  currentName={acct.name}
+                />
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-4 border-t border-border pt-3">

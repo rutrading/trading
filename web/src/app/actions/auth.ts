@@ -125,6 +125,28 @@ export async function resetAccountBalance(
   return { success: true };
 }
 
+export async function renameAccount(
+  accountId: number,
+  name: string,
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { success: false, error: "Not authenticated" };
+
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    return { success: false, error: "Name cannot be empty" };
+  }
+
+  const authorized = await assertAccountMember(accountId, session.user.id);
+  if (!authorized) return { success: false, error: "Not authorized" };
+
+  const result = await put<{ id: number }>(`/accounts/${accountId}`, {
+    name: trimmed,
+  });
+  if (!result.ok) return { success: false, error: result.error };
+  return { success: true };
+}
+
 export async function deleteAccount(accountId: number): Promise<ActionResult> {
   const session = await getSession();
   if (!session) return { success: false, error: "Not authenticated" };
