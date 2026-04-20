@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -189,6 +189,14 @@ export const symbol = pgTable(
   (table) => [
     index("symbol_asset_class_idx").on(table.assetClass),
     index("symbol_name_idx").on(table.name),
+    index("symbol_name_trgm_idx").using(
+      "gin",
+      sql`${table.name} gin_trgm_ops`,
+    ),
+    index("symbol_ticker_pattern_idx").using(
+      "btree",
+      sql`${table.ticker} text_pattern_ops`,
+    ),
   ],
 );
 

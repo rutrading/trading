@@ -43,6 +43,13 @@
       "when": 1776651540314,
       "tag": "0005_gorgeous_stardust",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776765600000,
+      "tag": "0006_symbol_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }
