@@ -34,11 +34,28 @@ logger = logging.getLogger(__name__)
 
 
 async def run_order_executor() -> None:
-    """Asyncio background task: continuously poll and fill open orders."""
+    """Asyncio background task: continuously poll and fill open orders.
+
+    `_process_open_orders` is synchronous (SQLAlchemy + blocking row
+    locks) and historically ran on the asyncio loop, freezing every
+    other coroutine — REST handlers, the WS broadcast loop, and the
+    quote flush task — for the full poll cycle. Run it on a worker
+    thread so the loop stays responsive while the executor waits on
+    Postgres FOR UPDATE locks. The thread hop also means
+    `sync_system_tickers` can no longer mutate manager state inline;
+    the manager is told about the loop here so it can marshal those
+    calls back via `run_coroutine_threadsafe`.
+    """
+    # Register the running loop on the manager so sync_system_tickers
+    # (called from the worker thread below) routes its mutation back
+    # onto the loop under `_lock`.
+    from app.main import manager as ws_manager  # local to avoid import cycle
+    ws_manager.register_loop(asyncio.get_running_loop())
+
     logger.info("Order executor started (poll interval: %ds)", POLL_INTERVAL)
     while True:
         try:
-            _process_open_orders()
+            await asyncio.to_thread(_process_open_orders)
         except Exception:
             logger.exception("Order executor encountered an error")
         await asyncio.sleep(POLL_INTERVAL)
@@ -120,6 +137,14 @@ def _process_open_orders() -> None:
                     .first()
                 )
                 if order is None or order.status not in ("open", "partially_filled"):
+                    continue
+                # Re-evaluate the fill condition against the freshly-locked
+                # order row. The decision above was made against the unlocked
+                # snapshot; if amend-order ever lands or any other writer
+                # mutates limit_price/stop_price, the locked row is the source
+                # of truth and a stale snapshot could fill at a price the user
+                # has since revoked.
+                if not _should_fill(order, price, now_et):
                     continue
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))

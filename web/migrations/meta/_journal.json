@@ -64,6 +64,13 @@
       "when": 1776832889055,
       "tag": "0008_transaction_trade_columns_check",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776760526126,
+      "tag": "0009_quick_unicorn",
+      "breakpoints": true
     }
   ]
 }

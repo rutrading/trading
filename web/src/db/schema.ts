@@ -288,6 +288,16 @@ export const order = pgTable(
     index("order_ticker_idx").on(table.ticker),
     index("order_status_idx").on(table.status),
     index("order_created_at_idx").on(table.createdAt),
+    // Composite indexes that match the dominant `WHERE trading_account_id = $1
+    // [AND status = $2] ORDER BY created_at DESC LIMIT N OFFSET M` pattern in
+    // list_orders. The planner can walk the index in order without an
+    // intermediate sort and stop after N rows once the offset is reached.
+    index("order_account_created_idx").on(table.tradingAccountId, table.createdAt.desc()),
+    index("order_account_status_created_idx").on(
+      table.tradingAccountId,
+      table.status,
+      table.createdAt.desc(),
+    ),
   ],
 );
 
@@ -316,6 +326,13 @@ export const transaction = pgTable(
     index("transaction_order_id_idx").on(table.orderId),
     index("transaction_ticker_idx").on(table.ticker),
     index("transaction_created_at_idx").on(table.createdAt),
+    // Composite index matching the dominant `WHERE trading_account_id = $1
+    // ORDER BY created_at DESC LIMIT N OFFSET M` pattern in list_transactions
+    // and the per-account fan-out walk in getAllTransactions.
+    index("transaction_account_created_idx").on(
+      table.tradingAccountId,
+      table.createdAt.desc(),
+    ),
     // Trade-kind transactions must retain the columns that became nullable
     // when deposit/withdrawal kinds were added in 0005_fat_nemesis.sql.
     // Mirrors the SQL constraint from 0008_transaction_trade_columns_check.sql

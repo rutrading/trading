@@ -2,6 +2,21 @@
 
 Handles order validation, fill execution, holding updates, and balance changes.
 All mutating helpers expect to be called inside an existing DB session/transaction.
+
+Lock ordering convention
+------------------------
+Every code path that takes more than one row lock for a single trading
+account must acquire them in this order:
+
+    1. ``trading_account`` (FOR UPDATE)
+    2. ``order``           (FOR UPDATE) — only paths that re-read the order
+    3. ``holding``         (FOR UPDATE)
+
+Acquiring locks in any other order risks a Postgres deadlock against a
+peer transaction (typical pair: ``cancel_order`` vs ``execute_fill``,
+or ``place_order(sell)`` vs the executor). Helpers in this module assume
+the caller has already locked the account; ``execute_fill`` then locks
+the holding via ``with_for_update()`` itself.
 """
 
 import logging
@@ -62,7 +77,14 @@ def validate_order_request(
     limit_price: Decimal | None,
     stop_price: Decimal | None,
 ) -> None:
-    """Run all pre-trade validation checks. Raises OrderValidationError on failure."""
+    """Run all pre-trade validation checks. Raises OrderValidationError on failure.
+
+    Caller contract: ``account`` must already be locked with
+    ``with_for_update()`` before this is invoked. The sell-side branch
+    acquires the holding row lock; per the module docstring the order
+    must be account → holding, so the account lock has to be held
+    first. ``place_order`` is the only current caller and respects this.
+    """
 
     # reject unknown asset class
     if asset_class not in VALID_ASSET_CLASSES:
@@ -279,13 +301,21 @@ def execute_fill(
 
     order.updated_at = datetime.now(timezone.utc)
 
-    # find or create holding for this ticker
+    # find or create holding for this ticker. Take an explicit row lock —
+    # the caller already holds the trading_account lock above (account →
+    # holding ordering, see module docstring), so a concurrent
+    # `place_order(sell)` or `cancel_order(sell)` waiting on this holding
+    # row will queue behind us instead of racing the read-modify-write
+    # below. Without the lock the UPDATE that flushes from this object
+    # graph would still acquire a row lock, but only after we've already
+    # made decisions against the unlocked snapshot.
     holding = (
         db.query(Holding)
         .filter(
             Holding.trading_account_id == account.id,
             Holding.ticker == order.ticker,
         )
+        .with_for_update()
         .first()
     )
 

@@ -20,6 +20,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -246,6 +247,21 @@ class Order(Base):
         Index("order_ticker_idx", "ticker"),
         Index("order_status_idx", "status"),
         Index("order_created_at_idx", "created_at"),
+        # Composite indexes mirroring web/src/db/schema.ts so the planner
+        # can serve the dominant `WHERE trading_account_id = $1 [AND
+        # status = $2] ORDER BY created_at DESC LIMIT N` queries via an
+        # in-order index walk instead of a per-account sort.
+        Index(
+            "order_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
+        Index(
+            "order_account_status_created_idx",
+            "trading_account_id",
+            "status",
+            text("created_at DESC"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -294,6 +310,14 @@ class Transaction(Base):
         Index("transaction_order_id_idx", "order_id"),
         Index("transaction_ticker_idx", "ticker"),
         Index("transaction_created_at_idx", "created_at"),
+        # Composite index mirroring web/src/db/schema.ts so the planner
+        # can serve `WHERE trading_account_id = $1 ORDER BY created_at
+        # DESC LIMIT N` via an in-order index walk.
+        Index(
+            "transaction_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
         # Trade-kind transactions must retain the columns that became
         # nullable when deposit/withdrawal kinds were added. Mirrors the
         # CHECK constraint added in 0008_transaction_trade_columns_check.sql.

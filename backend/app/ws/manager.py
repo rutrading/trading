@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from collections import defaultdict
 
@@ -58,6 +59,15 @@ class ConnectionManager:
         # every poll cycle to keep this in sync. Tickers in this set are never
         # untracked on client disconnect or unsubscribe.
         self._system_tickers: set[str] = set()
+
+        # Event loop reference + thread id used by sync_system_tickers to
+        # marshal cross-thread calls back onto the loop (so async-locked
+        # state stays single-writer). register_loop() is called by
+        # run_order_executor at startup; until then sync_system_tickers
+        # falls back to the legacy in-thread mutation (used by tests that
+        # call it directly from the asyncio loop).
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread_id: int | None = None
 
     def _mark_tracked(self, tickers: list[str]) -> None:
         for ticker in tickers:
@@ -199,12 +209,29 @@ class ConnectionManager:
             removed or "none",
         )
 
-    def sync_system_tickers(self, tickers: set[str]) -> tuple[list[str], list[str]]:
-        """Set the backend-owned subscription set. Marks pending_adds for new
-        tickers and pending_removes for tickers no longer in the set (but only
-        if no client is currently subscribed to them). Returns (added, removed)
-        for logging. Intended to be called by the order executor each cycle."""
-        normalized = {t.upper() for t in tickers}
+    def register_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Record the loop that owns the asyncio-locked manager state.
+
+        Called from the asyncio task that runs the order executor so
+        cross-thread `sync_system_tickers` calls can be marshalled back
+        onto the loop via `run_coroutine_threadsafe`. Without this the
+        executor (running in `asyncio.to_thread`) would race against
+        `subscribe`/`unsubscribe`/`disconnect`/`broadcast` for the
+        `_pending_adds` / `_pending_removes` / `_ticker_clients` /
+        `_ticker_last_active` / `_system_tickers` collections.
+        """
+        self._loop = loop
+        self._loop_thread_id = threading.get_ident()
+
+    def _apply_system_tickers(self, normalized: set[str]) -> tuple[list[str], list[str]]:
+        """Inner sync mutator. Caller must guarantee single-writer access.
+
+        Either runs on the loop thread (legacy direct call from tests
+        or pre-`register_loop` startup) or under the asyncio lock via
+        `_apply_system_tickers_locked` when scheduled from a worker
+        thread. Splitting this out lets us share the diff/mutation
+        logic between the two entry points without duplicating it.
+        """
         added: list[str] = []
         removed: list[str] = []
 
@@ -227,6 +254,41 @@ class ConnectionManager:
         if removed:
             self._mark_untracked(removed)
         return added, removed
+
+    async def _apply_system_tickers_locked(
+        self, normalized: set[str]
+    ) -> tuple[list[str], list[str]]:
+        """Async wrapper around `_apply_system_tickers` that takes the
+        connection-manager lock. Used by `sync_system_tickers` when it
+        is invoked from a worker thread."""
+        async with self._lock:
+            return self._apply_system_tickers(normalized)
+
+    def sync_system_tickers(self, tickers: set[str]) -> tuple[list[str], list[str]]:
+        """Set the backend-owned subscription set. Marks pending_adds for new
+        tickers and pending_removes for tickers no longer in the set (but only
+        if no client is currently subscribed to them). Returns (added, removed)
+        for logging. Intended to be called by the order executor each cycle.
+
+        Safe to call from a worker thread once `register_loop` has run —
+        the mutation is marshalled onto the loop under `_lock` so it
+        cannot race with `subscribe` / `unsubscribe` / `broadcast` /
+        `disconnect`. Direct calls from the loop thread (the legacy
+        path, exercised by tests) execute inline with no extra hop."""
+        normalized = {t.upper() for t in tickers}
+
+        loop = self._loop
+        if loop is not None and threading.get_ident() != self._loop_thread_id:
+            # Called from a worker thread (e.g. asyncio.to_thread inside
+            # run_order_executor). Schedule the mutation on the loop and
+            # block this thread until it completes — concurrent_futures
+            # handles cross-thread propagation of the result/exception.
+            future = asyncio.run_coroutine_threadsafe(
+                self._apply_system_tickers_locked(normalized), loop
+            )
+            return future.result()
+
+        return self._apply_system_tickers(normalized)
 
     async def subscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
         """Subscribe a client to tickers. Returns newly tracked tickers.

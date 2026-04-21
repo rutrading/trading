@@ -34,6 +34,13 @@ def get_db() -> Generator[Session, None, None]:
     session = get_session_factory()()
     try:
         yield session
+    except Exception:
+        # Explicit rollback on uncaught exceptions so a partial
+        # transaction never lingers on the connection. SQLAlchemy
+        # auto-rolls back on close, but being explicit here survives
+        # library behavior changes and reads better in tracebacks.
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -43,5 +50,8 @@ def db_session() -> Generator[Session, None, None]:
     session = get_session_factory()()
     try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()

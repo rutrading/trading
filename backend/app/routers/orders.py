@@ -68,8 +68,15 @@ class PlaceOrderRequest(BaseModel):
         return v
 
 
-def _get_order_or_404(db: Session, order_id: int) -> Order:
-    order = db.query(Order).filter(Order.id == order_id).first()
+def _get_order_or_404(db: Session, order_id: int, *, for_update: bool = False) -> Order:
+    """Look up an order by id. Pass `for_update=True` when the caller
+    intends to mutate the row, so the lock is acquired before the
+    authz check rather than after — preventing a concurrent writer
+    from changing the row out from under the read-modify-write."""
+    query = db.query(Order).filter(Order.id == order_id)
+    if for_update:
+        query = query.with_for_update()
+    order = query.first()
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
