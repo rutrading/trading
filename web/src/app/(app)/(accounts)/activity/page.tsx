@@ -1,29 +1,13 @@
-// This page was split into /holdings and /activity. The old combined view is
-// kept here as a permanent redirect so bookmarks and in-code links don't 404.
-// Remove once we're confident nothing still points at /portfolio.
-
-import { redirect } from "next/navigation";
-
-type Props = { searchParams: Promise<{ page?: string; account?: string }> };
-
-export default async function PortfolioPage({ searchParams }: Props) {
-  const { account } = await searchParams;
-  const qs = account ? `?account=${account}` : "";
-  redirect(`/holdings${qs}`);
-}
-
-/*
-Original combined-view implementation — kept commented for reference.
-
 import type { Metadata } from "next";
-import { HoldingsTable } from "@/components/portfolio/holdings-table";
 import { TransactionHistory } from "@/components/portfolio/transaction-history";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllHoldings, getAllTransactions } from "@/app/actions/portfolio";
 
-export const metadata: Metadata = { title: "Portfolio - R U Trading" };
+export const metadata: Metadata = { title: "Activity - R U Trading" };
 
-export default async function PortfolioPage({ searchParams }: Props) {
+type Props = { searchParams: Promise<{ page?: string; account?: string }> };
+
+export default async function ActivityPage({ searchParams }: Props) {
   const { page: pageParam, account: accountParam } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
 
@@ -43,27 +27,20 @@ export default async function PortfolioPage({ searchParams }: Props) {
     scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
   const scopedAccount = scopedId ? accountsById[scopedId] : null;
 
-  const allHoldings = await getAllHoldings(activeIds);
-  const allTxns = await getAllTransactions(
-    activeIds,
-    allHoldings.cashByAccount,
-    page,
-  );
+  // Need the cashByAccount map for the running-cash walk on transactions.
+  const { cashByAccount } = await getAllHoldings(activeIds);
+  const allTxns = await getAllTransactions(activeIds, cashByAccount, page);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
         <p className="text-sm text-muted-foreground">
           {scopedAccount
-            ? `Holdings and transactions for ${scopedAccount.name}.`
-            : "Holdings and transactions across all of your accounts."}
+            ? `Transactions for ${scopedAccount.name}.`
+            : "Transactions across all of your accounts."}
         </p>
       </div>
-      <HoldingsTable
-        holdings={allHoldings.holdings}
-        accountsById={accountsById}
-      />
       <TransactionHistory
         transactions={allTxns.transactions}
         accountsById={scopedAccount ? undefined : accountsById}
@@ -75,4 +52,3 @@ export default async function PortfolioPage({ searchParams }: Props) {
     </div>
   );
 }
-*/

@@ -82,7 +82,7 @@ export default async function DashboardPage({ searchParams }: Props) {
       <div className="rounded-2xl bg-accent p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Holdings</h2>
-          <Link href={scopedId ? `/portfolio?account=${scopedId}` : "/portfolio"}>
+          <Link href={scopedId ? `/holdings?account=${scopedId}` : "/holdings"}>
             <Button variant="ghost" size="sm">
               See All <CaretRight size={14} />
             </Button>

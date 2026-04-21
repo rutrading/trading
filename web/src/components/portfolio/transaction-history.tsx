@@ -40,7 +40,6 @@ export const TransactionHistory = ({
   if (transactions.length === 0) {
     return (
       <div className="rounded-2xl bg-accent p-6">
-        <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon"><ClockCounterClockwise /></EmptyMedia>
@@ -57,12 +56,11 @@ export const TransactionHistory = ({
   const hasNext = page < totalPages;
   const pageHref = (p: number) =>
     scopedAccountId
-      ? `/portfolio?account=${scopedAccountId}&page=${p}`
-      : `/portfolio?page=${p}`;
+      ? `/activity?account=${scopedAccountId}&page=${p}`
+      : `/activity?page=${p}`;
 
   return (
     <div className="rounded-2xl bg-accent p-6">
-      <h2 className="mb-4 text-lg font-semibold">Transaction History</h2>
       <div className="rounded-xl bg-card">
         <Table>
           <TableHeader>
