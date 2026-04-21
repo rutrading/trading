@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
+from app.services.market_calendar import is_stock_market_open
 from app.services.trading import compute_market_fill_price, execute_fill
 
 ET = ZoneInfo("America/New_York")
@@ -295,14 +296,8 @@ def _should_expire(order: Order, now_et: datetime) -> bool:
     return created_et < last_boundary
 
 
-def _is_stock_market_open(now_et: datetime) -> bool:
-    """True during regular US equity hours (9:30–16:00 ET, weekdays). Holidays TBD."""
-    if now_et.weekday() >= 5:  # Sat=5, Sun=6
-        return False
-    minutes = now_et.hour * 60 + now_et.minute
-    return (MARKET_OPEN[0] * 60 + MARKET_OPEN[1]) <= minutes < (
-        MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
-    )
+# Thin alias so existing tests importing `_is_stock_market_open` keep working.
+_is_stock_market_open = is_stock_market_open
 
 
 def _in_window(now_et: datetime, target: tuple[int, int]) -> bool:

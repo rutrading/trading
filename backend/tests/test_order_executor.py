@@ -374,3 +374,19 @@ class TestStockOffHoursGuard:
             "limit", "buy", limit_price="150.00", tif="opg", asset_class="us_equity"
         )
         assert _should_fill(order, Decimal("148.00"), et_time(9, 32)) is True
+
+    def test_stock_gtc_does_not_fill_on_nyse_holiday(self):
+        # 2025-12-25 is Christmas — markets closed even though it's a Thursday
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="us_equity"
+        )
+        christmas_10am = datetime(2025, 12, 25, 10, 0, tzinfo=ET)
+        assert _should_fill(order, Decimal("140.00"), christmas_10am) is False
+
+    def test_crypto_still_fills_on_nyse_holiday(self):
+        # crypto is 24/7 including NYSE holidays
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="crypto"
+        )
+        christmas_10am = datetime(2025, 12, 25, 10, 0, tzinfo=ET)
+        assert _should_fill(order, Decimal("140.00"), christmas_10am) is True
