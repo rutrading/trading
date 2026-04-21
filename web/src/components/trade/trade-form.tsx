@@ -725,7 +725,7 @@ function QuoteStrip({
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
         <div className="flex items-baseline gap-2">
           <Link
-            href={`/stocks/${encodeURIComponent(ticker)}`}
+            href={`/stocks/${ticker}`}
             className="text-lg font-semibold hover:underline"
           >
             {ticker}

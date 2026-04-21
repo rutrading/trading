@@ -120,12 +120,18 @@ export const TransactionHistory = ({
                   )}
                 </TableCell>
                 <TableCell className="font-medium">
-                  {t.ticker ??
-                    (t.kind === "trade" ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      "USD"
-                    ))}
+                  {t.ticker ? (
+                    <Link
+                      href={`/stocks/${t.ticker}`}
+                      className="hover:underline"
+                    >
+                      {t.ticker}
+                    </Link>
+                  ) : t.kind === "trade" ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    "USD"
+                  )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {t.quantity

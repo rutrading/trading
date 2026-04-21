@@ -162,7 +162,7 @@ export const HoldingsTable = ({
                   <TableCell>
                     <div className="flex flex-col">
                       <Link
-                        href={`/stocks/${encodeURIComponent(h.ticker)}`}
+                        href={`/stocks/${h.ticker}`}
                         className="text-sm font-semibold hover:underline"
                       >
                         {h.ticker}
