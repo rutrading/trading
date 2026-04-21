@@ -1,6 +1,7 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   date,
   doublePrecision,
   index,
@@ -315,6 +316,14 @@ export const transaction = pgTable(
     index("transaction_order_id_idx").on(table.orderId),
     index("transaction_ticker_idx").on(table.ticker),
     index("transaction_created_at_idx").on(table.createdAt),
+    // Trade-kind transactions must retain the columns that became nullable
+    // when deposit/withdrawal kinds were added in 0005_fat_nemesis.sql.
+    // Mirrors the SQL constraint from 0008_transaction_trade_columns_check.sql
+    // and the CheckConstraint on the SQLAlchemy Transaction model.
+    check(
+      "transaction_trade_columns_required_check",
+      sql`${table.kind} <> 'trade' OR (${table.orderId} IS NOT NULL AND ${table.ticker} IS NOT NULL AND ${table.side} IS NOT NULL AND ${table.quantity} IS NOT NULL AND ${table.price} IS NOT NULL)`,
+    ),
   ],
 );
 

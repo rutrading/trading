@@ -4,16 +4,16 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy.orm import Session
-
 from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.auth import SKIP_AUTH, get_current_user
 from app.db import Order, get_db
 from app.db.models import DailyBar, Holding, Quote, TradingAccount, Transaction
 from app.dependencies import get_trading_account
+from app.rate_limit import get_order_cancel_limiter, get_order_placement_limiter
 from app.schemas import (
     OrderDetailResponse,
     OrderResponse,
@@ -94,7 +94,7 @@ def _mock_order_response(payload: "PlaceOrderRequest") -> OrderResponse:
 
 
 @router.post("/orders")
-def place_order(
+async def place_order(
     payload: PlaceOrderRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -103,6 +103,11 @@ def place_order(
 
     if SKIP_AUTH:
         return _mock_order_response(payload)
+
+    # Per-user rate limit. Each placement holds a row lock and runs ATR +
+    # buying-power math; a stuck client or loop could otherwise saturate the
+    # DB. Raises HTTPException(429) when the user exceeds 5/sec or 30/min.
+    await get_order_placement_limiter().check(str(user.get("sub", "")))
 
     # verify the user is a member of this trading account
     account = get_trading_account(
@@ -375,8 +380,17 @@ def get_order(
 
     order = _get_order_or_404(db, order_id)
 
-    # verify the user owns this order's account
-    get_trading_account(trading_account_id=order.trading_account_id, user=user, db=db)
+    # verify the user owns this order's account, collapsing the existing-but-
+    # not-yours case to 404 so attackers can't enumerate valid order IDs by
+    # watching for the 403 vs 404 split.
+    try:
+        get_trading_account(
+            trading_account_id=order.trading_account_id, user=user, db=db
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            raise HTTPException(status_code=404, detail="Order not found") from exc
+        raise
 
     last_fill = _last_fill_by_order(db, [order.id]).get(order.id)
     base = OrderResponse.from_order(order, last_fill_at=last_fill)
@@ -390,7 +404,7 @@ def get_order(
 
 
 @router.post("/orders/{order_id}/cancel")
-def cancel_order(
+async def cancel_order(
     order_id: int,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -400,10 +414,23 @@ def cancel_order(
     if SKIP_AUTH:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    # Per-user rate limit. Cancellation also grabs row locks and runs
+    # reservation-release math, so it needs the same cap as placement.
+    await get_order_cancel_limiter().check(str(user.get("sub", "")))
+
     order = _get_order_or_404(db, order_id)
 
-    # verify the user owns this order's account
-    get_trading_account(trading_account_id=order.trading_account_id, user=user, db=db)
+    # verify the user owns this order's account, collapsing the existing-but-
+    # not-yours case to 404 so attackers can't enumerate valid order IDs by
+    # watching for the 403 vs 404 split.
+    try:
+        get_trading_account(
+            trading_account_id=order.trading_account_id, user=user, db=db
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            raise HTTPException(status_code=404, detail="Order not found") from exc
+        raise
 
     # only open or partially filled orders can be cancelled
     if order.status not in ("open", "partially_filled"):

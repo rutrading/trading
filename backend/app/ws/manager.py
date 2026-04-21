@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 # how long to hold a disconnected user's subscriptions
 GRACE_SECONDS = 30
 
+# Per-message and per-connection caps on how many tickers a single client may
+# request. An authenticated client without these caps can otherwise flood
+# `_subs[ws]`, `_ticker_clients`, and `_pending_adds`/`_pending_removes` with
+# thousands of entries — and (per `feeds/alpaca.py`) trigger churn on the
+# upstream subscription set via the eviction path.
+MAX_TICKERS_PER_MESSAGE = 50
+MAX_TICKERS_PER_CONNECTION = 200
+
 
 class ConnectionManager:
     def __init__(self) -> None:
@@ -221,13 +229,39 @@ class ConnectionManager:
         return added, removed
 
     async def subscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
-        """Subscribe a client to tickers. Returns newly tracked tickers."""
+        """Subscribe a client to tickers. Returns newly tracked tickers.
+
+        Enforces MAX_TICKERS_PER_MESSAGE (drops the overflow in the incoming
+        list) and MAX_TICKERS_PER_CONNECTION (stops adding once the per-ws
+        total reaches the cap). Overflows are logged but not errored so the
+        connection stays alive — the router can surface an explicit error
+        for the batch-too-large case.
+        """
         added: list[str] = []
+        if len(tickers) > MAX_TICKERS_PER_MESSAGE:
+            logger.warning(
+                "Capping subscribe: message had %d tickers, cap is %d",
+                len(tickers),
+                MAX_TICKERS_PER_MESSAGE,
+            )
+            tickers = tickers[:MAX_TICKERS_PER_MESSAGE]
+
         async with self._lock:
             if ws not in self._subs:
                 return []
             for t in tickers:
                 ticker = t.upper()
+                # Already-subscribed tickers cost nothing to "re-add" against
+                # the cap; only count this ticker if it's a genuine new entry.
+                if (
+                    ticker not in self._subs[ws]
+                    and len(self._subs[ws]) >= MAX_TICKERS_PER_CONNECTION
+                ):
+                    logger.warning(
+                        "Dropping subscribe: per-connection cap %d reached",
+                        MAX_TICKERS_PER_CONNECTION,
+                    )
+                    break
                 self._subs[ws].add(ticker)
                 was_empty = len(self._ticker_clients[ticker]) == 0
                 self._ticker_clients[ticker].add(ws)

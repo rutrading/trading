@@ -12,9 +12,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "ticker required" }, { status: 400 });
   }
 
+  // Require an authenticated session up-front instead of bouncing the call
+  // through to the backend. Aligns with /api/ws-token and prevents this
+  // route from being used as a generic anonymous bouncer (and from leaking
+  // backend error detail strings to anonymous callers).
+  const reqHeaders = await headers();
+  const session = await auth.api.getSession({ headers: reqHeaders });
+  if (!session) {
+    return NextResponse.json(
+      { ok: false, error: "Not authenticated" },
+      { status: 401 },
+    );
+  }
+
   let tokenHeader: Record<string, string> = {};
   try {
-    const res = await auth.api.getToken({ headers: await headers() });
+    const res = await auth.api.getToken({ headers: reqHeaders });
     if (res?.token) tokenHeader = { Authorization: `Bearer ${res.token}` };
   } catch {
     // let backend reject

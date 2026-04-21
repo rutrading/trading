@@ -1,7 +1,7 @@
 """Tests for app.auth.verify_token.
 
-Covers the JWT decode path including the new verify_aud=False option (so
-tokens with the wrong audience are intentionally accepted), expired tokens,
+Covers the JWT decode path with explicit audience and issuer verification
+(tokens with the wrong aud or iss must be rejected), expired tokens,
 unknown signing keys, missing/empty tokens, and the SKIP_AUTH bypass.
 
 Strategy: generate an in-test RSA keypair, monkey-patch
@@ -54,7 +54,19 @@ def keypair_and_patch(monkeypatch):
     # Also force SKIP_AUTH to False at module level (other tests may have
     # set it differently if they monkeypatched).
     monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+    # Pin audience/issuer to known values so tests are independent of env.
+    monkeypatch.setattr(auth_module, "JWT_AUDIENCE", "http://localhost:3000")
+    monkeypatch.setattr(auth_module, "JWT_ISSUER", "http://localhost:3000")
     return private_key, public_key
+
+
+def _good_claims() -> dict:
+    """Claims that should pass verification (correct aud, iss, and exp)."""
+    return {
+        "aud": "http://localhost:3000",
+        "iss": "http://localhost:3000",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+    }
 
 
 class TestVerifyToken:
@@ -62,9 +74,9 @@ class TestVerifyToken:
         private_key, _ = keypair_and_patch
         token = _sign(
             {
+                **_good_claims(),
                 "sub": "user-123",
                 "email": "test@example.com",
-                "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
             },
             private_key,
         )
@@ -77,6 +89,7 @@ class TestVerifyToken:
         private_key, _ = keypair_and_patch
         token = _sign(
             {
+                **_good_claims(),
                 "sub": "user-123",
                 "exp": datetime.now(timezone.utc) - timedelta(minutes=1),
             },
@@ -89,31 +102,50 @@ class TestVerifyToken:
         # the signature won't match, decode raises InvalidTokenError → None
         bogus_private, _ = _gen_keypair()
         token = _sign(
-            {"sub": "user-123", "exp": datetime.now(timezone.utc) + timedelta(minutes=5)},
+            {**_good_claims(), "sub": "user-123"},
             bogus_private,
         )
         assert auth_module.verify_token(token) is None
 
-    def test_token_with_wrong_audience_is_accepted(self, keypair_and_patch):
-        """The verify_aud=False flag was added on feat/order-ui to make Better
-        Auth tokens decode without strict audience matching. This test locks
-        that intent in: a token with aud='something-wrong' must NOT be
-        rejected. Removing the flag would flip this assertion to None and
-        break login.
-        """
+    def test_token_with_wrong_audience_is_rejected(self, keypair_and_patch):
+        """A token signed by the same JWKS key but with an aud that doesn't
+        match JWT_AUDIENCE must be rejected. Without this check, any token
+        minted for a different better-auth client (different lifetimes or
+        assurance levels) would be accepted on this backend."""
         private_key, _ = keypair_and_patch
         token = _sign(
             {
+                **_good_claims(),
                 "sub": "user-123",
                 "aud": "something-completely-wrong",
-                "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
             },
             private_key,
         )
-        payload = auth_module.verify_token(token)
-        assert payload is not None
-        assert payload["sub"] == "user-123"
-        assert payload["aud"] == "something-completely-wrong"
+        assert auth_module.verify_token(token) is None
+
+    def test_token_with_wrong_issuer_is_rejected(self, keypair_and_patch):
+        """Defense in depth: reject tokens with an unexpected iss even if the
+        aud happens to match."""
+        private_key, _ = keypair_and_patch
+        token = _sign(
+            {
+                **_good_claims(),
+                "sub": "user-123",
+                "iss": "https://evil.example.com",
+            },
+            private_key,
+        )
+        assert auth_module.verify_token(token) is None
+
+    def test_token_with_missing_audience_is_rejected(self, keypair_and_patch):
+        """PyJWT rejects tokens that omit `aud` entirely when an audience is
+        required — this locks that in so we never regress back to accepting
+        claim-less tokens."""
+        private_key, _ = keypair_and_patch
+        claims = _good_claims()
+        claims.pop("aud")
+        token = _sign({**claims, "sub": "user-123"}, private_key)
+        assert auth_module.verify_token(token) is None
 
     def test_missing_token_returns_none(self, keypair_and_patch):
         assert auth_module.verify_token(None) is None

@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from app.db.models import Holding, Order, TradingAccount
 from app.main import app
 from app.schemas import OrderResponse
+from app.rate_limit import per_user as per_user_rate_limit
 from tests.integration_helpers import (
     auth_as,
     db_override,
@@ -40,6 +41,15 @@ from tests.integration_helpers import (
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """Per-user order-placement/cancel limiters are process-wide singletons.
+    Reset before each test so one test's burst doesn't bleed into the next."""
+    per_user_rate_limit._reset_for_tests()
+    yield
+    per_user_rate_limit._reset_for_tests()
+
+
 @pytest.fixture
 def session_factory():
     engine = make_test_engine()
@@ -56,8 +66,14 @@ def session_factory():
 class TestOrdersIDOR:
     """User B must not be able to read or cancel User A's orders.
 
-    Policy (per dependencies.py:55-57): 403 with detail
-    "You are not a member of this trading account".
+    Policy: GET /orders/{id} and POST /orders/{id}/cancel return 404 ("Order
+    not found") for orders that exist but belong to another account. The
+    "collapse 403 to 404" behavior prevents enumeration of valid order IDs
+    across tenants by watching for the 403-vs-404 split.
+
+    List endpoints still return 403 ("not a member") because the
+    trading_account_id is the explicit query parameter — the user is
+    asserting membership there rather than probing an opaque identifier.
     """
 
     def _setup_two_users_one_order(self, factory):
@@ -77,12 +93,14 @@ class TestOrdersIDOR:
             )
             return account.id, order.id
 
-    def test_get_order_rejects_non_member(self, session_factory):
+    def test_get_order_hides_foreign_order_as_404(self, session_factory):
         account_id, order_id = self._setup_two_users_one_order(session_factory)
         with db_override(session_factory), auth_as("user-b"):
             response = client.get(f"/api/orders/{order_id}")
-        assert response.status_code == 403
-        assert "not a member" in response.json()["detail"].lower()
+        # 404 — same shape the missing-row branch returns. Attacker cannot
+        # distinguish "doesn't exist" from "belongs to someone else."
+        assert response.status_code == 404
+        assert response.json()["detail"].lower() == "order not found"
 
     def test_get_order_succeeds_for_member(self, session_factory):
         account_id, order_id = self._setup_two_users_one_order(session_factory)
@@ -91,11 +109,12 @@ class TestOrdersIDOR:
         assert response.status_code == 200
         assert response.json()["id"] == order_id
 
-    def test_cancel_order_rejects_non_member(self, session_factory):
+    def test_cancel_order_hides_foreign_order_as_404(self, session_factory):
         account_id, order_id = self._setup_two_users_one_order(session_factory)
         with db_override(session_factory), auth_as("user-b"):
             response = client.post(f"/api/orders/{order_id}/cancel")
-        assert response.status_code == 403
+        assert response.status_code == 404
+        assert response.json()["detail"].lower() == "order not found"
         # State was not mutated — fetch directly to confirm
         with session_factory() as db:
             order = db.query(Order).filter(Order.id == order_id).first()
@@ -145,9 +164,20 @@ class TestTransactionsIDOR:
             seed_user(db, "user-b")
             seed_symbol(db, "AAPL")
             account = seed_account(db, "user-a")
+            # The CHECK constraint on transaction requires trade rows to
+            # carry a non-null order_id; seed an order before the txn.
+            order = seed_order(
+                db,
+                account.id,
+                "AAPL",
+                quantity="1",
+                filled_quantity="1",
+                status="filled",
+            )
             seed_transaction(
                 db,
                 account.id,
+                order_id=order.id,
                 kind="trade",
                 ticker="AAPL",
                 side="buy",
@@ -645,6 +675,87 @@ class TestCancelOrderReservationRelease:
 # ---------------------------------------------------------------------------
 # _mock_order_response parity check (Nit 15)
 # ---------------------------------------------------------------------------
+
+
+class TestTransactionTradeColumnsCheckConstraint:
+    """The CHECK constraint added in 0008 must reject malformed trade rows.
+
+    Mirrors the CHECK in the SQLAlchemy model and Drizzle schema. SQLite
+    enforces CHECK constraints at the storage layer, so this test runs
+    against the same in-memory engine as the rest of the suite.
+    """
+
+    def _seed_account(self, factory):
+        with factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(db, "user-a")
+            return account.id
+
+    def test_trade_with_null_order_id_is_rejected(self, session_factory):
+        from sqlalchemy.exc import IntegrityError
+
+        account_id = self._seed_account(session_factory)
+        with session_factory() as db, pytest.raises(IntegrityError):
+            seed_transaction(
+                db,
+                account_id,
+                kind="trade",
+                ticker="AAPL",
+                side="buy",
+                quantity="1",
+                price="100",
+                total="100",
+            )
+
+    def test_trade_with_null_ticker_is_rejected(self, session_factory):
+        from sqlalchemy.exc import IntegrityError
+
+        account_id = self._seed_account(session_factory)
+        with session_factory() as db:
+            order = seed_order(db, account_id, "AAPL", quantity="1")
+            order_id = order.id
+        with session_factory() as db, pytest.raises(IntegrityError):
+            seed_transaction(
+                db,
+                account_id,
+                order_id=order_id,
+                kind="trade",
+                side="buy",
+                quantity="1",
+                price="100",
+                total="100",
+            )
+
+    def test_deposit_with_no_trade_columns_is_accepted(self, session_factory):
+        account_id = self._seed_account(session_factory)
+        with session_factory() as db:
+            txn = seed_transaction(
+                db,
+                account_id,
+                kind="deposit",
+                total="500",
+            )
+            assert txn.id is not None
+            assert txn.order_id is None
+            assert txn.ticker is None
+
+    def test_well_formed_trade_is_accepted(self, session_factory):
+        account_id = self._seed_account(session_factory)
+        with session_factory() as db:
+            order = seed_order(db, account_id, "AAPL", quantity="1")
+            txn = seed_transaction(
+                db,
+                account_id,
+                order_id=order.id,
+                kind="trade",
+                ticker="AAPL",
+                side="buy",
+                quantity="1",
+                price="100",
+                total="100",
+            )
+            assert txn.id is not None
 
 
 class TestMockOrderResponseParity:

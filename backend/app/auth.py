@@ -21,6 +21,13 @@ AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:3000")
 JWKS_URL = f"{AUTH_SERVER_URL}/api/auth/jwks"
 SKIP_AUTH = os.environ.get("SKIP_AUTH", "").lower() in ("1", "true")
 
+# Better-auth's JWT plugin (see web/node_modules/better-auth/dist/plugins/jwt/sign.mjs)
+# sets both `aud` and `iss` to the better-auth baseURL by default, which matches
+# AUTH_SERVER_URL in our config. Allow operators to override via env if they
+# configure `jwt.audience` / `jwt.issuer` differently.
+JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", AUTH_SERVER_URL)
+JWT_ISSUER = os.environ.get("JWT_ISSUER", AUTH_SERVER_URL)
+
 jwks_client = PyJWKClient(JWKS_URL)
 bearer_scheme = HTTPBearer(auto_error=not SKIP_AUTH)
 
@@ -47,7 +54,8 @@ def verify_token(token: str | None) -> dict | None:
             token,
             signing_key.key,
             algorithms=["RS256", "ES256", "EdDSA"],
-            options={"verify_aud": False},
+            audience=JWT_AUDIENCE,
+            issuer=JWT_ISSUER,
         )
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None

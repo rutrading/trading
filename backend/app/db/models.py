@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     Enum,
     Float,
@@ -287,6 +288,14 @@ class Transaction(Base):
         Index("transaction_order_id_idx", "order_id"),
         Index("transaction_ticker_idx", "ticker"),
         Index("transaction_created_at_idx", "created_at"),
+        # Trade-kind transactions must retain the columns that became
+        # nullable when deposit/withdrawal kinds were added. Mirrors the
+        # CHECK constraint added in 0008_transaction_trade_columns_check.sql.
+        CheckConstraint(
+            "kind <> 'trade' OR (order_id IS NOT NULL AND ticker IS NOT NULL "
+            "AND side IS NOT NULL AND quantity IS NOT NULL AND price IS NOT NULL)",
+            name="transaction_trade_columns_required_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
