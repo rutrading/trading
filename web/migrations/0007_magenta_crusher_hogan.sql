@@ -1,0 +1,1 @@
+ALTER TABLE "order" ADD COLUMN "reference_price" numeric(20, 10);

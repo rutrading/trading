@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from app.auth import SKIP_AUTH, get_current_user
 from app.db import Order, get_db
-from app.db.models import DailyBar, Holding, Quote, TradingAccount
+from app.db.models import DailyBar, Holding, Quote, TradingAccount, Transaction
 from app.dependencies import get_trading_account
 from app.schemas import (
     OrderDetailResponse,
@@ -80,12 +82,14 @@ def _mock_order_response(payload: "PlaceOrderRequest") -> OrderResponse:
         quantity=payload.quantity,
         limit_price=payload.limit_price,
         stop_price=payload.stop_price,
+        reference_price=None,
         filled_quantity="0",
         average_fill_price=None,
         status="pending",
         rejection_reason=None,
         created_at=now,
         updated_at=now,
+        last_fill_at=None,
     )
 
 
@@ -173,6 +177,10 @@ def place_order(
                     detail=f"No current price available for {payload.ticker}. Try again in a moment.",
                 )
             market_price = Decimal(str(quote.price))
+            # Snapshot the quote at placement — the actual session-boundary fill
+            # will likely differ but "what the market was when you placed" is
+            # what the orders table's Price column shows.
+            order.reference_price = market_price
             atr = compute_atr(payload.ticker, db)
             rps = compute_stop_reservation_per_share(market_price, atr)
         elif payload.order_type == "stop":
@@ -196,6 +204,9 @@ def place_order(
                 detail=f"No current price available for {payload.ticker}. Try again in a moment.",
             )
         market_price = Decimal(str(quote.price))
+        # Snapshot the quote we're filling against so the orders table can show
+        # "what the market was when you placed this" alongside the actual fill.
+        order.reference_price = market_price
 
         # compute slippage-adjusted fill price before the buying power check so
         # the check uses the actual fill cost — not just the raw quoted price.
@@ -320,12 +331,35 @@ def list_orders(
         .all()
     )
 
+    last_fill_by_order = _last_fill_by_order(db, [o.id for o in orders])
+
     return OrdersPageResponse(
-        orders=[OrderResponse.from_order(order) for order in orders],
+        orders=[
+            OrderResponse.from_order(order, last_fill_at=last_fill_by_order.get(order.id))
+            for order in orders
+        ],
         total=total,
         page=page,
         per_page=per_page,
     )
+
+
+def _last_fill_by_order(db: Session, order_ids: list[int]) -> dict[int, str]:
+    """Return {order_id: max(transaction.created_at) ISO string} in a single query.
+
+    Used to surface the "executed at" timestamp on the orders table without
+    an N+1 roundtrip. Orders with no transactions get no entry (the caller
+    treats that as "not executed yet").
+    """
+    if not order_ids:
+        return {}
+    rows = (
+        db.query(Transaction.order_id, func.max(Transaction.created_at))
+        .filter(Transaction.order_id.in_(order_ids))
+        .group_by(Transaction.order_id)
+        .all()
+    )
+    return {order_id: ts.isoformat() for order_id, ts in rows if ts is not None}
 
 
 @router.get("/orders/{order_id}")
@@ -344,7 +378,8 @@ def get_order(
     # verify the user owns this order's account
     get_trading_account(trading_account_id=order.trading_account_id, user=user, db=db)
 
-    base = OrderResponse.from_order(order)
+    last_fill = _last_fill_by_order(db, [order.id]).get(order.id)
+    base = OrderResponse.from_order(order, last_fill_at=last_fill)
     return OrderDetailResponse(
         **base.model_dump(),
         transactions=[

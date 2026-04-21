@@ -259,6 +259,11 @@ class Order(Base):
     average_fill_price: Mapped[Decimal | None] = mapped_column(
         Numeric(20, 10), default=None
     )
+    # Snapshot of the live market price at placement time for market orders
+    # (null for limit/stop/stop_limit — their intent lives in limit_price/stop_price).
+    reference_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 10), nullable=True, default=None
+    )
     status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
     reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True, default=None)

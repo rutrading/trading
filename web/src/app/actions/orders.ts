@@ -22,12 +22,14 @@ export type Order = {
   quantity: string;
   limit_price: string | null;
   stop_price: string | null;
+  reference_price: string | null;
   filled_quantity: string;
   average_fill_price: string | null;
   status: OrderStatus;
   rejection_reason: string | null;
   created_at: string;
   updated_at: string;
+  last_fill_at: string | null;
 };
 
 type OrdersPageResponse = {

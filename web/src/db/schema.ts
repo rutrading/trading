@@ -271,6 +271,7 @@ export const order = pgTable(
       precision: 20,
       scale: 10,
     }),
+    referencePrice: numeric("reference_price", { precision: 20, scale: 10 }),
     status: orderStatusEnum("status").notNull().default("pending"),
     rejectionReason: text("rejection_reason"),
     reservedPerShare: numeric("reserved_per_share", { precision: 20, scale: 10 }),
