@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowUp, ArrowDown, CaretRight } from "@phosphor-icons/react/ssr";
+import { CaretRight } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
 import { ChartSection } from "@/components/dashboard/chart-section";
 import { HoldingsList } from "@/components/dashboard/holdings-list";
 import { getAccounts } from "@/app/actions/auth";
-import { getHoldings, type Holding } from "@/app/actions/portfolio";
+import { getAllHoldings } from "@/app/actions/portfolio";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 
@@ -14,18 +14,16 @@ const fmt = (n: number) =>
 
 export default async function DashboardPage() {
   const accounts = await getAccounts();
-  const accountId = accounts[0]?.tradingAccount.id;
-
-  let holdings: Holding[] = [];
-  let cashBalance = 0;
-
-  if (accountId) {
-    const res = await getHoldings(accountId);
-    if (res.ok) {
-      holdings = res.data.holdings;
-      cashBalance = parseFloat(res.data.cash_balance);
-    }
+  const accountIds = accounts.map((m) => m.tradingAccount.id);
+  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
+  for (const m of accounts) {
+    accountsById[m.tradingAccount.id] = {
+      name: m.tradingAccount.name,
+      type: m.tradingAccount.type,
+    };
   }
+
+  const { holdings, totalCash } = await getAllHoldings(accountIds);
 
   const totalCost = holdings.reduce(
     (s, h) => s + parseFloat(h.quantity) * parseFloat(h.average_cost),
@@ -37,7 +35,7 @@ export default async function DashboardPage() {
       <div className="space-y-4">
         <div className="flex items-baseline gap-4">
           <h1 className="text-5xl font-bold tabular-nums tracking-tight">
-            ${fmt(totalCost + cashBalance)}
+            ${fmt(totalCost + totalCash)}
           </h1>
           <p className="text-sm text-muted-foreground">Portfolio Value</p>
         </div>
@@ -49,12 +47,16 @@ export default async function DashboardPage() {
               <p className="text-xs text-muted-foreground">Holdings</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold tabular-nums">${fmt(cashBalance)}</p>
+              <p className="text-2xl font-semibold tabular-nums">${fmt(totalCash)}</p>
               <p className="text-xs text-muted-foreground">Cash Balance</p>
             </div>
             <div>
               <p className="text-2xl font-semibold tabular-nums">${fmt(totalCost)}</p>
               <p className="text-xs text-muted-foreground">Invested</p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold tabular-nums">{accounts.length}</p>
+              <p className="text-xs text-muted-foreground">Accounts</p>
             </div>
           </div>
           <ChartSection />
@@ -70,7 +72,7 @@ export default async function DashboardPage() {
             </Button>
           </Link>
         </div>
-        <HoldingsList holdings={holdings} />
+        <HoldingsList holdings={holdings} accountsById={accountsById} />
       </div>
     </div>
   );
