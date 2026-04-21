@@ -106,24 +106,24 @@ export const HoldingsTable = ({
   const showAccount = !!accountsById;
 
   return (
-    <div className="rounded-2xl bg-accent p-6">
+    <div className="rounded-2xl bg-accent p-3">
       <div className="overflow-x-auto rounded-xl bg-card">
-        <Table>
+        <Table className="[&_th]:h-auto [&_th]:px-2 [&_th]:py-2 [&_th]:text-[11px] [&_th]:leading-tight [&_th]:whitespace-normal [&_th]:align-bottom [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs">
           <TableHeader>
             <TableRow>
               <TableHead>Symbol</TableHead>
               {showAccount && <TableHead>Account</TableHead>}
-              <TableHead className="text-right">Last price</TableHead>
-              <TableHead className="text-right">Last price change</TableHead>
-              <TableHead className="text-right">Today&apos;s gain/loss $</TableHead>
-              <TableHead className="text-right">Today&apos;s gain/loss %</TableHead>
-              <TableHead className="text-right">Total gain/loss $</TableHead>
-              <TableHead className="text-right">Total gain/loss %</TableHead>
-              <TableHead className="text-right">Current value</TableHead>
-              <TableHead className="text-right">% of account</TableHead>
+              <TableHead className="text-right">Last<br />price</TableHead>
+              <TableHead className="text-right">Last price<br />change</TableHead>
+              <TableHead className="text-right">Today&apos;s<br />gain/loss $</TableHead>
+              <TableHead className="text-right">Today&apos;s<br />gain/loss %</TableHead>
+              <TableHead className="text-right">Total<br />gain/loss $</TableHead>
+              <TableHead className="text-right">Total<br />gain/loss %</TableHead>
+              <TableHead className="text-right">Current<br />value</TableHead>
+              <TableHead className="text-right">% of<br />account</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
-              <TableHead className="text-right">Average cost basis</TableHead>
-              <TableHead className="text-right">Cost basis total</TableHead>
+              <TableHead className="text-right">Avg cost<br />basis</TableHead>
+              <TableHead className="text-right">Cost basis<br />total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

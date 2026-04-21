@@ -112,21 +112,21 @@ export const OrdersTable = ({
     1 /* price */ + 1 /* avg */ + 1 /* total */ + 1 /* tif */ + 1 /* status */;
 
   return (
-    <div className="rounded-2xl bg-accent p-6">
-      <div className="rounded-xl bg-card">
-        <Table>
+    <div className="rounded-2xl bg-accent p-3">
+      <div className="overflow-x-auto rounded-xl bg-card">
+        <Table className="[&_th]:h-auto [&_th]:px-2 [&_th]:py-2 [&_th]:text-[11px] [&_th]:leading-tight [&_th]:whitespace-normal [&_th]:align-bottom [&_td]:px-2 [&_td]:py-2 [&_td]:text-xs">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-8" />
+              <TableHead className="w-6" />
               <TableHead>Date</TableHead>
               {accountsById && <TableHead>Account</TableHead>}
               <TableHead>Symbol</TableHead>
               <TableHead>Side</TableHead>
               <TableHead>Type</TableHead>
-              <TableHead className="text-right">Quantity Filled</TableHead>
-              <TableHead className="text-right">Quantity Remaining</TableHead>
+              <TableHead className="text-right">Quantity<br />Filled</TableHead>
+              <TableHead className="text-right">Quantity<br />Remaining</TableHead>
               <TableHead className="text-right">Price</TableHead>
-              <TableHead className="text-right">Avg Fill Price</TableHead>
+              <TableHead className="text-right">Avg Fill<br />Price</TableHead>
               <TableHead className="text-right">Total $</TableHead>
               <TableHead>TIF</TableHead>
               <TableHead>Status</TableHead>
