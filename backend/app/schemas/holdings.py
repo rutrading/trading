@@ -10,6 +10,7 @@ class HoldingResponse(BaseModel):
     ticker: str
     asset_class: str
     quantity: str
+    reserved_quantity: str
     average_cost: str
     created_at: str
     updated_at: str
@@ -21,6 +22,7 @@ class HoldingResponse(BaseModel):
             ticker=holding.ticker,
             asset_class=holding.asset_class,
             quantity=str(holding.quantity),
+            reserved_quantity=str(holding.reserved_quantity),
             average_cost=str(holding.average_cost),
             created_at=holding.created_at.isoformat(),
             updated_at=holding.updated_at.isoformat(),

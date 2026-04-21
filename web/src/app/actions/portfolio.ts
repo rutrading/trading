@@ -8,6 +8,7 @@ export type Holding = {
   ticker: string;
   asset_class: "us_equity" | "crypto";
   quantity: string;
+  reserved_quantity: string;
   average_cost: string;
   created_at: string;
   updated_at: string;

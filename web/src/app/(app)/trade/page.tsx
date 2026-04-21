@@ -67,10 +67,12 @@ export default async function TradePage({ searchParams }: Props) {
   const holdingsByAccount: Record<number, Record<string, string>> = {};
   for (const h of holdings) {
     holdingsByAccount[h.trading_account_id] ??= {};
-    // Effective sellable qty = quantity - reserved_quantity (already open sells).
-    // Backend doesn't expose reserved_quantity in the Holding payload today, so
-    // we default to full quantity and let the backend reject overages.
-    holdingsByAccount[h.trading_account_id][h.ticker] = h.quantity;
+    // Sellable = quantity − reserved_quantity (shares already locked by open sells).
+    const available = Math.max(
+      0,
+      parseFloat(h.quantity) - parseFloat(h.reserved_quantity),
+    );
+    holdingsByAccount[h.trading_account_id][h.ticker] = available.toString();
   }
 
   return (
