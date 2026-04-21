@@ -34,12 +34,10 @@ const ASOF_FORMATTER = new Intl.DateTimeFormat("en-US", {
 export function AccountSidebar({
   accounts,
   asOf,
-  collapsed,
   onToggleCollapse,
 }: {
   accounts: SidebarAccount[];
   asOf: Date;
-  collapsed: boolean;
   onToggleCollapse: () => void;
 }) {
   const searchParams = useSearchParams();
@@ -61,21 +59,6 @@ export function AccountSidebar({
 
   const isAllActive = !activeParam || activeParam === "all";
   const activeId = !isAllActive ? Number(activeParam) : null;
-
-  if (collapsed) {
-    return (
-      <aside className="hidden rounded-2xl bg-accent p-2 md:block">
-        <button
-          type="button"
-          aria-label="Expand sidebar"
-          onClick={onToggleCollapse}
-          className="flex w-full items-center justify-center rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-        >
-          <SidebarSimple size={18} />
-        </button>
-      </aside>
-    );
-  }
 
   const investment = accounts.filter((a) => a.type === "investment");
   const crypto = accounts.filter((a) => a.type === "crypto");

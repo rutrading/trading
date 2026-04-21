@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SidebarSimple } from "@phosphor-icons/react/ssr";
 
 import { AccountSidebar, type SidebarAccount } from "./account-sidebar";
 import { cn } from "@/lib/utils";
@@ -44,17 +45,30 @@ export function SidebarShell({
   return (
     <div
       className={cn(
-        "grid gap-6 md:grid-cols-[260px_1fr]",
-        collapsed && "md:grid-cols-[56px_1fr]",
+        "grid gap-6",
+        collapsed ? "md:grid-cols-[1fr]" : "md:grid-cols-[260px_1fr]",
       )}
     >
-      <AccountSidebar
-        accounts={accounts}
-        asOf={asOf}
-        collapsed={collapsed}
-        onToggleCollapse={toggle}
-      />
-      <main className="min-w-0">{children}</main>
+      {!collapsed && (
+        <AccountSidebar
+          accounts={accounts}
+          asOf={asOf}
+          onToggleCollapse={toggle}
+        />
+      )}
+      <main className="min-w-0">
+        {collapsed && (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label="Show sidebar"
+            className="mb-4 inline-flex items-center gap-2 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <SidebarSimple size={16} />
+          </button>
+        )}
+        {children}
+      </main>
     </div>
   );
 }
