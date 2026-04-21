@@ -1,42 +1,75 @@
 "use client";
 
 import { useState } from "react";
+import { placeOrder } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { toastManager } from "@/components/ui/toast";
+import { toast } from "@/lib/toasts";
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const OrderForm = ({ ticker, price }: { ticker: string; price: number }) => {
+const validateQuantity = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "Required";
+  if (trimmed.includes(".")) return "Must be a whole number";
+
+  const parsed = Number(trimmed);
+  if (Number.isNaN(parsed)) return "Must be a number";
+  if (parsed < 0) return "Must be positive";
+  if (parsed === 0) return "Must be greater than zero";
+  if (!Number.isInteger(parsed)) return "Must be a whole number";
+
+  return null;
+};
+
+type OrderFormProps = {
+  ticker: string;
+  price: number;
+  tradingAccountId: number;
+  assetClass: "us_equity" | "crypto";
+};
+
+export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: OrderFormProps) => {
   const [orderSide, setOrderSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState("market");
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
   const [quantity, setQuantity] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
+  const [qtyError, setQtyError] = useState<string | null>(null);
 
-  const qty = parseInt(quantity) || 0;
+  const qty = qtyError === null && quantity.trim() ? Number(quantity.trim()) : 0;
   const estimatedTotal = qty * price;
 
-  const handlePlaceOrder = () => {
-    if (qty <= 0) {
-      toastManager.add({
-        title: "Invalid quantity",
-        description: "Please enter a positive number.",
-        type: "error",
-      });
+  const handlePlaceOrder = async () => {
+    const nextQtyError = validateQuantity(quantity);
+    setQtyError(nextQtyError);
+    if (nextQtyError !== null) return;
+
+    const normalizedQuantity = quantity.trim();
+    const normalizedLimitPrice = limitPrice.trim();
+
+    const result = await placeOrder({
+      trading_account_id: tradingAccountId,
+      ticker,
+      asset_class: assetClass,
+      side: orderSide,
+      order_type: orderType,
+      quantity: normalizedQuantity,
+      limit_price: orderType === "limit" ? normalizedLimitPrice || null : null,
+      stop_price: orderType === "stop" ? normalizedLimitPrice || null : null,
+    });
+
+    if (!result.ok) {
+      toast.error("Order failed", result.error);
       return;
     }
 
-    const verb = orderSide === "buy" ? "Buy" : "Sell";
-    toastManager.add({
-      title: `${verb} order placed`,
-      description: `${qty} ${qty === 1 ? "share" : "shares"} of ${ticker}`,
-      type: "info",
-    });
+    toast.orderPlaced(ticker, Number(normalizedQuantity), orderSide);
     setQuantity("");
     setLimitPrice("");
+    setQtyError(null);
   };
 
   return (
@@ -92,8 +125,13 @@ export const OrderForm = ({ ticker, price }: { ticker: string; price: number }) 
               min="1"
               step="1"
               value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setQuantity(value);
+                setQtyError(validateQuantity(value));
+              }}
             />
+            {qtyError && <p className="text-xs text-red-500">{qtyError}</p>}
           </div>
 
           {orderType !== "market" && (

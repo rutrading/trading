@@ -5,6 +5,7 @@ import { StockChart } from "@/components/StockChart";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm } from "@/components/stocks/order-form";
 import { RelatedNews } from "@/components/news/related-news";
+import { getAccounts } from "@/app/actions/auth";
 import { getSymbol } from "@/app/actions/symbols";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
@@ -23,8 +24,15 @@ export default async function StockPage({ params }: Props) {
   const { ticker } = await params;
   const symbol = ticker.join("/").toUpperCase();
 
-  const [dbSymbol, watchlistRes] = await Promise.all([getSymbol(symbol), getWatchlist()]);
+  const [dbSymbol, watchlistRes, accounts] = await Promise.all([
+    getSymbol(symbol),
+    getWatchlist(),
+    getAccounts(),
+  ]);
   if (!dbSymbol && !STOCKS[symbol]) notFound();
+
+  const tradingAccountId = accounts[0]?.tradingAccount.id ?? 0;
+  const assetClass = dbSymbol?.assetClass ?? "us_equity";
 
   const watched = watchlistRes.ok
     ? watchlistRes.data.watchlist.some((w) => w.ticker === symbol)
@@ -64,7 +72,12 @@ export default async function StockPage({ params }: Props) {
         <RelatedNews ticker={symbol} />
       </div>
       <div className="space-y-6">
-        <OrderForm ticker={symbol} price={stock.price} />
+        <OrderForm
+          ticker={symbol}
+          price={stock.price}
+          tradingAccountId={tradingAccountId}
+          assetClass={assetClass}
+        />
       </div>
     </div>
   );

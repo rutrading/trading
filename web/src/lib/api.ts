@@ -5,6 +5,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
 
 type QueryParams = Record<string, string | undefined>;
+type JsonBody = Record<string, unknown>;
 
 export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
@@ -27,16 +28,41 @@ async function request<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   params?: QueryParams,
+  body?: JsonBody,
 ): Promise<ApiResult<T>> {
   try {
-    const res = await fetch(buildUrl(path, params), {
+    const headers: HeadersInit = {};
+    const requestInit: RequestInit = {
       method,
       cache: "no-store",
+    };
+
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      requestInit.body = JSON.stringify(body);
+    }
+
+    if (Object.keys(headers).length > 0) {
+      requestInit.headers = headers;
+    }
+
+    const res = await fetch(buildUrl(path, params), {
+      ...requestInit,
     });
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return { ok: false, error: text || `Request failed (${res.status})` };
+      if (!text) return { ok: false, error: `Request failed (${res.status})` };
+
+      try {
+        const payload = JSON.parse(text) as { detail?: string; message?: string; error?: string };
+        return {
+          ok: false,
+          error: payload.detail || payload.message || payload.error || text,
+        };
+      } catch {
+        return { ok: false, error: text };
+      }
     }
 
     return { ok: true, data: (await res.json()) as T };
@@ -72,6 +98,10 @@ export function get<T>(path: string, params?: QueryParams) {
  */
 export function post<T>(path: string, params?: QueryParams) {
   return request<T>("POST", path, params);
+}
+
+export function postJson<T>(path: string, body: JsonBody, params?: QueryParams) {
+  return request<T>("POST", path, params, body);
 }
 
 /**
