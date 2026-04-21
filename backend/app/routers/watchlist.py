@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import SKIP_AUTH, get_current_user
 from app.db import get_db
-from app.db.models import Symbol, WatchlistItem
+from app.db.models import Quote, Symbol, WatchlistItem
 from app.db.redis import get_redis
 from app.schemas import (
     WatchlistItemResponse,
@@ -25,6 +25,32 @@ async def _get_quote_from_redis(redis, ticker: str) -> WatchlistQuoteResponse | 
     return WatchlistQuoteResponse.from_redis_hash(data)
 
 
+def _get_quotes_from_postgres(
+    db: Session, tickers: list[str]
+) -> dict[str, WatchlistQuoteResponse]:
+    """Batch-load quotes from the warm Postgres cache.
+
+    Used as the fallback for tickers that aren't in Redis — otherwise a
+    watchlist entry on a ticker no live client is subscribed to renders as
+    blank dashes even though Postgres has a usable (if stale) snapshot.
+    """
+    if not tickers:
+        return {}
+    rows = db.query(Quote).filter(Quote.ticker.in_(tickers)).all()
+    out: dict[str, WatchlistQuoteResponse] = {}
+    for row in rows:
+        out[row.ticker] = WatchlistQuoteResponse(
+            price=row.price,
+            change=row.change,
+            change_percent=row.change_percent,
+            bid_price=row.bid_price,
+            ask_price=row.ask_price,
+            timestamp=row.timestamp,
+            source="postgres",
+        )
+    return out
+
+
 @router.get("/watchlist", response_model=WatchlistResponse)
 async def list_watchlist(
     user: dict = Depends(get_current_user),
@@ -42,16 +68,26 @@ async def list_watchlist(
     )
 
     redis = await get_redis()
-    result: list[WatchlistItemResponse] = []
+    quotes: dict[str, WatchlistQuoteResponse] = {}
+    redis_misses: list[str] = []
     for item in items:
         quote = await _get_quote_from_redis(redis, item.ticker)
-        result.append(
-            WatchlistItemResponse.from_values(
-                ticker=item.ticker,
-                created_at=item.created_at,
-                quote=quote,
-            )
+        if quote is not None:
+            quotes[item.ticker] = quote
+        else:
+            redis_misses.append(item.ticker)
+
+    if redis_misses:
+        quotes.update(_get_quotes_from_postgres(db, redis_misses))
+
+    result = [
+        WatchlistItemResponse.from_values(
+            ticker=item.ticker,
+            created_at=item.created_at,
+            quote=quotes.get(item.ticker),
         )
+        for item in items
+    ]
 
     return WatchlistResponse(watchlist=result)
 

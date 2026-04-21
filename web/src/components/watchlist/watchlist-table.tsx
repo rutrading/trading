@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuotes } from "@/components/ws-provider";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
   Pagination,
@@ -23,6 +25,8 @@ const fmt = (n: number) =>
 export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const tickers = useMemo(() => items.map((w) => w.ticker), [items]);
+  const liveQuotes = useQuotes(tickers);
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
   const clampedPage = Math.min(page, totalPages);
@@ -74,8 +78,12 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           </thead>
           <tbody>
             {pageItems.map((w) => {
-              const price = w.quote?.price;
-              const change = w.quote?.change_percent;
+              // Prefer live WS ticks; fall back to the server-rendered snapshot.
+              const live = liveQuotes.get(w.ticker);
+              const price = live?.price ?? w.quote?.price;
+              const change = live?.change_percent ?? w.quote?.change_percent;
+              const bid = live?.bid_price ?? w.quote?.bid_price ?? null;
+              const ask = live?.ask_price ?? w.quote?.ask_price ?? null;
               return (
                 <tr
                   key={w.ticker}
@@ -112,12 +120,12 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.bid_price != null ? `$${fmt(w.quote.bid_price)}` : "—"}
+                      {bid != null ? `$${fmt(bid)}` : "—"}
                     </span>
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.ask_price != null ? `$${fmt(w.quote.ask_price)}` : "—"}
+                      {ask != null ? `$${fmt(ask)}` : "—"}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-center">
