@@ -71,6 +71,13 @@ order_status_enum = Enum(
     name="order_status",
     create_type=False,
 )
+transaction_kind_enum = Enum(
+    "trade",
+    "deposit",
+    "withdrawal",
+    name="transaction_kind",
+    create_type=False,
+)
 
 
 class User(Base):
@@ -244,17 +251,17 @@ class Order(Base):
     order_type: Mapped[str] = mapped_column(order_type_enum)
     time_in_force: Mapped[str] = mapped_column(time_in_force_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
-    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
-    stop_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
+    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), default=None)
+    stop_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), default=None)
     filled_quantity: Mapped[Decimal] = mapped_column(
         Numeric(16, 8), default=Decimal("0")
     )
     average_fill_price: Mapped[Decimal | None] = mapped_column(
-        Numeric(14, 2), default=None
+        Numeric(20, 10), default=None
     )
     status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
-    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(14, 6), nullable=True, default=None)
+    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
@@ -278,24 +285,29 @@ class Transaction(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("order.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(transaction_kind_enum, default="trade")
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order.id", ondelete="CASCADE"), nullable=True
+    )
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
-    side: Mapped[str] = mapped_column(order_side_enum)
-    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
-    price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    ticker: Mapped[str | None] = mapped_column(
+        String, ForeignKey("symbol.ticker"), nullable=True
+    )
+    side: Mapped[str | None] = mapped_column(order_side_enum, nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 8), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
 
-    order: Mapped["Order"] = relationship(back_populates="transactions")
+    order: Mapped["Order | None"] = relationship(back_populates="transactions")
     trading_account: Mapped["TradingAccount"] = relationship(
         back_populates="transactions"
     )
-    symbol: Mapped["Symbol"] = relationship(back_populates="transactions")
+    symbol: Mapped["Symbol | None"] = relationship(back_populates="transactions")
 
 
 class Holding(Base):
@@ -316,7 +328,7 @@ class Holding(Base):
     asset_class: Mapped[str] = mapped_column(asset_class_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
     reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
-    average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(20, 10), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )

@@ -38,6 +38,12 @@ export const orderStatusEnum = pgEnum("order_status", [
   "rejected",
 ]);
 
+export const transactionKindEnum = pgEnum("transaction_kind", [
+  "trade",
+  "deposit",
+  "withdrawal",
+]);
+
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -256,18 +262,18 @@ export const order = pgTable(
     orderType: orderTypeEnum("order_type").notNull(),
     timeInForce: timeInForceEnum("time_in_force").notNull(),
     quantity: numeric("quantity", { precision: 16, scale: 8 }).notNull(),
-    limitPrice: numeric("limit_price", { precision: 14, scale: 2 }),
-    stopPrice: numeric("stop_price", { precision: 14, scale: 2 }),
+    limitPrice: numeric("limit_price", { precision: 20, scale: 10 }),
+    stopPrice: numeric("stop_price", { precision: 20, scale: 10 }),
     filledQuantity: numeric("filled_quantity", { precision: 16, scale: 8 })
       .notNull()
       .default("0"),
     averageFillPrice: numeric("average_fill_price", {
-      precision: 14,
-      scale: 2,
+      precision: 20,
+      scale: 10,
     }),
     status: orderStatusEnum("status").notNull().default("pending"),
     rejectionReason: text("rejection_reason"),
-    reservedPerShare: numeric("reserved_per_share", { precision: 14, scale: 6 }),
+    reservedPerShare: numeric("reserved_per_share", { precision: 20, scale: 10 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -287,18 +293,17 @@ export const transaction = pgTable(
   "transaction",
   {
     id: serial("id").primaryKey(),
-    orderId: integer("order_id")
-      .notNull()
-      .references(() => order.id, { onDelete: "cascade" }),
+    kind: transactionKindEnum("kind").notNull().default("trade"),
+    orderId: integer("order_id").references(() => order.id, {
+      onDelete: "cascade",
+    }),
     tradingAccountId: integer("trading_account_id")
       .notNull()
       .references(() => tradingAccount.id, { onDelete: "cascade" }),
-    ticker: text("ticker")
-      .notNull()
-      .references(() => symbol.ticker),
-    side: orderSideEnum("side").notNull(),
-    quantity: numeric("quantity", { precision: 16, scale: 8 }).notNull(),
-    price: numeric("price", { precision: 14, scale: 2 }).notNull(),
+    ticker: text("ticker").references(() => symbol.ticker),
+    side: orderSideEnum("side"),
+    quantity: numeric("quantity", { precision: 16, scale: 8 }),
+    price: numeric("price", { precision: 20, scale: 10 }),
     total: numeric("total", { precision: 14, scale: 2 }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -329,7 +334,7 @@ export const holding = pgTable(
     reservedQuantity: numeric("reserved_quantity", { precision: 16, scale: 8 })
       .notNull()
       .default("0"),
-    averageCost: numeric("average_cost", { precision: 14, scale: 2 })
+    averageCost: numeric("average_cost", { precision: 20, scale: 10 })
       .notNull()
       .default("0"),
     createdAt: timestamp("created_at", { withTimezone: true })

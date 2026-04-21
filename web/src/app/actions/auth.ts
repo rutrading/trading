@@ -91,6 +91,14 @@ export async function createAccount(
 
     await db.insert(schema.accountMember).values(members);
 
+    // Seed the transaction history with the starting deposit so the ledger
+    // balances back to zero instead of the implicit $100k floor.
+    await db.insert(schema.transaction).values({
+      kind: "deposit",
+      tradingAccountId: tradingAccount.id,
+      total: balance,
+    });
+
     return { success: true };
   } catch {
     return { success: false, error: "Failed to create account" };
