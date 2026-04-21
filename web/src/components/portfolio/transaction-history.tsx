@@ -22,6 +22,15 @@ import type { TransactionRow } from "@/app/actions/portfolio";
 
 import { fmtPrice as fmt } from "@/lib/format";
 
+// Pin locale + timezone so production output is stable regardless of the
+// host's $LANG (server component, no hydration concern).
+const DATE_FMT = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+
 export const TransactionHistory = ({
   transactions,
   accountsById,
@@ -79,7 +88,7 @@ export const TransactionHistory = ({
             {transactions.map((t) => (
               <TableRow key={`${t.trading_account_id}-${t.id}`}>
                 <TableCell className="text-muted-foreground">
-                  {new Date(t.created_at).toLocaleDateString()}
+                  {DATE_FMT.format(new Date(t.created_at))}
                 </TableCell>
                 {accountsById && (
                   <TableCell className="whitespace-nowrap">

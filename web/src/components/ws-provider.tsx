@@ -94,14 +94,13 @@ export function WebSocketProvider({
       });
     }
 
-    // server restored subs from a previous session's grace period
+    // server restored subs from a previous session's grace period.
+    // We deliberately do NOT bump refCounts here: by the time `restored`
+    // arrives the new mounts have already called subscribe(), so bumping
+    // would leave a stale count that prevents unsubscribe from ever
+    // reaching zero. Consumers can still react via useRestoredTickers().
     if (msg.type === "restored" && msg.tickers) {
       setRestoredTickers(msg.tickers);
-      // sync ref counts with restored tickers
-      for (const t of msg.tickers) {
-        const count = refCounts.current.get(t) ?? 0;
-        refCounts.current.set(t, count + 1);
-      }
     }
   }, [lastJsonMessage]);
 
@@ -119,8 +118,11 @@ export function WebSocketProvider({
     const count = refCounts.current.get(t) ?? 0;
     refCounts.current.set(t, count + 1);
 
-    // first subscriber — tell the server
-    if (count === 0) {
+    // First subscriber — tell the server, but only if the socket is open.
+    // Otherwise the open-effect below will bulk-subscribe from refCounts
+    // once the connection is ready. Sending while CONNECTING would queue
+    // the message, then the open-effect would re-send the same ticker.
+    if (count === 0 && readyState === ReadyState.OPEN) {
       sendJsonMessage({ type: "subscribe", tickers: [t] });
     }
 
@@ -129,7 +131,9 @@ export function WebSocketProvider({
       const current = refCounts.current.get(t) ?? 0;
       if (current <= 1) {
         refCounts.current.delete(t);
-        sendJsonMessage({ type: "unsubscribe", tickers: [t] });
+        if (readyState === ReadyState.OPEN) {
+          sendJsonMessage({ type: "unsubscribe", tickers: [t] });
+        }
         setQuotes((prev) => {
           const next = new Map(prev);
           next.delete(t);

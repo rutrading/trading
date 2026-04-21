@@ -56,9 +56,17 @@ export default async function TradePage({ searchParams }: Props) {
     );
   }
 
-  const initialAccountId = accountParam
+  // Validate against the user's actual accounts so a stale or shared link
+  // (?account=<id>) doesn't quietly leave the picker empty when the id is
+  // out-of-scope. Mirrors the holdings/orders pages' validation pattern.
+  const requestedAccountId = accountParam
     ? Number(accountParam) || undefined
     : undefined;
+  const allAccountIds = accounts.map((a) => a.id);
+  const initialAccountId =
+    requestedAccountId && allAccountIds.includes(requestedAccountId)
+      ? requestedAccountId
+      : undefined;
   const initialTicker = tickerParam
     ? tickerParam.toUpperCase()
     : undefined;

@@ -62,8 +62,8 @@ async function request<T>(
   }
 
   try {
-    const auth = await authHeader();
-    const headers: Record<string, string> = { ...auth };
+    const authHeaders = await authHeader();
+    const headers: Record<string, string> = { ...authHeaders };
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
     const res = await fetch(buildUrl(path, query), {
@@ -78,7 +78,17 @@ async function request<T>(
       let detail = text;
       try {
         const parsed = JSON.parse(text);
-        if (parsed && typeof parsed.detail === "string") detail = parsed.detail;
+        if (parsed && typeof parsed.detail === "string") {
+          detail = parsed.detail;
+        } else if (parsed && Array.isArray(parsed.detail)) {
+          // Pydantic validation errors arrive as [{loc, msg, ...}, ...].
+          // Stitch the messages together so the user sees something readable
+          // instead of raw JSON.
+          detail = parsed.detail
+            .map((d: { msg?: string }) => d?.msg)
+            .filter(Boolean)
+            .join("; ");
+        }
       } catch {
         // text was not JSON — keep raw
       }

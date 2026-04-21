@@ -286,12 +286,49 @@ export function TradeForm({
       return;
     }
 
+    // Affordability / sellable-quantity guard — server is still source of
+    // truth, but give the user immediate feedback before the round trip.
+    if (side === "buy") {
+      if (
+        Number.isFinite(estimatedTotal) &&
+        available !== undefined &&
+        estimatedTotal > available
+      ) {
+        setError(
+          `Estimated order value (${fmtUsd(estimatedTotal)}) exceeds available cash (${fmtUsd(available)}).`,
+        );
+        return;
+      }
+    } else {
+      const ownedStr = holdingsByAccount[accountId]?.[ticker];
+      const owned = ownedStr ? parseFloat(ownedStr) : 0;
+      if (Number.isFinite(sharesFromInput) && sharesFromInput > owned) {
+        setError(
+          `You can sell at most ${owned} ${ticker} from this account.`,
+        );
+        return;
+      }
+    }
+
     // Backend takes shares only; convert when the user picked Dollars.
-    const sharesToSubmit =
-      quantityUnit === "dollars"
-        // cap at 8 decimals which matches the numeric(16,8) quantity column
-        ? (qtyNum / referencePrice).toFixed(8).replace(/\.?0+$/, "")
-        : quantity;
+    let sharesToSubmit: string;
+    if (quantityUnit === "dollars") {
+      // cap at 8 decimals which matches the numeric(16,8) quantity column
+      const stripped = (qtyNum / referencePrice)
+        .toFixed(8)
+        .replace(/\.?0+$/, "");
+      // Sub-tick conversions (e.g. $0.01 of a $50k BTC quote) round to 0
+      // shares — reject before we send `quantity: ""` to the backend.
+      if (!stripped || parseFloat(stripped) <= 0) {
+        setError(
+          "Amount is too small to buy any shares at this price. Increase the dollar amount.",
+        );
+        return;
+      }
+      sharesToSubmit = stripped;
+    } else {
+      sharesToSubmit = quantity;
+    }
 
     startTransition(async () => {
       const res = await placeOrder({
@@ -318,9 +355,13 @@ export function TradeForm({
       }
 
       const filled = res.data.status === "filled";
+      const description =
+        quantityUnit === "dollars"
+          ? `${side.toUpperCase()} ${fmtUsd(qtyNum)} of ${ticker} (~${sharesToSubmit} sh) — see it on your Orders page.`
+          : `${side.toUpperCase()} ${quantity} ${ticker} — see it on your Orders page.`;
       toastManager.add({
         title: filled ? "Order filled" : "Order placed",
-        description: `${side.toUpperCase()} ${quantity} ${ticker} — see it on your Orders page.`,
+        description,
         type: "success",
       });
       setQuantity("");
@@ -518,9 +559,28 @@ export function TradeForm({
                 <Select
                   value={quantityUnit}
                   onValueChange={(v) => {
-                    setQuantityUnit(v as "shares" | "dollars");
-                    // Clearing avoids misinterpreting the old number as the new unit.
-                    setQuantity("");
+                    const nextUnit = v as "shares" | "dollars";
+                    if (nextUnit === quantityUnit) return;
+                    // Convert the existing value across units so the user
+                    // doesn't lose their typed amount on a unit toggle.
+                    if (
+                      quantity &&
+                      Number.isFinite(qtyNum) &&
+                      qtyNum > 0 &&
+                      Number.isFinite(referencePrice) &&
+                      referencePrice > 0
+                    ) {
+                      const converted =
+                        nextUnit === "dollars"
+                          ? (qtyNum * referencePrice).toFixed(2)
+                          : (qtyNum / referencePrice)
+                              .toFixed(8)
+                              .replace(/\.?0+$/, "");
+                      setQuantity(converted || "");
+                    } else {
+                      setQuantity("");
+                    }
+                    setQuantityUnit(nextUnit);
                   }}
                 >
                   <SelectTrigger className="w-28">
@@ -532,37 +592,55 @@ export function TradeForm({
                   </SelectPopup>
                 </Select>
               </div>
-              {quantityUnit === "dollars" && Number.isFinite(sharesFromInput) && sharesFromInput > 0 && (
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  ≈ {sharesFromInput.toFixed(6).replace(/\.?0+$/, "")} shares at{" "}
-                  ${referencePrice.toFixed(2)}
-                </p>
-              )}
-              {side === "sell" && accountId && ticker && quantityUnit === "shares" && (
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">
-                    Owned:{" "}
-                    <span className="font-medium text-foreground tabular-nums">
-                      {holdingsByAccount[accountId]?.[ticker]
-                        ? parseFloat(holdingsByAccount[accountId][ticker])
-                        : 0}
+              {quantityUnit === "dollars" && Number.isFinite(sharesFromInput) && sharesFromInput > 0 && (() => {
+                // Same trim as the submit, but fall back to a wider precision
+                // so sub-cent crypto orders don't render "≈ 0 shares".
+                const trimmed = sharesFromInput.toFixed(6).replace(/\.?0+$/, "");
+                const display = trimmed && parseFloat(trimmed) > 0
+                  ? trimmed
+                  : sharesFromInput.toFixed(8).replace(/\.?0+$/, "");
+                return (
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    ≈ {display || "0"} shares at ${referencePrice.toFixed(2)}
+                  </p>
+                );
+              })()}
+              {side === "sell" && accountId && ticker && (() => {
+                const ownedStr = holdingsByAccount[accountId]?.[ticker];
+                // Guard against empty / "0" / NaN — fully reserved positions
+                // can be stringified as "0" but there's nothing to sell.
+                const owned = ownedStr ? parseFloat(ownedStr) : 0;
+                if (!(owned > 0)) return null;
+                const ownedDollars =
+                  Number.isFinite(referencePrice) && referencePrice > 0
+                    ? owned * referencePrice
+                    : null;
+                return (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      Owned:{" "}
+                      <span className="font-medium text-foreground tabular-nums">
+                        {quantityUnit === "dollars" && ownedDollars != null
+                          ? fmtUsd(ownedDollars)
+                          : owned}
+                      </span>
                     </span>
-                  </span>
-                  {holdingsByAccount[accountId]?.[ticker] && (
                     <button
                       type="button"
                       className="text-primary hover:underline"
-                      onClick={() =>
-                        setQuantity(
-                          holdingsByAccount[accountId][ticker],
-                        )
-                      }
+                      onClick={() => {
+                        if (quantityUnit === "dollars" && ownedDollars != null) {
+                          setQuantity(ownedDollars.toFixed(2));
+                        } else {
+                          setQuantity(String(owned));
+                        }
+                      }}
                     >
                       Max
                     </button>
-                  )}
-                </div>
-              )}
+                  </div>
+                );
+              })()}
             </Field>
 
             <Field>
@@ -659,7 +737,8 @@ export function TradeForm({
           <div className="space-y-3">
             <div className="flex items-baseline justify-between text-sm">
               <span className="text-muted-foreground">
-                Estimated order value
+                Estimated order value{" "}
+                <span className="text-xs">(excludes slippage / fees)</span>
               </span>
               <span className="text-base font-semibold tabular-nums">
                 {Number.isFinite(estimatedTotal)
@@ -669,7 +748,12 @@ export function TradeForm({
             </div>
 
             {error && (
-              <div className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <div
+                id="trade-form-error"
+                role="alert"
+                aria-live="polite"
+                className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              >
                 {error}
               </div>
             )}
@@ -687,6 +771,7 @@ export function TradeForm({
                 size="lg"
                 variant={side === "buy" ? "default" : "destructive"}
                 disabled={disabled}
+                aria-describedby={error ? "trade-form-error" : undefined}
                 className={cn(disabled && "opacity-64")}
               >
                 {pending && <ArrowClockwise className="size-4 animate-spin" />}

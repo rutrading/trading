@@ -6,6 +6,7 @@ import { ChartSection } from "@/components/dashboard/chart-section";
 import { HoldingsList } from "@/components/dashboard/holdings-list";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllHoldings } from "@/app/actions/portfolio";
+import { getQuote } from "@/app/actions/quotes";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 
@@ -42,12 +43,29 @@ export default async function DashboardPage({ searchParams }: Props) {
     0,
   );
 
+  // Live market value across all holdings — Redis-cached, so this is cheap.
+  // Falls back to cost basis per-holding if a quote can't be fetched.
+  const uniqueTickers = Array.from(new Set(holdings.map((h) => h.ticker)));
+  const quoteResults = await Promise.all(uniqueTickers.map((t) => getQuote(t)));
+  const priceByTicker = new Map<string, number>();
+  for (let i = 0; i < uniqueTickers.length; i++) {
+    const res = quoteResults[i];
+    if (res.ok && res.data.price != null) {
+      priceByTicker.set(uniqueTickers[i], res.data.price);
+    }
+  }
+  const totalMarketValue = holdings.reduce((s, h) => {
+    const qty = parseFloat(h.quantity);
+    const price = priceByTicker.get(h.ticker) ?? parseFloat(h.average_cost);
+    return s + qty * price;
+  }, 0);
+
   return (
     <div className="space-y-8">
       <div className="space-y-4">
         <div className="flex items-baseline gap-4">
           <h1 className="text-5xl font-bold tabular-nums tracking-tight">
-            ${fmt(totalCost + totalCash)}
+            ${fmt(totalMarketValue + totalCash)}
           </h1>
           <p className="text-sm text-muted-foreground">
             {scopedAccount ? `${scopedAccount.name} · Portfolio Value` : "Portfolio Value"}

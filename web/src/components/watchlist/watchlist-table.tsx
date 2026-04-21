@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
@@ -38,13 +38,25 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
   const hasNext = clampedPage < totalPages;
   const pageHref = (p: number) => `/watchlist?page=${p}`;
 
+  const [removingTickers, setRemovingTickers] = useState<Set<string>>(new Set());
+
   const handleRemove = async (ticker: string) => {
-    const res = await removeFromWatchlist(ticker);
-    if (res.ok) {
-      toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
-      router.refresh();
-    } else {
-      toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+    if (removingTickers.has(ticker)) return;
+    setRemovingTickers((prev) => new Set(prev).add(ticker));
+    try {
+      const res = await removeFromWatchlist(ticker);
+      if (res.ok) {
+        toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
+        router.refresh();
+      } else {
+        toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+      }
+    } finally {
+      setRemovingTickers((prev) => {
+        const next = new Set(prev);
+        next.delete(ticker);
+        return next;
+      });
     }
   };
 
@@ -130,8 +142,11 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
                   </td>
                   <td className="px-2 py-3 text-center">
                     <button
+                      type="button"
                       onClick={() => handleRemove(w.ticker)}
-                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      disabled={removingTickers.has(w.ticker)}
+                      aria-label={`Remove ${w.ticker} from watchlist`}
+                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
                     >
                       <X size={14} />
                     </button>

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, useTransition, Fragment } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CaretRight, Receipt } from "@phosphor-icons/react";
+import { ArrowClockwise, CaretRight, Receipt } from "@phosphor-icons/react";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyHeader,
@@ -27,11 +29,18 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { toastManager } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { OrderStatusBadge } from "./order-status-badge";
-import type { Order } from "@/app/actions/orders";
+import { cancelOrder, type Order, type OrderStatus } from "@/app/actions/orders";
 
 import { fmtPrice as fmt } from "@/lib/format";
+
+const CANCELLABLE: ReadonlySet<OrderStatus> = new Set([
+  "pending",
+  "open",
+  "partially_filled",
+]);
 
 function priceCell(order: Order) {
   if (order.order_type === "market") {
@@ -49,10 +58,11 @@ function totalCell(order: Order) {
   return `$${fmt(avg * filled)}`;
 }
 
-function fmtDateTime(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
-}
+export type FormattedOrderDates = {
+  date: string;
+  createdAt: string;
+  lastFillAt: string | null;
+};
 
 export const OrdersTable = ({
   orders,
@@ -61,6 +71,7 @@ export const OrdersTable = ({
   perPage,
   total,
   scopedAccountId,
+  formattedDates,
 }: {
   orders: Order[];
   accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
@@ -68,8 +79,14 @@ export const OrdersTable = ({
   perPage: number;
   total: number;
   scopedAccountId?: number;
+  // Pre-formatted on the server so SSR + client agree on the rendered string
+  // (Node's ICU locale would otherwise differ from the browser's TZ/locale).
+  formattedDates: Record<number, FormattedOrderDates>;
 }) => {
+  const router = useRouter();
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [, startTransition] = useTransition();
 
   const toggleRow = (id: number) => {
     setExpandedIds((prev) => {
@@ -77,6 +94,28 @@ export const OrdersTable = ({
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  };
+
+  const handleCancel = (id: number, ticker: string) => {
+    if (cancellingId !== null) return;
+    setCancellingId(id);
+    startTransition(async () => {
+      const res = await cancelOrder(id);
+      setCancellingId(null);
+      if (res.ok) {
+        toastManager.add({
+          title: `Cancelled ${ticker} order`,
+          type: "success",
+        });
+        router.refresh();
+      } else {
+        toastManager.add({
+          title: `Failed to cancel ${ticker} order`,
+          description: res.error,
+          type: "error",
+        });
+      }
     });
   };
 
@@ -144,16 +183,34 @@ export const OrdersTable = ({
                     onClick={() => toggleRow(o.id)}
                   >
                     <TableCell className="w-8 pl-3 pr-0">
-                      <CaretRight
-                        size={14}
-                        className={cn(
-                          "text-muted-foreground transition-transform",
-                          expanded && "rotate-90",
-                        )}
-                      />
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-controls={`order-${o.id}-detail`}
+                        aria-label={
+                          expanded
+                            ? `Collapse details for order ${o.ticker}`
+                            : `Expand details for order ${o.ticker}`
+                        }
+                        onClick={(e) => {
+                          // Row already toggles; stop the bubble so we don't
+                          // toggle twice.
+                          e.stopPropagation();
+                          toggleRow(o.id);
+                        }}
+                        className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        <CaretRight
+                          size={14}
+                          className={cn(
+                            "transition-transform",
+                            expanded && "rotate-90",
+                          )}
+                        />
+                      </button>
                     </TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {new Date(o.created_at).toLocaleDateString()}
+                      {formattedDates[o.id]?.date ?? "—"}
                     </TableCell>
                     {accountsById && (
                       <TableCell className="whitespace-nowrap">
@@ -197,10 +254,10 @@ export const OrdersTable = ({
                       {o.order_type.replace("_", " ")}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {filled}
+                      {fmt(filled)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {remaining}
+                      {fmt(remaining)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {priceCell(o)}
@@ -221,19 +278,41 @@ export const OrdersTable = ({
                     </TableCell>
                   </TableRow>
                   {expanded && (
-                    <TableRow className="bg-muted/20">
+                    <TableRow className="bg-muted/20" id={`order-${o.id}-detail`}>
                       <TableCell colSpan={colCount} className="py-3">
-                        <div className="flex flex-wrap gap-x-8 gap-y-1 px-2 text-xs">
-                          <span>
-                            <span className="text-muted-foreground">Order placed: </span>
-                            <span className="tabular-nums">{fmtDateTime(o.created_at)}</span>
-                          </span>
-                          <span>
-                            <span className="text-muted-foreground">Order executed: </span>
-                            <span className="tabular-nums">
-                              {o.last_fill_at ? fmtDateTime(o.last_fill_at) : "Not executed"}
+                        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2 px-2 text-xs">
+                          <div className="flex flex-wrap gap-x-8 gap-y-1">
+                            <span>
+                              <span className="text-muted-foreground">Order placed: </span>
+                              <span className="tabular-nums">
+                                {formattedDates[o.id]?.createdAt ?? "—"}
+                              </span>
                             </span>
-                          </span>
+                            <span>
+                              <span className="text-muted-foreground">Order executed: </span>
+                              <span className="tabular-nums">
+                                {formattedDates[o.id]?.lastFillAt ?? "Not executed"}
+                              </span>
+                            </span>
+                          </div>
+                          {CANCELLABLE.has(o.status) && (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              disabled={cancellingId === o.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCancel(o.id, o.ticker);
+                              }}
+                              aria-label={`Cancel ${o.ticker} order`}
+                            >
+                              {cancellingId === o.id && (
+                                <ArrowClockwise className="size-3 animate-spin" />
+                              )}
+                              Cancel order
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
