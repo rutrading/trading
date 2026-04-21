@@ -12,19 +12,13 @@ export default async function HoldingsPage({ searchParams }: Props) {
 
   const accounts = await getAccounts();
   const allAccountIds = accounts.map((m) => m.tradingAccount.id);
-  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
-  for (const m of accounts) {
-    accountsById[m.tradingAccount.id] = {
-      name: m.tradingAccount.name,
-      type: m.tradingAccount.type,
-    };
-  }
-
   const scopedId =
     accountParam && accountParam !== "all" ? Number(accountParam) : null;
   const activeIds =
     scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
-  const scopedAccount = scopedId ? accountsById[scopedId] : null;
+  const scopedAccount = scopedId
+    ? accounts.find((m) => m.tradingAccount.id === scopedId)?.tradingAccount
+    : null;
 
   const { holdings, totalCash } = await getAllHoldings(activeIds);
 
@@ -38,11 +32,7 @@ export default async function HoldingsPage({ searchParams }: Props) {
             : "Positions across all of your accounts."}
         </p>
       </div>
-      <HoldingsTable
-        holdings={holdings}
-        accountsById={scopedAccount ? undefined : accountsById}
-        totalCash={totalCash}
-      />
+      <HoldingsTable holdings={holdings} totalCash={totalCash} />
     </div>
   );
 }

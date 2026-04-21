@@ -12,7 +12,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
-import { Badge } from "@/components/ui/badge";
 import { useQuotes } from "@/components/ws-provider";
 import type { HoldingRow } from "@/app/actions/portfolio";
 import { cn } from "@/lib/utils";
@@ -49,11 +48,9 @@ function colorClass(n: number | null | undefined) {
 
 export const HoldingsTable = ({
   holdings,
-  accountsById,
   totalCash,
 }: {
   holdings: HoldingRow[];
-  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
   totalCash: number;
 }) => {
   const tickers = useMemo(() => holdings.map((h) => h.ticker), [holdings]);
@@ -103,8 +100,6 @@ export const HoldingsTable = ({
   const pctOfPortfolio = (value: number) =>
     totalPortfolioValue > 0 ? (value / totalPortfolioValue) * 100 : 0;
 
-  const showAccount = !!accountsById;
-
   return (
     <div className="rounded-2xl bg-accent p-3">
       <div className="overflow-x-auto rounded-xl bg-card">
@@ -112,7 +107,6 @@ export const HoldingsTable = ({
           <TableHeader>
             <TableRow>
               <TableHead>Symbol</TableHead>
-              {showAccount && <TableHead>Account</TableHead>}
               <TableHead className="text-right">Last<br />price</TableHead>
               <TableHead className="text-right">Last price<br />change</TableHead>
               <TableHead className="text-right">Today&apos;s<br />gain/loss $</TableHead>
@@ -137,7 +131,6 @@ export const HoldingsTable = ({
                     </span>
                   </div>
                 </TableCell>
-                {showAccount && <TableCell className="text-muted-foreground">—</TableCell>}
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
@@ -181,25 +174,6 @@ export const HoldingsTable = ({
                       )}
                     </div>
                   </TableCell>
-                  {showAccount && (
-                    <TableCell className="whitespace-nowrap">
-                      <span className="flex items-center gap-2">
-                        <span className="text-sm">
-                          {accountsById![h.trading_account_id]?.name ?? `#${h.trading_account_id}`}
-                        </span>
-                        <Badge
-                          variant={
-                            accountsById![h.trading_account_id]?.type === "crypto"
-                              ? "warning"
-                              : "secondary"
-                          }
-                          size="sm"
-                        >
-                          {accountsById![h.trading_account_id]?.type === "crypto" ? "Crypto" : "Stock"}
-                        </Badge>
-                      </span>
-                    </TableCell>
-                  )}
                   <TableCell className="text-right tabular-nums">
                     {r.price != null ? fmtUsd(r.price) : "—"}
                   </TableCell>
@@ -236,7 +210,6 @@ export const HoldingsTable = ({
             {rows.length > 0 && (
               <TableRow className="border-t-2 border-border bg-muted/20 font-medium">
                 <TableCell>Account total</TableCell>
-                {showAccount && <TableCell />}
                 <TableCell />
                 <TableCell />
                 <TableCell className={cn("text-right tabular-nums", colorClass(totalTodayGain))}>
