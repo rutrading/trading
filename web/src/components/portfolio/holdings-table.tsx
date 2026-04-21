@@ -9,12 +9,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
-import type { Holding } from "@/app/actions/portfolio";
+import { Badge } from "@/components/ui/badge";
+import type { HoldingRow } from "@/app/actions/portfolio";
 
-const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { fmtPrice as fmt } from "@/lib/format";
 
-export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
+export const HoldingsTable = ({
+  holdings,
+  accountsById,
+}: {
+  holdings: HoldingRow[];
+  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
+}) => {
   if (holdings.length === 0) {
     return (
       <div className="rounded-2xl bg-accent p-6">
@@ -38,6 +44,7 @@ export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
           <TableHeader>
             <TableRow>
               <TableHead>Symbol</TableHead>
+              {accountsById && <TableHead>Account</TableHead>}
               <TableHead>Asset Class</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Avg Cost</TableHead>
@@ -50,7 +57,7 @@ export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
               const avgCost = parseFloat(h.average_cost);
               const totalCost = qty * avgCost;
               return (
-                <TableRow key={h.id}>
+                <TableRow key={`${h.trading_account_id}-${h.id}`}>
                   <TableCell>
                     <Link
                       href={`/stocks/${h.ticker}`}
@@ -59,6 +66,27 @@ export const HoldingsTable = ({ holdings }: { holdings: Holding[] }) => {
                       {h.ticker}
                     </Link>
                   </TableCell>
+                  {accountsById && (
+                    <TableCell className="whitespace-nowrap">
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm">
+                          {accountsById[h.trading_account_id]?.name ?? `#${h.trading_account_id}`}
+                        </span>
+                        <Badge
+                          variant={
+                            accountsById[h.trading_account_id]?.type === "crypto"
+                              ? "warning"
+                              : "secondary"
+                          }
+                          size="sm"
+                        >
+                          {accountsById[h.trading_account_id]?.type === "crypto"
+                            ? "Crypto"
+                            : "Stock"}
+                        </Badge>
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell className="text-muted-foreground">
                     {h.asset_class === "crypto" ? "Crypto" : "US Equity"}
                   </TableCell>

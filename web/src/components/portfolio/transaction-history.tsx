@@ -18,18 +18,19 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import type { Transaction } from "@/app/actions/portfolio";
+import type { TransactionRow } from "@/app/actions/portfolio";
 
-const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { fmtPrice as fmt } from "@/lib/format";
 
 export const TransactionHistory = ({
   transactions,
+  accountsById,
   page,
   perPage,
   total,
 }: {
-  transactions: Transaction[];
+  transactions: TransactionRow[];
+  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
   page: number;
   perPage: number;
   total: number;
@@ -62,36 +63,86 @@ export const TransactionHistory = ({
           <TableHeader>
             <TableRow>
               <TableHead>Date</TableHead>
+              {accountsById && <TableHead>Account</TableHead>}
               <TableHead>Side</TableHead>
               <TableHead>Symbol</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
               <TableHead className="text-right">Price</TableHead>
               <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Cash Balance</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {transactions.map((t) => (
-              <TableRow key={t.id}>
+              <TableRow key={`${t.trading_account_id}-${t.id}`}>
                 <TableCell className="text-muted-foreground">
                   {new Date(t.created_at).toLocaleDateString()}
                 </TableCell>
+                {accountsById && (
+                  <TableCell className="whitespace-nowrap">
+                    <span className="flex items-center gap-2">
+                      <span className="text-sm">
+                        {accountsById[t.trading_account_id]?.name ?? `#${t.trading_account_id}`}
+                      </span>
+                      <Badge
+                        variant={
+                          accountsById[t.trading_account_id]?.type === "crypto"
+                            ? "warning"
+                            : "secondary"
+                        }
+                        size="sm"
+                      >
+                        {accountsById[t.trading_account_id]?.type === "crypto"
+                          ? "Crypto"
+                          : "Stock"}
+                      </Badge>
+                    </span>
+                  </TableCell>
+                )}
                 <TableCell>
-                  <Badge
-                    variant={t.side === "buy" ? "success" : "error"}
-                    size="sm"
-                  >
-                    {t.side.toUpperCase()}
-                  </Badge>
+                  {t.kind === "trade" && t.side ? (
+                    <Badge
+                      variant={t.side === "buy" ? "success" : "error"}
+                      size="sm"
+                    >
+                      {t.side.toUpperCase()}
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant={t.kind === "withdrawal" ? "error" : "secondary"}
+                      size="sm"
+                    >
+                      {t.kind.toUpperCase()}
+                    </Badge>
+                  )}
                 </TableCell>
-                <TableCell className="font-medium">{t.ticker}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {parseFloat(t.quantity)}
+                <TableCell className="font-medium">
+                  {t.ticker ??
+                    (t.kind === "trade" ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      "USD"
+                    ))}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  ${fmt(parseFloat(t.price))}
+                  {t.quantity
+                    ? parseFloat(t.quantity)
+                    : t.kind === "trade"
+                      ? "—"
+                      : <span className="text-muted-foreground">N/A</span>}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.price
+                    ? `$${fmt(parseFloat(t.price))}`
+                    : t.kind === "trade"
+                      ? "—"
+                      : <span className="text-muted-foreground">N/A</span>}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   ${fmt(parseFloat(t.total))}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  ${fmt(parseFloat(t.cash_after))}
                 </TableCell>
               </TableRow>
             ))}

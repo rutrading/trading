@@ -27,8 +27,7 @@ import {
 import { OrderStatusBadge } from "./order-status-badge";
 import type { Order } from "@/app/actions/orders";
 
-const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { fmtPrice as fmt } from "@/lib/format";
 
 function priceCell(order: Order) {
   if (order.order_type === "market") return "Market";
@@ -38,11 +37,13 @@ function priceCell(order: Order) {
 
 export const OrdersTable = ({
   orders,
+  accountsById,
   page,
   perPage,
   total,
 }: {
   orders: Order[];
+  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
   page: number;
   perPage: number;
   total: number;
@@ -77,6 +78,7 @@ export const OrdersTable = ({
           <TableHeader>
             <TableRow>
               <TableHead>Placed</TableHead>
+              {accountsById && <TableHead>Account</TableHead>}
               <TableHead>Symbol</TableHead>
               <TableHead>Side</TableHead>
               <TableHead>Type</TableHead>
@@ -93,6 +95,27 @@ export const OrdersTable = ({
                 <TableCell className="text-muted-foreground whitespace-nowrap">
                   {new Date(o.created_at).toLocaleString()}
                 </TableCell>
+                {accountsById && (
+                  <TableCell className="whitespace-nowrap">
+                    <span className="flex items-center gap-2">
+                      <span className="text-sm">
+                        {accountsById[o.trading_account_id]?.name ?? `#${o.trading_account_id}`}
+                      </span>
+                      <Badge
+                        variant={
+                          accountsById[o.trading_account_id]?.type === "crypto"
+                            ? "warning"
+                            : "secondary"
+                        }
+                        size="sm"
+                      >
+                        {accountsById[o.trading_account_id]?.type === "crypto"
+                          ? "Crypto"
+                          : "Stock"}
+                      </Badge>
+                    </span>
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">
                   <Link
                     href={`/stocks/${o.ticker}`}
