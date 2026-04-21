@@ -1,10 +1,10 @@
-CREATE TYPE "public"."transaction_kind" AS ENUM('trade', 'deposit', 'withdrawal');--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."transaction_kind" AS ENUM('trade', 'deposit', 'withdrawal'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
 ALTER TABLE "transaction" ALTER COLUMN "order_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "transaction" ALTER COLUMN "ticker" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "transaction" ALTER COLUMN "side" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "transaction" ALTER COLUMN "quantity" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "transaction" ALTER COLUMN "price" DROP NOT NULL;--> statement-breakpoint
-ALTER TABLE "transaction" ADD COLUMN "kind" "transaction_kind" DEFAULT 'trade' NOT NULL;--> statement-breakpoint
+ALTER TABLE "transaction" ADD COLUMN IF NOT EXISTS "kind" "transaction_kind" DEFAULT 'trade' NOT NULL;--> statement-breakpoint
 -- Backfill a synthetic initial-deposit transaction for every existing
 -- account so the new "Balance After" column starts from zero instead of the
 -- implicit starting-balance floor. Reconstruct the initial balance from the

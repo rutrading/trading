@@ -1,1 +1,1 @@
-ALTER TABLE "order" ADD COLUMN "reference_price" numeric(20, 10);
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS "reference_price" numeric(20, 10);
