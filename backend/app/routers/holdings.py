@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import SKIP_AUTH, get_current_user
 from app.db import Holding, get_db
+from app.db.models import Symbol
 from app.dependencies import get_trading_account
 from app.schemas import HoldingResponse, HoldingsResponse
 
@@ -30,15 +31,17 @@ def list_holdings(
         trading_account_id=trading_account_id, user=user, db=db
     )
 
-    holdings = (
-        db.query(Holding)
+    # Outer join so a holding on an unseeded ticker still comes back (name=None).
+    rows = (
+        db.query(Holding, Symbol.name)
+        .outerjoin(Symbol, Symbol.ticker == Holding.ticker)
         .filter(Holding.trading_account_id == account.id)
         .order_by(Holding.ticker)
         .all()
     )
 
     return HoldingsResponse(
-        holdings=[HoldingResponse.from_holding(holding) for holding in holdings],
+        holdings=[HoldingResponse.from_holding(holding, name=name) for holding, name in rows],
         trading_account_id=account.id,
         cash_balance=str(account.balance),
     )

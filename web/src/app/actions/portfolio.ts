@@ -6,6 +6,7 @@ import * as api from "@/lib/api";
 export type Holding = {
   id: number;
   ticker: string;
+  name: string | null;
   asset_class: "us_equity" | "crypto";
   quantity: string;
   reserved_quantity: string;
