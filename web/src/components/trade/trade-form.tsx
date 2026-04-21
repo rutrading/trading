@@ -70,6 +70,7 @@ export function TradeForm({
   const [orderType, setOrderType] = useState<OrderType>("market");
   const [timeInForce, setTimeInForce] = useState<TimeInForce>("gtc");
   const [quantity, setQuantity] = useState("");
+  const [quantityUnit, setQuantityUnit] = useState<"shares" | "dollars">("shares");
   const [limitPrice, setLimitPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
 
@@ -149,9 +150,16 @@ export function TradeForm({
         ? parseFloat(stopPrice)
         : (quote?.price ?? NaN);
   const qtyNum = parseFloat(quantity);
+  // When the user enters a dollar amount, we convert to shares at submit time
+  // using the reference price. Everything downstream (estimated total, sell
+  // helper, payload) works in shares.
+  const sharesFromInput =
+    quantityUnit === "dollars" && Number.isFinite(referencePrice) && referencePrice > 0
+      ? qtyNum / referencePrice
+      : qtyNum;
   const estimatedTotal =
-    Number.isFinite(qtyNum) && Number.isFinite(referencePrice)
-      ? qtyNum * referencePrice
+    Number.isFinite(sharesFromInput) && Number.isFinite(referencePrice)
+      ? sharesFromInput * referencePrice
       : NaN;
 
   // Off-hours on a stock account, a market order can't be GTC (it'd fill at
@@ -255,6 +263,14 @@ export function TradeForm({
       setError("Enter a positive quantity.");
       return;
     }
+    if (quantityUnit === "dollars") {
+      if (!Number.isFinite(referencePrice) || referencePrice <= 0) {
+        setError(
+          "Can't convert dollars to shares without a price. Switch to Shares or enter a limit/stop.",
+        );
+        return;
+      }
+    }
     if (
       (orderType === "limit" || orderType === "stop_limit") &&
       (!limitPrice || parseFloat(limitPrice) <= 0)
@@ -270,6 +286,13 @@ export function TradeForm({
       return;
     }
 
+    // Backend takes shares only; convert when the user picked Dollars.
+    const sharesToSubmit =
+      quantityUnit === "dollars"
+        // cap at 8 decimals which matches the numeric(16,8) quantity column
+        ? (qtyNum / referencePrice).toFixed(8).replace(/\.?0+$/, "")
+        : quantity;
+
     startTransition(async () => {
       const res = await placeOrder({
         tradingAccountId: accountId,
@@ -278,7 +301,7 @@ export function TradeForm({
         side,
         orderType,
         timeInForce: isCrypto ? undefined : timeInForce,
-        quantity,
+        quantity: sharesToSubmit,
         limitPrice:
           orderType === "limit" || orderType === "stop_limit"
             ? limitPrice
@@ -479,16 +502,43 @@ export function TradeForm({
             </Field>
 
             <Field>
-              <FieldLabel>Quantity</FieldLabel>
-              <Input
-                type="number"
-                step="any"
-                min="0"
-                placeholder="0"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-              />
-              {side === "sell" && accountId && ticker && (
+              <FieldLabel>
+                {quantityUnit === "dollars" ? "Amount (USD)" : "Quantity"}
+              </FieldLabel>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  placeholder={quantityUnit === "dollars" ? "$0.00" : "0"}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="flex-1"
+                />
+                <Select
+                  value={quantityUnit}
+                  onValueChange={(v) => {
+                    setQuantityUnit(v as "shares" | "dollars");
+                    // Clearing avoids misinterpreting the old number as the new unit.
+                    setQuantity("");
+                  }}
+                >
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value="shares">Shares</SelectItem>
+                    <SelectItem value="dollars">Dollars</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </div>
+              {quantityUnit === "dollars" && Number.isFinite(sharesFromInput) && sharesFromInput > 0 && (
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  ≈ {sharesFromInput.toFixed(6).replace(/\.?0+$/, "")} shares at{" "}
+                  ${referencePrice.toFixed(2)}
+                </p>
+              )}
+              {side === "sell" && accountId && ticker && quantityUnit === "shares" && (
                 <div className="flex items-center justify-between gap-2 text-xs">
                   <span className="text-muted-foreground">
                     Owned:{" "}
