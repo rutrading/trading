@@ -1,5 +1,5 @@
 import { getAccounts } from "@/app/actions/auth";
-import { AccountSidebar } from "@/components/account-sidebar/account-sidebar";
+import { SidebarShell } from "@/components/account-sidebar/sidebar-shell";
 
 export default async function AccountsLayout({
   children,
@@ -16,9 +16,8 @@ export default async function AccountsLayout({
   }));
 
   return (
-    <div className="grid gap-6 md:grid-cols-[260px_1fr]">
-      <AccountSidebar accounts={accounts} asOf={new Date()} />
-      <main className="min-w-0">{children}</main>
-    </div>
+    <SidebarShell accounts={accounts} asOf={new Date()}>
+      {children}
+    </SidebarShell>
   );
 }
