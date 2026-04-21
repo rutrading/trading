@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 from app.config import get_config
 from app.db import db_session
@@ -20,6 +20,20 @@ router = APIRouter()
 
 # cached search results expire after 5 minutes
 SEARCH_CACHE_TTL = 300
+
+
+def _tradable_filter():
+    """Symbols we expose to end users: tradable, and for crypto, USD-denominated
+    pairs only. Non-USD crypto pairs (e.g. ETH/BTC, BCH/USDC, LTC/USDT) are
+    hidden from search, trending, and other discovery surfaces because the
+    app only supports USD-denominated crypto trading."""
+    return and_(
+        Symbol.tradable,
+        or_(
+            Symbol.asset_class != "crypto",
+            Symbol.ticker.like("%/USD"),
+        ),
+    )
 
 
 def _alpaca_headers(config=None) -> dict[str, str]:
@@ -63,15 +77,16 @@ async def search_symbols(q: str = Query(..., min_length=1)):
         results = (
             db.query(Symbol)
             .filter(
-                Symbol.tradable,
+                _tradable_filter(),
                 or_(
                     Symbol.ticker.ilike(f"{q}%"),
                     Symbol.name.ilike(f"%{q}%"),
                 ),
             )
             .order_by(
-                # exact match first, then prefix, then name contains
+                # exact match first, then ticker-prefix, then name-substring
                 (Symbol.ticker != q).asc(),
+                (~Symbol.ticker.ilike(f"{q}%")).asc(),
                 Symbol.ticker.asc(),
             )
             .limit(5)
@@ -102,8 +117,15 @@ async def track_symbol(
 
 
 @router.get("/symbols/trending")
-async def trending_symbols():
-    """Return up to 10 symbols: trending first, backfilled with random tradable ones."""
+async def trending_symbols(asset_class: str | None = Query(default=None)):
+    """Return up to 10 symbols: trending first, backfilled with random tradable ones.
+
+    Optional `asset_class` filter (e.g. `us_equity` or `crypto`) scopes both the
+    trending list and the backfill so crypto accounts get crypto suggestions.
+    """
+    if asset_class is not None and asset_class not in ("us_equity", "crypto"):
+        raise HTTPException(status_code=400, detail="Invalid asset_class")
+
     redis: RedisClient = await get_redis()
     top_tickers = await redis.zrevrange(TRENDING_KEY, 0, TRENDING_LIMIT - 1)
 
@@ -113,11 +135,12 @@ async def trending_symbols():
 
         # resolve trending tickers from Redis, preserving score order
         if top_tickers:
-            symbols = (
-                db.query(Symbol)
-                .filter(Symbol.ticker.in_(top_tickers), Symbol.tradable)
-                .all()
+            query = db.query(Symbol).filter(
+                Symbol.ticker.in_(top_tickers), _tradable_filter()
             )
+            if asset_class:
+                query = query.filter(Symbol.asset_class == asset_class)
+            symbols = query.all()
             by_ticker = {s.ticker: s for s in symbols}
             for t in top_tickers:
                 if t in by_ticker:
@@ -128,8 +151,8 @@ async def trending_symbols():
         remaining = TRENDING_LIMIT - len(results)
         if remaining > 0:
             query = db.query(Symbol).filter(
-                Symbol.tradable,
-                Symbol.asset_class == "us_equity",
+                _tradable_filter(),
+                Symbol.asset_class == (asset_class or "us_equity"),
             )
             # exclude tickers already in the trending list
             if used_tickers:
