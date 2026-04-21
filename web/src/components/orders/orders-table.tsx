@@ -41,12 +41,14 @@ export const OrdersTable = ({
   page,
   perPage,
   total,
+  scopedAccountId,
 }: {
   orders: Order[];
   accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
   page: number;
   perPage: number;
   total: number;
+  scopedAccountId?: number;
 }) => {
   if (orders.length === 0) {
     return (
@@ -69,7 +71,10 @@ export const OrdersTable = ({
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
-  const pageHref = (p: number) => `/orders?page=${p}`;
+  const pageHref = (p: number) =>
+    scopedAccountId
+      ? `/orders?account=${scopedAccountId}&page=${p}`
+      : `/orders?page=${p}`;
 
   return (
     <div className="rounded-2xl bg-accent p-6">

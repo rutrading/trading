@@ -5,14 +5,14 @@ import { getAllOrders } from "@/app/actions/orders";
 
 export const metadata: Metadata = { title: "Orders - R U Trading" };
 
-type Props = { searchParams: Promise<{ page?: string }> };
+type Props = { searchParams: Promise<{ page?: string; account?: string }> };
 
 export default async function OrdersPage({ searchParams }: Props) {
-  const { page: pageParam } = await searchParams;
+  const { page: pageParam, account: accountParam } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
 
   const accounts = await getAccounts();
-  const accountIds = accounts.map((m) => m.tradingAccount.id);
+  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
   const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
   for (const m of accounts) {
     accountsById[m.tradingAccount.id] = {
@@ -21,22 +21,31 @@ export default async function OrdersPage({ searchParams }: Props) {
     };
   }
 
-  const { orders, total, perPage } = await getAllOrders(accountIds, page);
+  const scopedId =
+    accountParam && accountParam !== "all" ? Number(accountParam) : null;
+  const activeIds =
+    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
+  const scopedAccount = scopedId ? accountsById[scopedId] : null;
+
+  const { orders, total, perPage } = await getAllOrders(activeIds, page);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
         <p className="text-sm text-muted-foreground">
-          Your pending, filled, and cancelled orders across all accounts.
+          {scopedAccount
+            ? `Orders for ${scopedAccount.name}.`
+            : "Your pending, filled, and cancelled orders across all accounts."}
         </p>
       </div>
       <OrdersTable
         orders={orders}
-        accountsById={accountsById}
+        accountsById={scopedAccount ? undefined : accountsById}
         page={page}
         perPage={perPage}
         total={total}
+        scopedAccountId={scopedId ?? undefined}
       />
     </div>
   );

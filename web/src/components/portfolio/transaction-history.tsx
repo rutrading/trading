@@ -28,12 +28,14 @@ export const TransactionHistory = ({
   page,
   perPage,
   total,
+  scopedAccountId,
 }: {
   transactions: TransactionRow[];
   accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
   page: number;
   perPage: number;
   total: number;
+  scopedAccountId?: number;
 }) => {
   if (transactions.length === 0) {
     return (
@@ -53,7 +55,10 @@ export const TransactionHistory = ({
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const hasPrev = page > 1;
   const hasNext = page < totalPages;
-  const pageHref = (p: number) => `/portfolio?page=${p}`;
+  const pageHref = (p: number) =>
+    scopedAccountId
+      ? `/portfolio?account=${scopedAccountId}&page=${p}`
+      : `/portfolio?page=${p}`;
 
   return (
     <div className="rounded-2xl bg-accent p-6">

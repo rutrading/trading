@@ -12,9 +12,13 @@ export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default async function DashboardPage() {
+type Props = {
+  searchParams: Promise<{ account?: string }>;
+};
+
+export default async function DashboardPage({ searchParams }: Props) {
+  const { account: accountParam } = await searchParams;
   const accounts = await getAccounts();
-  const accountIds = accounts.map((m) => m.tradingAccount.id);
   const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
   for (const m of accounts) {
     accountsById[m.tradingAccount.id] = {
@@ -23,7 +27,15 @@ export default async function DashboardPage() {
     };
   }
 
-  const { holdings, totalCash } = await getAllHoldings(accountIds);
+  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
+  // Scope to one account when ?account=<id> is present and valid; otherwise all.
+  const scopedId =
+    accountParam && accountParam !== "all" ? Number(accountParam) : null;
+  const activeIds =
+    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
+  const scopedAccount = scopedId ? accountsById[scopedId] : null;
+
+  const { holdings, totalCash } = await getAllHoldings(activeIds);
 
   const totalCost = holdings.reduce(
     (s, h) => s + parseFloat(h.quantity) * parseFloat(h.average_cost),
@@ -37,7 +49,9 @@ export default async function DashboardPage() {
           <h1 className="text-5xl font-bold tabular-nums tracking-tight">
             ${fmt(totalCost + totalCash)}
           </h1>
-          <p className="text-sm text-muted-foreground">Portfolio Value</p>
+          <p className="text-sm text-muted-foreground">
+            {scopedAccount ? `${scopedAccount.name} · Portfolio Value` : "Portfolio Value"}
+          </p>
         </div>
 
         <div className="flex items-end justify-between gap-8">
@@ -54,10 +68,12 @@ export default async function DashboardPage() {
               <p className="text-2xl font-semibold tabular-nums">${fmt(totalCost)}</p>
               <p className="text-xs text-muted-foreground">Invested</p>
             </div>
-            <div>
-              <p className="text-2xl font-semibold tabular-nums">{accounts.length}</p>
-              <p className="text-xs text-muted-foreground">Accounts</p>
-            </div>
+            {!scopedAccount && (
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">{accounts.length}</p>
+                <p className="text-xs text-muted-foreground">Accounts</p>
+              </div>
+            )}
           </div>
           <ChartSection />
         </div>
@@ -66,7 +82,7 @@ export default async function DashboardPage() {
       <div className="rounded-2xl bg-accent p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Holdings</h2>
-          <Link href="/portfolio">
+          <Link href={scopedId ? `/portfolio?account=${scopedId}` : "/portfolio"}>
             <Button variant="ghost" size="sm">
               See All <CaretRight size={14} />
             </Button>
