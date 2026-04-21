@@ -45,6 +45,12 @@ class ConnectionManager:
         self._pending_adds: set[str] = set()
         self._pending_removes: set[str] = set()
 
+        # tickers the backend subscribes to regardless of client sessions — e.g.
+        # symbols with open orders. The executor calls sync_system_tickers()
+        # every poll cycle to keep this in sync. Tickers in this set are never
+        # untracked on client disconnect or unsubscribe.
+        self._system_tickers: set[str] = set()
+
     def _mark_tracked(self, tickers: list[str]) -> None:
         for ticker in tickers:
             self._pending_removes.discard(ticker)
@@ -134,7 +140,9 @@ class ConnectionManager:
                 for ticker in tickers:
                     if not self._ticker_clients[ticker]:
                         del self._ticker_clients[ticker]
-                        removed.append(ticker)
+                        # backend may still need this ticker for open orders
+                        if ticker not in self._system_tickers:
+                            removed.append(ticker)
                 if removed:
                     self._mark_untracked(removed)
 
@@ -166,8 +174,12 @@ class ConnectionManager:
 
             removed: list[str] = []
             for ticker in saved:
-                # only untrack if no other clients are watching
-                if not self._ticker_clients.get(ticker):
+                # only untrack if no other clients are watching AND the backend
+                # isn't holding this ticker open for order execution
+                if (
+                    not self._ticker_clients.get(ticker)
+                    and ticker not in self._system_tickers
+                ):
                     self._ticker_clients.pop(ticker, None)
                     removed.append(ticker)
             if removed:
@@ -178,6 +190,35 @@ class ConnectionManager:
             user_id,
             removed or "none",
         )
+
+    def sync_system_tickers(self, tickers: set[str]) -> tuple[list[str], list[str]]:
+        """Set the backend-owned subscription set. Marks pending_adds for new
+        tickers and pending_removes for tickers no longer in the set (but only
+        if no client is currently subscribed to them). Returns (added, removed)
+        for logging. Intended to be called by the order executor each cycle."""
+        normalized = {t.upper() for t in tickers}
+        added: list[str] = []
+        removed: list[str] = []
+
+        # New system tickers
+        for t in normalized - self._system_tickers:
+            # Only mark a pending_add if no client is already subscribed
+            if not self._ticker_clients.get(t):
+                added.append(t)
+                self._ticker_last_active[t] = time.monotonic()
+
+        # Released system tickers
+        for t in self._system_tickers - normalized:
+            # Only mark a pending_remove if no client is subscribed either
+            if not self._ticker_clients.get(t):
+                removed.append(t)
+
+        self._system_tickers = normalized
+        if added:
+            self._mark_tracked(added)
+        if removed:
+            self._mark_untracked(removed)
+        return added, removed
 
     async def subscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
         """Subscribe a client to tickers. Returns newly tracked tickers."""
@@ -211,7 +252,9 @@ class ConnectionManager:
                 self._ticker_clients[ticker].discard(ws)
                 if not self._ticker_clients[ticker]:
                     del self._ticker_clients[ticker]
-                    removed.append(ticker)
+                    # keep system-tracked tickers alive even with no clients
+                    if ticker not in self._system_tickers:
+                        removed.append(ticker)
             if removed:
                 self._mark_untracked(removed)
         if removed:

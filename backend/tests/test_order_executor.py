@@ -28,6 +28,8 @@ def make_exec_order(
     reserved_per_share: str | None = None,
     quantity: str = "10",
     filled_quantity: str = "0",
+    asset_class: str = "us_equity",
+    created_at: datetime | None = None,
 ) -> Order:
     order = Order()
     order.order_type = order_type
@@ -38,10 +40,14 @@ def make_exec_order(
     order.reserved_per_share = Decimal(reserved_per_share) if reserved_per_share else None
     order.quantity = Decimal(quantity)
     order.filled_quantity = Decimal(filled_quantity)
+    order.asset_class = asset_class
+    # default: placed 2024-01-15 at 9:00 AM ET — before all same-day boundaries
+    order.created_at = created_at or datetime(2024, 1, 15, 9, 0, tzinfo=ET)
     return order
 
 
 def et_time(hour: int, minute: int, second: int = 0) -> datetime:
+    # 2024-01-15 is a Monday — safe for market-hours checks
     return datetime(2024, 1, 15, hour, minute, second, tzinfo=ET)
 
 
@@ -269,7 +275,7 @@ class TestShouldFillOpgCls:
 class TestShouldExpire:
     def test_day_order_expires_at_market_close(self):
         order = make_exec_order("limit", "buy", limit_price="150.00", tif="day")
-        # 4:01 PM ET — past market close
+        # 4:01 PM ET — past 16:00 close boundary
         assert _should_expire(order, et_time(16, 1)) is True
 
     def test_day_order_does_not_expire_before_market_close(self):
@@ -282,19 +288,34 @@ class TestShouldExpire:
         # 5:00 PM ET — well after close, but GTC doesn't expire
         assert _should_expire(order, et_time(17, 0)) is False
 
-    def test_opg_order_expires_at_market_close(self):
-        # opg that missed its morning window should not persist open all day
+    def test_opg_order_expires_after_open_window(self):
+        # opg must cancel at 9:36 (past end of 9:30–9:35 fill window), not wait for 4pm
         order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
-        assert _should_expire(order, et_time(16, 1)) is True
+        assert _should_expire(order, et_time(9, 36)) is True
 
-    def test_opg_order_does_not_expire_before_market_close(self):
+    def test_opg_order_does_not_expire_inside_open_window(self):
+        # 9:32 is inside the opg fill window — must keep trying to fill
         order = make_exec_order("limit", "buy", limit_price="150.00", tif="opg")
-        assert _should_expire(order, et_time(15, 59)) is False
+        assert _should_expire(order, et_time(9, 32)) is False
 
-    def test_cls_order_expires_at_market_close(self):
-        # cls that missed its closing window should not persist open indefinitely
+    def test_opg_order_placed_after_window_waits_for_next_day(self):
+        # placed at 10am today — today's 9:35 boundary was before placement,
+        # so the order waits for tomorrow's fill window and must not expire same day
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="opg",
+            created_at=datetime(2024, 1, 15, 10, 0, tzinfo=ET),
+        )
+        assert _should_expire(order, et_time(15, 0)) is False
+
+    def test_cls_order_does_not_expire_inside_close_window(self):
+        # 16:01 is inside the cls fill window (15:55–16:05) — must not expire yet
         order = make_exec_order("limit", "sell", limit_price="150.00", tif="cls")
-        assert _should_expire(order, et_time(16, 1)) is True
+        assert _should_expire(order, et_time(16, 1)) is False
+
+    def test_cls_order_expires_after_close_window(self):
+        # 16:06 is past end of cls fill window → cancel
+        order = make_exec_order("limit", "sell", limit_price="150.00", tif="cls")
+        assert _should_expire(order, et_time(16, 6)) is True
 
 
 # ---------------------------------------------------------------------------
@@ -310,3 +331,46 @@ class TestInWindow:
     def test_time_outside_window_returns_false(self):
         # 9:40 AM — 10 minutes after target 9:30, outside 5-min window
         assert _in_window(et_time(9, 40), (9, 30)) is False
+
+
+# ---------------------------------------------------------------------------
+# Stock off-hours guard — prevents fills against stale after-hours quotes
+# ---------------------------------------------------------------------------
+
+
+class TestStockOffHoursGuard:
+    def test_stock_gtc_limit_does_not_fill_after_hours(self):
+        # limit buy at $150, quote at $140 — would fill during hours, but
+        # 9pm quote is stale from 4pm close, so executor must skip
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="us_equity"
+        )
+        assert _should_fill(order, Decimal("140.00"), et_time(21, 0)) is False
+
+    def test_stock_gtc_limit_fills_during_market_hours(self):
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="us_equity"
+        )
+        assert _should_fill(order, Decimal("140.00"), et_time(10, 0)) is True
+
+    def test_stock_gtc_does_not_fill_on_weekend(self):
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="us_equity"
+        )
+        # 2024-01-13 is a Saturday
+        saturday_10am = datetime(2024, 1, 13, 10, 0, tzinfo=ET)
+        assert _should_fill(order, Decimal("140.00"), saturday_10am) is False
+
+    def test_crypto_gtc_fills_off_hours(self):
+        # crypto trades 24/7 — market-hours guard must not apply
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="gtc", asset_class="crypto"
+        )
+        assert _should_fill(order, Decimal("140.00"), et_time(21, 0)) is True
+
+    def test_stock_opg_still_fills_in_window(self):
+        # opg/cls are exempt from the off-hours guard — they fill in their window
+        order = make_exec_order(
+            "limit", "buy", limit_price="150.00", tif="opg", asset_class="us_equity"
+        )
+        assert _should_fill(order, Decimal("148.00"), et_time(9, 32)) is True

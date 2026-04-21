@@ -38,7 +38,7 @@ class PlaceOrderRequest(BaseModel):
     asset_class: str  # "us_equity" | "crypto"
     side: str  # "buy" | "sell"
     order_type: str  # "market" | "limit" | "stop" | "stop_limit"
-    time_in_force: str = "day"  # "day" | "gtc"
+    time_in_force: str = "gtc"  # "day" | "gtc" | "opg" | "cls"
     quantity: str  # string to avoid float precision issues
     limit_price: str | None = None  # required for limit / stop_limit
     stop_price: str | None = None  # required for stop / stop_limit
@@ -153,13 +153,29 @@ def place_order(
         .first()
     )
 
-    # for non-market buy orders, compute rps before the buying power check so
+    # market + opg/cls is a "market-on-open/close" order — it defers to the
+    # executor and fills at the next session boundary at the prevailing price,
+    # instead of filling instantly the way a plain market order does.
+    deferred_market = payload.order_type == "market" and time_in_force in ("opg", "cls")
+
+    # for any non-immediate buy, compute rps before the buying power check so
     # the check validates against the actual reservation amount — not just the
-    # raw stop/limit price. for stop orders rps > stop_price (ATR buffer), so
-    # checking against stop_price would allow over-reservation.
+    # raw stop/limit price. for stop orders rps > stop_price (ATR buffer); for
+    # deferred market orders we don't know the fill price yet, so we use the
+    # same stop-style buffer against the current quote.
     rps: Decimal | None = None
-    if payload.order_type != "market" and payload.side == "buy":
-        if payload.order_type == "stop":
+    if (payload.order_type != "market" or deferred_market) and payload.side == "buy":
+        if deferred_market:
+            quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
+            if quote is None or quote.price is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No current price available for {payload.ticker}. Try again in a moment.",
+                )
+            market_price = Decimal(str(quote.price))
+            atr = compute_atr(payload.ticker, db)
+            rps = compute_stop_reservation_per_share(market_price, atr)
+        elif payload.order_type == "stop":
             atr = compute_atr(payload.ticker, db)
             rps = compute_stop_reservation_per_share(stop_price, atr)
         elif payload.order_type in ("limit", "stop_limit"):
@@ -171,7 +187,7 @@ def place_order(
             except OrderValidationError as exc:
                 raise HTTPException(status_code=400, detail=exc.detail)
 
-    if payload.order_type == "market":
+    if payload.order_type == "market" and not deferred_market:
         # backend owns the price — never trust the client for market fills
         quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
         if quote is None or quote.price is None:

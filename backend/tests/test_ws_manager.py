@@ -341,3 +341,61 @@ class TestLeastActiveWsTicker:
 
         result = manager.least_active_ws_ticker({"AAPL", "MSFT"})
         assert result == "AAPL"  # no timestamp defaults to 0.0
+
+
+class TestSystemTickers:
+    async def test_sync_adds_new_system_tickers(self):
+        manager = ConnectionManager()
+        added, removed = manager.sync_system_tickers({"AAPL", "MSFT"})
+        assert set(added) == {"AAPL", "MSFT"}
+        assert removed == []
+        adds, rms = manager.drain_pending()
+        assert set(adds) == {"AAPL", "MSFT"}
+        assert rms == []
+
+    async def test_sync_removes_dropped_system_tickers(self):
+        manager = ConnectionManager()
+        manager.sync_system_tickers({"AAPL", "MSFT"})
+        manager.drain_pending()  # clear
+        added, removed = manager.sync_system_tickers({"AAPL"})
+        assert added == []
+        assert removed == ["MSFT"]
+        adds, rms = manager.drain_pending()
+        assert adds == []
+        assert rms == ["MSFT"]
+
+    async def test_sync_skips_remove_when_client_still_subscribed(self):
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        manager.drain_pending()  # clear client-driven adds
+        manager.sync_system_tickers({"AAPL"})
+        added, removed = manager.sync_system_tickers(set())
+        assert removed == []  # AAPL still tracked by client
+        assert "AAPL" not in manager._system_tickers
+
+    async def test_client_disconnect_keeps_system_ticker_alive(self):
+        manager = ConnectionManager()
+        manager.sync_system_tickers({"AAPL"})
+        manager.drain_pending()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        # client disconnect path that bypasses grace (simulated by directly
+        # calling unsubscribe which is the non-grace branch)
+        removed = await manager.unsubscribe(ws, ["AAPL"])
+        assert removed == []  # system ticker kept alive
+        _, rms = manager.drain_pending()
+        assert rms == []
+
+    async def test_sync_add_skipped_when_client_already_subscribed(self):
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        manager.drain_pending()
+        added, removed = manager.sync_system_tickers({"AAPL"})
+        # client already subscribed — no new pending_add needed
+        assert added == []
+        assert "AAPL" in manager._system_tickers

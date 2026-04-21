@@ -6,7 +6,7 @@ when price conditions are met. Also handles opg/cls TIF timing and day-order exp
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
-from app.services.trading import execute_fill
+from app.services.trading import compute_market_fill_price, execute_fill
 
 ET = ZoneInfo("America/New_York")
 POLL_INTERVAL = 5  # seconds between executor cycles
@@ -52,15 +52,23 @@ def _process_open_orders() -> None:
             .filter(Order.status.in_(["open", "partially_filled"]))
             .all()
         )
+
+        # Keep the WS feed subscribed to every open-order ticker so the quote
+        # table stays warm for executor fills (especially in opg/cls windows
+        # where no browser client may be connected). Self-heals every cycle.
+        open_tickers = {o.ticker for o in open_orders}
+        from app.main import manager as ws_manager  # local to avoid import cycle
+
+        ws_manager.sync_system_tickers(open_tickers)
+
         if not open_orders:
             return
 
         # fetch one quote per ticker in a single query
-        tickers = {o.ticker for o in open_orders}
+        tickers = open_tickers
+        quote_rows = db.query(Quote).filter(Quote.ticker.in_(tickers)).all()
         quotes: dict[str, Decimal] = {
-            q.ticker: Decimal(str(q.price))
-            for q in db.query(Quote).filter(Quote.ticker.in_(tickers)).all()
-            if q.price is not None
+            q.ticker: Decimal(str(q.price)) for q in quote_rows if q.price is not None
         }
 
         # fetch the most recent daily bar volume per ticker in a single query
@@ -114,11 +122,19 @@ def _process_open_orders() -> None:
                     continue
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
+                # for deferred market orders, apply slippage so the executor
+                # fill mirrors the synchronous market-order path
+                if order.order_type == "market":
+                    fill_price = compute_market_fill_price(
+                        price, order.side, fill_quantity, volumes.get(order.ticker)
+                    )
+                else:
+                    fill_price = price
                 result = execute_fill(
                     db=db,
                     order=order,
                     account=account,
-                    fill_price=price,
+                    fill_price=fill_price,
                     fill_quantity=fill_quantity,
                 )
                 db.commit()
@@ -134,7 +150,7 @@ def _process_open_orders() -> None:
                         order.side,
                         order.quantity,
                         order.ticker,
-                        price,
+                        fill_price,
                     )
             elif _should_expire(order, now_et):
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
@@ -203,12 +219,25 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
     lp = order.limit_price
     sp = order.stop_price
 
+    # US equities only fill during regular hours, or during their opg/cls window.
+    # Without this guard, a day/gtc limit could fill against a stale after-hours
+    # quote (e.g. 10pm matching against a 4pm close price).
+    if order.asset_class == "us_equity" and tif not in ("opg", "cls"):
+        if not _is_stock_market_open(now_et):
+            return False
+
     # opg/cls: only eligible during the appropriate time window; if not in the
     # window return False immediately, otherwise fall through to price conditions
     if tif == "opg" and not _in_window(now_et, MARKET_OPEN):
         return False
     if tif == "cls" and not _in_window(now_et, MARKET_CLOSE):
         return False
+
+    # market orders only reach the executor via opg/cls TIF (regular market
+    # orders fill synchronously at placement). if we've passed the window gate
+    # above, the order is eligible to fill now at the current quote.
+    if ot == "market":
+        return tif in ("opg", "cls")
 
     if ot == "limit":
         if lp is None:
@@ -233,14 +262,47 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
 
 
 def _should_expire(order: Order, now_et: datetime) -> bool:
-    """Return True if an order has passed market close and should be cancelled.
+    """Return True if an order has passed its TIF-specific expiry and should be cancelled.
 
-    day orders expire at close. opg and cls orders also expire at close — if
-    they missed their fill window they will never fill and should be cleaned up.
+    Expiry boundaries (ET):
+      * day → 16:00 (regular market close)
+      * opg → 9:35 (end of opening fill window — 5 min after 9:30 open)
+      * cls → 16:05 (end of closing fill window — 5 min after 16:00 close)
+
+    An order expires only if a boundary has passed since it was created. An
+    opg order placed at 2pm today will wait for tomorrow's 9:30 fill window
+    and only expire after tomorrow's 9:35 if unfilled.
     """
-    if order.time_in_force not in ("day", "opg", "cls"):
+    tif = order.time_in_force
+    if tif == "day":
+        h, m = MARKET_CLOSE
+    elif tif == "opg":
+        h, m = MARKET_OPEN[0], MARKET_OPEN[1] + FILL_WINDOW_MINUTES  # 9:35
+    elif tif == "cls":
+        h, m = MARKET_CLOSE[0], MARKET_CLOSE[1] + FILL_WINDOW_MINUTES  # 16:05
+    else:
         return False
-    return (now_et.hour, now_et.minute) >= MARKET_CLOSE
+
+    today_boundary = now_et.replace(hour=h, minute=m, second=0, microsecond=0)
+    last_boundary = (
+        today_boundary if now_et >= today_boundary else today_boundary - timedelta(days=1)
+    )
+
+    created = order.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    created_et = created.astimezone(ET)
+    return created_et < last_boundary
+
+
+def _is_stock_market_open(now_et: datetime) -> bool:
+    """True during regular US equity hours (9:30–16:00 ET, weekdays). Holidays TBD."""
+    if now_et.weekday() >= 5:  # Sat=5, Sun=6
+        return False
+    minutes = now_et.hour * 60 + now_et.minute
+    return (MARKET_OPEN[0] * 60 + MARKET_OPEN[1]) <= minutes < (
+        MARKET_CLOSE[0] * 60 + MARKET_CLOSE[1]
+    )
 
 
 def _in_window(now_et: datetime, target: tuple[int, int]) -> bool:
