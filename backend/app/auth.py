@@ -44,7 +44,10 @@ def verify_token(token: str | None) -> dict | None:
     try:
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         return jwt.decode(
-            token, signing_key.key, algorithms=["RS256", "ES256", "EdDSA"]
+            token,
+            signing_key.key,
+            algorithms=["RS256", "ES256", "EdDSA"],
+            options={"verify_aud": False},
         )
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None

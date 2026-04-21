@@ -1,6 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
 export type QuoteData = {
@@ -26,10 +33,8 @@ const WS_BASE: string =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/api/ws";
 
 export function WebSocketProvider({
-  token,
   children,
 }: {
-  token?: string;
   children: React.ReactNode;
 }) {
   const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
@@ -38,24 +43,38 @@ export function WebSocketProvider({
   // ref-counted subscriptions: ticker -> number of active subscribers
   const refCounts = useRef(new Map<string, number>());
 
-  // append token as query param when available
-  const wsUrl = token
-    ? `${WS_BASE}?token=${encodeURIComponent(token)}`
-    : WS_BASE;
+  // Fetch a fresh JWT on every (re)connect. Better-auth JWTs are short-lived,
+  // so baking a token into the URL at mount time causes 4001 spam once it
+  // expires. react-use-websocket calls this function again on each reconnect.
+  // Must be a stable reference — a new function each render would tear down
+  // and recreate the socket on every render.
+  const getSocketUrl = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ws-token", { cache: "no-store" });
+      if (!res.ok) return WS_BASE;
+      const { token } = (await res.json()) as { token: string | null };
+      return token ? `${WS_BASE}?token=${encodeURIComponent(token)}` : WS_BASE;
+    } catch {
+      return WS_BASE;
+    }
+  }, []);
 
-  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(wsUrl, {
-    shouldReconnect: () => true,
-    reconnectAttempts: Infinity,
-    reconnectInterval: (attempt) =>
-      Math.min(Math.pow(2, attempt) * 1000, 10000),
-    share: true,
-    heartbeat: {
-      message: JSON.stringify({ type: "ping" }),
-      returnMessage: JSON.stringify({ type: "pong" }),
-      timeout: 60000,
-      interval: 25000,
+  const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
+    getSocketUrl,
+    {
+      shouldReconnect: () => true,
+      reconnectAttempts: Infinity,
+      reconnectInterval: (attempt) =>
+        Math.min(Math.pow(2, attempt) * 1000, 10000),
+      share: true,
+      heartbeat: {
+        message: JSON.stringify({ type: "ping" }),
+        returnMessage: JSON.stringify({ type: "pong" }),
+        timeout: 60000,
+        interval: 25000,
+      },
     },
-  });
+  );
 
   // handle incoming messages
   useEffect(() => {
