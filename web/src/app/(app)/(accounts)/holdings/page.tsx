@@ -26,7 +26,7 @@ export default async function HoldingsPage({ searchParams }: Props) {
     scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
   const scopedAccount = scopedId ? accountsById[scopedId] : null;
 
-  const { holdings } = await getAllHoldings(activeIds);
+  const { holdings, totalCash } = await getAllHoldings(activeIds);
 
   return (
     <div className="space-y-6">
@@ -41,6 +41,7 @@ export default async function HoldingsPage({ searchParams }: Props) {
       <HoldingsTable
         holdings={holdings}
         accountsById={scopedAccount ? undefined : accountsById}
+        totalCash={totalCash}
       />
     </div>
   );
