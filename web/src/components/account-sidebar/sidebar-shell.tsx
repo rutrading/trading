@@ -14,7 +14,7 @@ export function SidebarShell({
   children,
 }: {
   accounts: SidebarAccount[];
-  asOf: Date;
+  asOf: string;
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);

@@ -21,23 +21,16 @@ const fmtCurrency = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-const ASOF_FORMATTER = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: "America/New_York",
-  timeZoneName: "short",
-});
-
 export function AccountSidebar({
   accounts,
   asOf,
   onToggleCollapse,
 }: {
   accounts: SidebarAccount[];
-  asOf: Date;
+  // Pre-formatted on the server. Passing a Date and formatting here would
+  // hydration-mismatch because Node's and the browser's ICU disagree on
+  // separators ("Apr 21, 2026, 12:59" vs "Apr 21, 2026 at 12:59").
+  asOf: string;
   onToggleCollapse: () => void;
 }) {
   const searchParams = useSearchParams();
@@ -87,7 +80,7 @@ export function AccountSidebar({
       </header>
 
       <p className="mb-4 px-2 text-xs text-muted-foreground">
-        As of {ASOF_FORMATTER.format(asOf)}
+        As of {asOf}
       </p>
 
       <Link
