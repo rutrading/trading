@@ -345,3 +345,59 @@ class WatchlistItem(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship(back_populates="watchlist_items")
+
+class News_Article(Base):
+    __tablename__ = "news_article"
+    __table_args__ = (
+        Index("article_articletId_idx", "article_id"),
+    )
+
+    article_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    summary: Mapped[str] = mapped_column(String(200), default=None)
+    thumbnail: Mapped[str] = mapped_column(String(1000), default=None)
+    date_published: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
+
+class News_Source(Base):
+    __tablename__ = "news_source"
+    __table_args__ = (
+        Index("news_source_news_sourcetId_idx", "news_source_id"),
+    )
+
+    news_source_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source_name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+
+class News_Article_Source_Bridge(Base):
+    __tablename__ = "news_article_source_bridge"
+    __table_args__ = (
+        Index("article_articletId_idx", "article_id"),
+        Index("news_source_news_sourcetId_idx", "news_source_id")
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_article.article_id"))
+    news_source_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_source.news_source_id"))
+
+class Author(Base):
+    __tablename__ = "author"
+    __table_args__ = (
+        Index("authortId_idx", "author_id"),
+    )
+
+    author_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    author_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+
+class News_Article_Author_Bridge(Base):
+    __tablename__ = "news_article_author_bridge"
+    __table_args__ = (
+        Index("article_articletId_idx", "article_id"),
+        Index("authortId_idx", "author_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_article.article_id"))
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("author.author_id"))
