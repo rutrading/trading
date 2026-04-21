@@ -674,7 +674,12 @@ function QuoteStrip({
     <div className="rounded-xl bg-muted/40 px-4 py-3">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-lg font-semibold">{ticker}</span>
+          <Link
+            href={`/stocks/${encodeURIComponent(ticker)}`}
+            className="text-lg font-semibold hover:underline"
+          >
+            {ticker}
+          </Link>
           {name && (
             <span className="text-xs text-muted-foreground">{name}</span>
           )}
