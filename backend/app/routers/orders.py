@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -21,8 +22,10 @@ from app.schemas import (
     OrderTransactionResponse,
 )
 from app.services.atr import compute_atr
+from app.services.market_calendar import is_stock_market_open
 from app.services.trading import (
     OrderValidationError,
+    _to_money,
     compute_market_fill_price,
     compute_stop_reservation_per_share,
     execute_fill,
@@ -32,6 +35,9 @@ from app.services.trading import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+_ET = ZoneInfo("America/New_York")
+_QUOTE_STALENESS_LIMIT_SEC = 60
 
 
 class PlaceOrderRequest(BaseModel):
@@ -123,6 +129,18 @@ async def place_order(
     # crypto trades 24/7 — always gtc regardless of what was sent
     time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
 
+    # Lock the account row first, then run validation (which may acquire the
+    # holding row lock for sells). Standardizing on account-first-then-holding
+    # everywhere avoids a deadlock window if a future change ever cross-couples
+    # the two locks. Re-fetching here is intentional — get_trading_account
+    # returned an unlocked row purely for membership verification.
+    account = (
+        db.query(TradingAccount)
+        .filter(TradingAccount.id == account.id)
+        .with_for_update()
+        .first()
+    )
+
     try:
         validate_order_request(
             account=account,
@@ -139,7 +157,8 @@ async def place_order(
     except OrderValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.detail)
 
-    # create order record
+    # create order record (after locking + validating so the in-memory object
+    # only exists once we know the order will be persisted)
     order = Order(
         trading_account_id=account.id,
         ticker=payload.ticker,
@@ -150,16 +169,6 @@ async def place_order(
         quantity=quantity,
         limit_price=limit_price,
         stop_price=stop_price,
-    )
-
-    # lock the account row before any balance/reservation reads or writes so
-    # concurrent orders cannot race past the buying-power check and together
-    # overdraw the account
-    account = (
-        db.query(TradingAccount)
-        .filter(TradingAccount.id == account.id)
-        .with_for_update()
-        .first()
     )
 
     # market + opg/cls is a "market-on-open/close" order — it defers to the
@@ -203,11 +212,34 @@ async def place_order(
     if payload.order_type == "market" and not deferred_market:
         # backend owns the price — never trust the client for market fills
         quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
-        if quote is None or quote.price is None:
+        if quote is None or quote.price is None or quote.price <= 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"No current price available for {payload.ticker}. Try again in a moment.",
             )
+        # Reject stale quotes during market hours. A market order against a
+        # quote that hasn't ticked in minutes (typically a feed outage) would
+        # fill at whatever ancient price is in the table — pause the user
+        # rather than execute on stale data. Off-hours stocks are filtered out
+        # so the warning isn't spammed when the WS feed is intentionally idle.
+        now_utc = datetime.now(timezone.utc)
+        is_live_market = (
+            payload.asset_class == "crypto"
+            or is_stock_market_open(now_utc.astimezone(_ET))
+        )
+        if is_live_market and quote.updated_at is not None:
+            quote_updated = quote.updated_at
+            if quote_updated.tzinfo is None:
+                quote_updated = quote_updated.replace(tzinfo=timezone.utc)
+            staleness = (now_utc - quote_updated).total_seconds()
+            if staleness > _QUOTE_STALENESS_LIMIT_SEC:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Quote for {payload.ticker} is stale "
+                        f"({int(staleness)}s old). Try again in a moment."
+                    ),
+                )
         market_price = Decimal(str(quote.price))
         # Snapshot the quote we're filling against so the orders table can show
         # "what the market was when you placed this" alongside the actual fill.
@@ -241,15 +273,31 @@ async def place_order(
         db.add(order)
         db.flush()  # get order.id before creating transactions
 
-        execute_fill(
+        fill_result = execute_fill(
             db=db,
             order=order,
             account=account,
             fill_price=fill_price,
             fill_quantity=quantity,
         )
+        # Persist the cancellation either way — execute_fill may have stamped
+        # order.status = "cancelled" with a rejection_reason (e.g. "position
+        # no longer exists at fill time" for a sell, or "insufficient buying
+        # power at fill time" for a buy). Returning a 200 OK with a cancelled
+        # body silently masks the failure for the client.
         db.commit()
         db.refresh(order)
+
+        if fill_result is None:
+            logger.warning(
+                "Synchronous market order rejected at fill time: order=%d reason=%s",
+                order.id,
+                order.rejection_reason,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=order.rejection_reason or "Order could not be filled",
+            )
 
         logger.info(
             "Market order filled: %s %s %s @ %s (quoted %s, slippage %.4f%%) for account %d",
@@ -266,7 +314,11 @@ async def place_order(
         # rps was already computed above for the buying power check — use it directly
         if payload.side == "buy" and rps is not None:
             order.reserved_per_share = rps
-            account.reserved_balance += quantity * rps
+            # Quantize to numeric(14,2) so the in-memory value matches what
+            # Postgres will persist; otherwise rounding drift accumulates
+            # across partial fills and the buying-power check sees a stale
+            # higher-precision number.
+            account.reserved_balance = _to_money(account.reserved_balance + quantity * rps)
             account.updated_at = datetime.now(timezone.utc)
 
         # for non-market sell orders, commit the shares so concurrent sell orders
@@ -439,21 +491,59 @@ async def cancel_order(
             detail=f"Cannot cancel order with status '{order.status}'",
         )
 
+    # Lock the trading_account first (consistent ordering with place_order so
+    # we don't deadlock against a concurrent buy), then re-fetch the order
+    # under its own row lock and recompute `remaining` from the locked row.
+    # Without this, a fill that commits between the read above and the writes
+    # below would let us release reserved_balance/reserved_quantity for shares
+    # that were just filled — over-releasing the reservation and effectively
+    # giving the user back buying-power they already spent.
+    account = (
+        db.query(TradingAccount)
+        .filter(TradingAccount.id == order.trading_account_id)
+        .with_for_update()
+        .first()
+    )
+    if account is None:
+        raise HTTPException(status_code=500, detail="Trading account not found for order")
+
+    order = (
+        db.query(Order)
+        .filter(Order.id == order_id)
+        .with_for_update()
+        .first()
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Re-check status under the lock — the executor (or another tab) may have
+    # already filled or cancelled the order between the initial read and the
+    # lock acquisition. A `filled` order has nothing left to cancel.
+    if order.status not in ("open", "partially_filled"):
+        if order.status == "filled":
+            raise HTTPException(
+                status_code=409,
+                detail="Order was filled before the cancel could be applied",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel order with status '{order.status}'",
+        )
+
+    remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+
     # release reserved balance for open buy orders
     if order.side == "buy" and order.reserved_per_share is not None:
-        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
-        account = db.query(TradingAccount).filter(TradingAccount.id == order.trading_account_id).with_for_update().first()
-        if account is None:
-            raise HTTPException(status_code=500, detail="Trading account not found for order")
-        account.reserved_balance = max(
-            Decimal("0"),
-            account.reserved_balance - remaining * order.reserved_per_share,
+        account.reserved_balance = _to_money(
+            max(
+                Decimal("0"),
+                account.reserved_balance - remaining * order.reserved_per_share,
+            )
         )
         account.updated_at = datetime.now(timezone.utc)
 
     # release reserved_quantity for open non-market sell orders
     if order.side == "sell" and order.order_type != "market":
-        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
         holding = (
             db.query(Holding)
             .filter(

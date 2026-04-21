@@ -137,7 +137,17 @@ export async function getAllTransactions(
       merged.push({ ...r, trading_account_id: id, cash_after: "0" });
     }
   }
-  merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // Newest first; tie-break on id (insertion order) so two same-second
+  // transactions don't shuffle the running-cash walk depending on per-account
+  // fetch interleaving. The migration's seed deposit shares ta.created_at,
+  // and a market order placed during account creation can land in the same
+  // second — without the secondary sort the walk can put the trade after
+  // the deposit and produce a wrong cash_after for that pair.
+  merged.sort((a, b) => {
+    const cmp = b.created_at.localeCompare(a.created_at);
+    if (cmp !== 0) return cmp;
+    return b.id - a.id;
+  });
 
   // Walk newest → oldest, carrying a running cash balance per account.
   // cash_after[txn] = balance immediately after that txn was applied.

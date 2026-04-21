@@ -131,6 +131,12 @@ class Quote(Base):
     ticker: Mapped[str] = mapped_column(
         String, ForeignKey("symbol.ticker", ondelete="CASCADE"), primary_key=True
     )
+    # NB: price columns here are Postgres double precision (Float). Callers
+    # converting to Decimal for trade math should do `Decimal(str(value))` —
+    # the float→Decimal conversion is lossy in the last few binary digits.
+    # The truncation is acceptable for a paper-trading sim because the value
+    # is only used to compute fill prices, which are themselves persisted at
+    # numeric(20,10) precision in transaction.price.
     price: Mapped[float | None] = mapped_column(Float, default=None)
     bid_price: Mapped[float | None] = mapped_column(Float, default=None)
     bid_size: Mapped[float | None] = mapped_column(Float, default=None)

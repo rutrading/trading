@@ -313,8 +313,14 @@ export function TradeForm({
     // Backend takes shares only; convert when the user picked Dollars.
     let sharesToSubmit: string;
     if (quantityUnit === "dollars") {
-      // cap at 8 decimals which matches the numeric(16,8) quantity column
-      const stripped = (qtyNum / referencePrice)
+      // Floor (don't round) the dollar→share conversion. toFixed rounds
+      // half-to-even at the 8th decimal, which on a buy can round up by one
+      // ULP and produce a fractional share whose computed cost exceeds the
+      // dollar amount the user typed. Floor is the safer default for both
+      // sides — buys never overspend, sells never try to sell more than the
+      // user holds. Cap at 8 decimals (numeric(16,8) quantity column).
+      const flooredShares = Math.floor((qtyNum / referencePrice) * 1e8) / 1e8;
+      const stripped = flooredShares
         .toFixed(8)
         .replace(/\.?0+$/, "");
       // Sub-tick conversions (e.g. $0.01 of a $50k BTC quote) round to 0
@@ -601,7 +607,7 @@ export function TradeForm({
                   : sharesFromInput.toFixed(8).replace(/\.?0+$/, "");
                 return (
                   <p className="text-xs text-muted-foreground tabular-nums">
-                    ≈ {display || "0"} shares at ${referencePrice.toFixed(2)}
+                    ≈ {display || "0"} shares at {fmtUsd(referencePrice)}
                   </p>
                 );
               })()}

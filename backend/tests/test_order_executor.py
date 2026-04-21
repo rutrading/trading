@@ -7,8 +7,6 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-import pytest
-
 from app.db.models import Order
 from app.tasks.order_executor import (
     VOLUME_FILL_RATE,
@@ -393,14 +391,6 @@ class TestStockOffHoursGuard:
         christmas_10am = datetime(2025, 12, 25, 10, 0, tzinfo=ET)
         assert _should_fill(order, Decimal("140.00"), christmas_10am) is True
 
-    @pytest.mark.xfail(
-        reason="BUG: opg/cls TIFs are exempt from the holiday/weekend guard at "
-        "order_executor.py:226. An opg buy that survives to Christmas morning "
-        "would fill at 9:32 ET against whatever stale Wed-close quote is in "
-        "Redis. The guard needs to also check is_stock_market_open before the "
-        "opg/cls window check. Owned by trading-logic fixer.",
-        strict=True,
-    )
     def test_stock_opg_does_not_fill_on_nyse_holiday(self):
         # opg buy on Christmas — market is closed, even though 9:32 falls
         # inside the 5-min "open window"
@@ -410,11 +400,6 @@ class TestStockOffHoursGuard:
         christmas_open = datetime(2025, 12, 25, 9, 32, tzinfo=ET)
         assert _should_fill(order, Decimal("148.00"), christmas_open) is False
 
-    @pytest.mark.xfail(
-        reason="BUG: same as test_stock_opg_does_not_fill_on_nyse_holiday but "
-        "for cls (market-on-close). Owned by trading-logic fixer.",
-        strict=True,
-    )
     def test_stock_cls_does_not_fill_on_nyse_holiday(self):
         order = make_exec_order(
             "limit", "sell", limit_price="150.00", tif="cls", asset_class="us_equity"
@@ -422,12 +407,6 @@ class TestStockOffHoursGuard:
         christmas_close = datetime(2025, 12, 25, 16, 2, tzinfo=ET)
         assert _should_fill(order, Decimal("152.00"), christmas_close) is False
 
-    @pytest.mark.xfail(
-        reason="BUG: opg/cls also bypass the weekend guard. An opg order placed "
-        "Friday afternoon and not cancelled before Saturday could be considered "
-        "fillable Saturday at 9:32 ET. Owned by trading-logic fixer.",
-        strict=True,
-    )
     def test_stock_opg_does_not_fill_on_weekend(self):
         order = make_exec_order(
             "limit", "buy", limit_price="150.00", tif="opg", asset_class="us_equity"

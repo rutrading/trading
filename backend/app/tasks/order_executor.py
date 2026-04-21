@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
-from app.services.market_calendar import is_stock_market_open
-from app.services.trading import compute_market_fill_price, execute_fill
+from app.services.market_calendar import NYSE_HOLIDAYS, is_stock_market_open
+from app.services.trading import _to_money, compute_market_fill_price, execute_fill
 
 ET = ZoneInfo("America/New_York")
 POLL_INTERVAL = 5  # seconds between executor cycles
@@ -123,8 +123,12 @@ def _process_open_orders() -> None:
                     continue
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
-                # for deferred market orders, apply slippage so the executor
-                # fill mirrors the synchronous market-order path
+                # The only `market` orders that reach the executor are those
+                # whose placement deferred them to the next session boundary
+                # (TIF in opg/cls — see place_order's `deferred_market` branch).
+                # Plain market orders fill synchronously at placement and never
+                # show up here. Apply slippage so the deferred fill mirrors the
+                # synchronous market-order path.
                 if order.order_type == "market":
                     fill_price = compute_market_fill_price(
                         price, order.side, fill_quantity, volumes.get(order.ticker)
@@ -164,9 +168,11 @@ def _process_open_orders() -> None:
                         .first()
                     )
                     if account is not None:
-                        account.reserved_balance = max(
-                            Decimal("0"),
-                            account.reserved_balance - remaining * order.reserved_per_share,
+                        account.reserved_balance = _to_money(
+                            max(
+                                Decimal("0"),
+                                account.reserved_balance - remaining * order.reserved_per_share,
+                            )
                         )
                         account.updated_at = datetime.now(timezone.utc)
                 # release reserved_quantity for non-market sell orders
@@ -227,6 +233,15 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
         if not _is_stock_market_open(now_et):
             return False
 
+    # opg/cls equities must also respect the trading-day calendar. _in_window
+    # alone says "we're within 5 min of 9:30/16:00 clock-time", which on a
+    # weekend or NYSE holiday would let an opg market order fill against a
+    # stale prior-session close. Restrict to weekdays that aren't NYSE
+    # holidays. (Crypto opg/cls is rejected at placement, but be defensive.)
+    if order.asset_class == "us_equity" and tif in ("opg", "cls"):
+        if not _is_trading_day(now_et):
+            return False
+
     # opg/cls: only eligible during the appropriate time window; if not in the
     # window return False immediately, otherwise fall through to price conditions
     if tif == "opg" and not _in_window(now_et, MARKET_OPEN):
@@ -273,6 +288,11 @@ def _should_expire(order: Order, now_et: datetime) -> bool:
     An order expires only if a boundary has passed since it was created. An
     opg order placed at 2pm today will wait for tomorrow's 9:30 fill window
     and only expire after tomorrow's 9:35 if unfilled.
+
+    Boundaries only advance on trading days. A day order placed Friday at 5pm
+    must not expire Saturday afternoon — the next eligible 16:00 boundary is
+    Monday's. Same for opg/cls: a Friday-placed opg must wait through the
+    weekend (and any intervening NYSE holidays) before its window opens.
     """
     tif = order.time_in_force
     if tif == "day":
@@ -285,15 +305,36 @@ def _should_expire(order: Order, now_et: datetime) -> bool:
         return False
 
     today_boundary = now_et.replace(hour=h, minute=m, second=0, microsecond=0)
-    last_boundary = (
-        today_boundary if now_et >= today_boundary else today_boundary - timedelta(days=1)
-    )
+
+    # Walk backwards from today's boundary to find the most recent trading-day
+    # boundary that has actually passed. Cap the walk so a corrupt clock or a
+    # decade-stale order can't loop unbounded.
+    if now_et >= today_boundary and _is_trading_day(now_et):
+        last_boundary: datetime | None = today_boundary
+    else:
+        last_boundary = None
+        cursor = today_boundary - timedelta(days=1)
+        for _ in range(14):
+            if _is_trading_day(cursor):
+                last_boundary = cursor
+                break
+            cursor -= timedelta(days=1)
+
+    if last_boundary is None:
+        return False
 
     created = order.created_at
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     created_et = created.astimezone(ET)
     return created_et < last_boundary
+
+
+def _is_trading_day(now_et: datetime) -> bool:
+    """True when `now_et` falls on a NYSE session day (weekday, non-holiday)."""
+    if now_et.weekday() >= 5:
+        return False
+    return now_et.date() not in NYSE_HOLIDAYS
 
 
 # Thin alias so existing tests importing `_is_stock_market_open` keep working.
