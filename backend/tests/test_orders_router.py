@@ -371,6 +371,62 @@ class TestPlaceDeferredMarketOrder:
         with session_factory() as db:
             assert db.query(Order).count() == 0
 
+    def test_compute_atr_runs_before_account_row_lock(
+        self, session_factory, monkeypatch
+    ):
+        """ATR must be computed before the trading_account FOR UPDATE lock.
+
+        compute_atr can fall through to a 10s synchronous Alpaca call when
+        the local DB has no daily bars cached. If that call ran inside the
+        FOR UPDATE block, every other writer on the same trading account
+        would freeze for the full network timeout. This test pins the call
+        order via side-effects on compute_atr and validate_order_request
+        (the latter only runs after the lock is acquired).
+        """
+        call_order: list[str] = []
+
+        def fake_atr(_ticker, _db):
+            call_order.append("compute_atr")
+            return Decimal("0")
+
+        original_validate = __import__(
+            "app.routers.orders", fromlist=["validate_order_request"]
+        ).validate_order_request
+
+        def tracking_validate(*args, **kwargs):
+            call_order.append("validate_order_request")
+            return original_validate(*args, **kwargs)
+
+        monkeypatch.setattr("app.routers.orders.compute_atr", fake_atr)
+        monkeypatch.setattr(
+            "app.routers.orders.validate_order_request", tracking_validate
+        )
+
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=100.0)
+            account = seed_account(db, "user-a", balance="10000")
+            account_id = account.id
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": "opg",
+            "quantity": "5",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        assert call_order == ["compute_atr", "validate_order_request"], (
+            f"compute_atr must run before the FOR UPDATE lock + validation; "
+            f"got {call_order}"
+        )
+
 
 class TestPlaceOrderInputValidation:
     def test_quantity_with_too_many_decimals_returns_clean_error(self, session_factory):

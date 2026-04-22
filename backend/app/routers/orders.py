@@ -136,6 +136,23 @@ async def place_order(
     # crypto trades 24/7 — always gtc regardless of what was sent
     time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
 
+    # market + opg/cls is a "market-on-open/close" order — it defers to the
+    # executor and fills at the next session boundary at the prevailing price,
+    # instead of filling instantly the way a plain market order does.
+    deferred_market = payload.order_type == "market" and time_in_force in ("opg", "cls")
+
+    # Compute ATR before acquiring the trading_account row lock. compute_atr
+    # can fall through to a synchronous httpx call to Alpaca with a 10s
+    # timeout when the DB has fewer than ATR_PERIODS+1 daily bars cached for
+    # the ticker — and that call has no dependency on the locked row state.
+    # Holding FOR UPDATE through a 10s network call would freeze every other
+    # writer on the same trading account. Quote and DailyBar reads stay
+    # inline below since they're sub-millisecond local Postgres queries.
+    needs_atr = payload.side == "buy" and (
+        payload.order_type == "stop" or deferred_market
+    )
+    pre_atr: Decimal | None = compute_atr(payload.ticker, db) if needs_atr else None
+
     # Lock the account row first, then run validation (which may acquire the
     # holding row lock for sells). Standardizing on account-first-then-holding
     # everywhere avoids a deadlock window if a future change ever cross-couples
@@ -178,11 +195,6 @@ async def place_order(
         stop_price=stop_price,
     )
 
-    # market + opg/cls is a "market-on-open/close" order — it defers to the
-    # executor and fills at the next session boundary at the prevailing price,
-    # instead of filling instantly the way a plain market order does.
-    deferred_market = payload.order_type == "market" and time_in_force in ("opg", "cls")
-
     # for any non-immediate buy, compute rps before the buying power check so
     # the check validates against the actual reservation amount — not just the
     # raw stop/limit price. for stop orders rps > stop_price (ATR buffer); for
@@ -202,11 +214,12 @@ async def place_order(
             # will likely differ but "what the market was when you placed" is
             # what the orders table's Price column shows.
             order.reference_price = market_price
-            atr = compute_atr(payload.ticker, db)
-            rps = compute_stop_reservation_per_share(market_price, atr)
+            # ATR was computed pre-lock — see the `needs_atr` block above.
+            assert pre_atr is not None
+            rps = compute_stop_reservation_per_share(market_price, pre_atr)
         elif payload.order_type == "stop":
-            atr = compute_atr(payload.ticker, db)
-            rps = compute_stop_reservation_per_share(stop_price, atr)
+            assert pre_atr is not None
+            rps = compute_stop_reservation_per_share(stop_price, pre_atr)
         elif payload.order_type in ("limit", "stop_limit"):
             rps = limit_price
 
