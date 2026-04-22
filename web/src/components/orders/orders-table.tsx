@@ -42,7 +42,8 @@ const CANCELLABLE: ReadonlySet<OrderStatus> = new Set([
   "partially_filled",
 ]);
 
-function priceCell(order: Order) {
+// Exported for unit testing — see orders-table.test.tsx.
+export function priceCell(order: Order) {
   if (order.order_type === "market") {
     if (order.reference_price) return `$${fmt(parseFloat(order.reference_price))}`;
     return "Market";
@@ -51,7 +52,7 @@ function priceCell(order: Order) {
   return price ? `$${fmt(parseFloat(price))}` : "—";
 }
 
-function totalCell(order: Order) {
+export function totalCell(order: Order) {
   const avg = order.average_fill_price ? parseFloat(order.average_fill_price) : null;
   const filled = parseFloat(order.filled_quantity);
   if (avg == null || !filled) return "—";

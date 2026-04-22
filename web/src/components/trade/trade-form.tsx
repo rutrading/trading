@@ -25,6 +25,7 @@ import { placeOrder } from "@/app/actions/orders";
 import type { QuoteSnapshot } from "@/app/actions/quotes";
 import { cn } from "@/lib/utils";
 import { fmtPrice } from "@/lib/format";
+import { dollarsToShares } from "@/lib/order-math";
 
 export type TradeAccount = {
   id: number;
@@ -313,28 +314,39 @@ export function TradeForm({
     // Backend takes shares only; convert when the user picked Dollars.
     let sharesToSubmit: string;
     if (quantityUnit === "dollars") {
-      // Floor (don't round) the dollar→share conversion. toFixed rounds
-      // half-to-even at the 8th decimal, which on a buy can round up by one
-      // ULP and produce a fractional share whose computed cost exceeds the
-      // dollar amount the user typed. Floor is the safer default for both
-      // sides — buys never overspend, sells never try to sell more than the
-      // user holds. Cap at 8 decimals (numeric(16,8) quantity column).
-      const flooredShares = Math.floor((qtyNum / referencePrice) * 1e8) / 1e8;
-      const stripped = flooredShares
-        .toFixed(8)
-        .replace(/\.?0+$/, "");
-      // Sub-tick conversions (e.g. $0.01 of a $50k BTC quote) round to 0
-      // shares — reject before we send `quantity: ""` to the backend.
-      if (!stripped || parseFloat(stripped) <= 0) {
+      const result = dollarsToShares(qtyNum, referencePrice);
+      if (!result.ok) {
         setError(
           "Amount is too small to buy any shares at this price. Increase the dollar amount.",
         );
         return;
       }
-      sharesToSubmit = stripped;
+      sharesToSubmit = result.shares;
     } else {
       sharesToSubmit = quantity;
     }
+
+    // Buys that the backend has to compute ATR for can take ~10s on the
+    // first placement of a ticker (cold DB → synchronous Alpaca fetch).
+    // Show a "Calculating risk..." toast if the request hasn't returned in
+    // ~1s so the form doesn't feel frozen. Subsequent placements hit the
+    // DB cache and never trip the timer.
+    const needsAtr =
+      side === "buy" &&
+      (orderType === "stop" ||
+        (orderType === "market" &&
+          !isCrypto &&
+          (timeInForce === "opg" || timeInForce === "cls")));
+    let pendingToastId: string | null = null;
+    const pendingToastTimer = needsAtr
+      ? window.setTimeout(() => {
+          pendingToastId = toastManager.add({
+            title: "Calculating risk…",
+            description: "Looking up recent volatility for this ticker.",
+            type: "loading",
+          });
+        }, 1000)
+      : null;
 
     startTransition(async () => {
       const res = await placeOrder({
@@ -354,6 +366,9 @@ export function TradeForm({
             ? stopPrice
             : undefined,
       });
+
+      if (pendingToastTimer != null) window.clearTimeout(pendingToastTimer);
+      if (pendingToastId != null) toastManager.close(pendingToastId);
 
       if (!res.ok) {
         setError(res.error);

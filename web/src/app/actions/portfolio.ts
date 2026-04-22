@@ -2,6 +2,7 @@
 
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
+import { computeRunningCashWalk } from "@/lib/transactions";
 
 export type Holding = {
   id: number;
@@ -131,43 +132,7 @@ export async function getAllTransactions(
     }),
   );
 
-  const merged: TransactionRow[] = [];
-  for (const { id, rows } of results) {
-    for (const r of rows) {
-      merged.push({ ...r, trading_account_id: id, cash_after: "0" });
-    }
-  }
-  // Newest first; tie-break on id (insertion order) so two same-second
-  // transactions don't shuffle the running-cash walk depending on per-account
-  // fetch interleaving. The migration's seed deposit shares ta.created_at,
-  // and a market order placed during account creation can land in the same
-  // second — without the secondary sort the walk can put the trade after
-  // the deposit and produce a wrong cash_after for that pair.
-  merged.sort((a, b) => {
-    const cmp = b.created_at.localeCompare(a.created_at);
-    if (cmp !== 0) return cmp;
-    return b.id - a.id;
-  });
-
-  // Walk newest → oldest, carrying a running cash balance per account.
-  // cash_after[txn] = balance immediately after that txn was applied.
-  // Starting point: current cash balance (which is post-all-txns).
-  const running: Record<number, number> = {};
-  for (const id of tradingAccountIds) {
-    running[id] = parseFloat(cashByAccount[id] ?? "0");
-  }
-  for (const t of merged) {
-    const after = running[t.trading_account_id] ?? 0;
-    t.cash_after = after.toFixed(2);
-    const total = parseFloat(t.total);
-    // trade: buy subtracts cash, sell adds; deposit adds, withdrawal subtracts
-    let effect = 0;
-    if (t.kind === "trade") effect = t.side === "buy" ? -total : total;
-    else if (t.kind === "deposit") effect = total;
-    else if (t.kind === "withdrawal") effect = -total;
-    running[t.trading_account_id] = after - effect;
-  }
-
+  const merged = computeRunningCashWalk(results, cashByAccount);
   const total = merged.length;
   const start = (page - 1) * perPage;
   return {
