@@ -79,8 +79,14 @@ class ConnectionManager:
             self._pending_adds.discard(ticker)
             self._pending_removes.add(ticker)
 
-    async def connect(self, ws: WebSocket, user_id: str) -> None:
-        await ws.accept()
+    async def connect(
+        self, ws: WebSocket, user_id: str, *, already_accepted: bool = False
+    ) -> None:
+        # Accept here unless the caller already did (the new auth-on-first-frame
+        # path in `ws/router.py` accepts before reading the auth token, then
+        # passes `already_accepted=True` so we don't double-accept).
+        if not already_accepted:
+            await ws.accept()
         restored: set[str] = set()
 
         async with self._lock:

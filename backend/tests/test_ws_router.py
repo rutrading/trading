@@ -1,10 +1,17 @@
 """Tests for the /api/ws WebSocket endpoint authentication.
 
-Covers Should-fix item 10 in the audit: missing/invalid token close codes,
-and that a valid token routes through to manager.connect with the right
-user_id.
+The router accepts unauthenticated, then expects the first frame to be
+`{type: "auth", token: "<jwt>"}`. These tests cover:
+  - missing first frame (timeout)
+  - malformed JSON in the first frame
+  - wrong message type
+  - missing/empty token field
+  - invalid token (verify_token returns None)
+  - valid token (manager.connect awaited with the right user_id, no double-accept)
+  - valid token with payload missing `sub` falls back to "unknown"
 """
 
+import json
 import os
 
 os.environ["SKIP_AUTH"] = "false"
@@ -24,19 +31,15 @@ client = TestClient(app)
 
 @pytest.fixture
 def fake_manager(monkeypatch):
-    """Replace the WS manager with a MagicMock that drives the connect/disconnect
-    flow without actually maintaining state.
+    """Replace the WS manager with a MagicMock that drives connect/disconnect.
 
-    The real ConnectionManager.connect() calls ws.accept() — without that,
-    Starlette's TestClient blocks forever waiting on the handshake. We forward
-    that one call through.
+    The router now accepts the WebSocket itself before reading the first
+    frame, then passes `already_accepted=True` into manager.connect — so
+    the fake should NOT call ws.accept() (would raise "WebSocket is not
+    connected"). The mock just records the call and returns.
     """
     fake = MagicMock()
-
-    async def fake_connect(ws, user_id):
-        await ws.accept()
-
-    fake.connect = AsyncMock(side_effect=fake_connect)
+    fake.connect = AsyncMock(return_value=None)
     fake.disconnect = AsyncMock()
     fake.subscribe = AsyncMock(return_value=[])
     fake.unsubscribe = AsyncMock(return_value=[])
@@ -44,14 +47,59 @@ def fake_manager(monkeypatch):
     return fake
 
 
+@pytest.fixture(autouse=True)
+def _short_auth_timeout(monkeypatch):
+    # Keep the unit-test timeout fast so the missing-frame case doesn't
+    # add 5 real seconds to every test run.
+    monkeypatch.setattr(ws_router, "AUTH_TIMEOUT_SECONDS", 0.2)
+    yield
+
+
 class TestWebSocketAuth:
-    def test_missing_token_closes_with_4001(self, fake_manager):
-        # Force SKIP_AUTH off so verify_token actually runs
+    def test_missing_first_frame_closes_with_4001(self, fake_manager):
+        """Client connects but never sends the auth frame → server closes 4001."""
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(auth_module, "SKIP_AUTH", False)
             with pytest.raises(WebSocketDisconnect) as excinfo:
                 with client.websocket_connect("/api/ws") as ws:
+                    # Wait for the server to give up and close us.
                     ws.receive_text()
+        assert excinfo.value.code == 4001
+        fake_manager.connect.assert_not_called()
+
+    def test_malformed_first_frame_closes_with_4001(self, fake_manager, monkeypatch):
+        monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/ws") as ws:
+                ws.send_text("not json {{{")
+                ws.receive_text()
+        assert excinfo.value.code == 4001
+        fake_manager.connect.assert_not_called()
+
+    def test_wrong_type_first_frame_closes_with_4001(self, fake_manager, monkeypatch):
+        monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/ws") as ws:
+                ws.send_text(json.dumps({"type": "ping"}))
+                ws.receive_text()
+        assert excinfo.value.code == 4001
+        fake_manager.connect.assert_not_called()
+
+    def test_missing_token_field_closes_with_4001(self, fake_manager, monkeypatch):
+        monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/ws") as ws:
+                ws.send_text(json.dumps({"type": "auth"}))  # no token
+                ws.receive_text()
+        assert excinfo.value.code == 4001
+        fake_manager.connect.assert_not_called()
+
+    def test_empty_token_closes_with_4001(self, fake_manager, monkeypatch):
+        monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            with client.websocket_connect("/api/ws") as ws:
+                ws.send_text(json.dumps({"type": "auth", "token": ""}))
+                ws.receive_text()
         assert excinfo.value.code == 4001
         fake_manager.connect.assert_not_called()
 
@@ -60,32 +108,35 @@ class TestWebSocketAuth:
         # verify_token returns None for tokens that fail JWKS lookup
         monkeypatch.setattr(ws_router, "verify_token", lambda token: None)
         with pytest.raises(WebSocketDisconnect) as excinfo:
-            with client.websocket_connect("/api/ws?token=bogus") as ws:
+            with client.websocket_connect("/api/ws") as ws:
+                ws.send_text(json.dumps({"type": "auth", "token": "bogus"}))
                 ws.receive_text()
         assert excinfo.value.code == 4001
         fake_manager.connect.assert_not_called()
 
-    def test_valid_token_calls_manager_connect_with_user_id(self, fake_manager, monkeypatch):
+    def test_valid_token_calls_manager_connect_with_user_id(
+        self, fake_manager, monkeypatch
+    ):
         monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
         monkeypatch.setattr(
             ws_router, "verify_token", lambda token: {"sub": "user-xyz"}
         )
-        # Connect successfully and immediately close from the client side.
-        # The handler's outer `while True: await receive_text()` raises
-        # WebSocketDisconnect on the close frame and runs the finally clause.
-        with client.websocket_connect("/api/ws?token=good"):
-            pass
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "good"}))
+            # Close from the client side. The handler's outer receive loop
+            # raises WebSocketDisconnect and runs the finally clause that
+            # calls manager.disconnect.
         fake_manager.connect.assert_awaited_once()
-        # connect(ws, user_id) — second positional is the user_id
-        called_user_id = fake_manager.connect.await_args.args[1]
-        assert called_user_id == "user-xyz"
+        # connect(ws, user_id, already_accepted=True)
+        call = fake_manager.connect.await_args
+        assert call.args[1] == "user-xyz"
+        assert call.kwargs.get("already_accepted") is True
         fake_manager.disconnect.assert_awaited_once()
 
     def test_payload_without_sub_uses_unknown(self, fake_manager, monkeypatch):
         monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
         monkeypatch.setattr(ws_router, "verify_token", lambda token: {})
-        with client.websocket_connect("/api/ws?token=anything"):
-            pass
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "anything"}))
         fake_manager.connect.assert_awaited_once()
-        called_user_id = fake_manager.connect.await_args.args[1]
-        assert called_user_id == "unknown"
+        assert fake_manager.connect.await_args.args[1] == "unknown"

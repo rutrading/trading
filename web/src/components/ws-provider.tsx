@@ -43,20 +43,29 @@ export function WebSocketProvider({
   // ref-counted subscriptions: ticker -> number of active subscribers
   const refCounts = useRef(new Map<string, number>());
 
-  // Fetch a fresh JWT on every (re)connect. Better-auth JWTs are short-lived,
-  // so baking a token into the URL at mount time causes 4001 spam once it
+  // Token cached on every (re)connect. Used as the auth-frame payload sent
+  // immediately after the socket opens — the JWT no longer rides on the
+  // upgrade URL, so it stays out of access logs and the Referer header.
+  const tokenRef = useRef<string | null>(null);
+
+  // Fetch a fresh JWT on every (re)connect. Better-auth JWTs are short-lived;
+  // baking a stale token into the connection causes 4001 spam once it
   // expires. react-use-websocket calls this function again on each reconnect.
   // Must be a stable reference — a new function each render would tear down
   // and recreate the socket on every render.
   const getSocketUrl = useCallback(async () => {
     try {
       const res = await fetch("/api/ws-token", { cache: "no-store" });
-      if (!res.ok) return WS_BASE;
-      const { token } = (await res.json()) as { token: string | null };
-      return token ? `${WS_BASE}?token=${encodeURIComponent(token)}` : WS_BASE;
+      if (res.ok) {
+        const { token } = (await res.json()) as { token: string | null };
+        tokenRef.current = token ?? null;
+      } else {
+        tokenRef.current = null;
+      }
     } catch {
-      return WS_BASE;
+      tokenRef.current = null;
     }
+    return WS_BASE;
   }, []);
 
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
@@ -110,13 +119,19 @@ export function WebSocketProvider({
     }
   }, [lastJsonMessage]);
 
-  // re-subscribe to all active tickers when connection opens
+  // On every fresh connection: send the auth frame first (the backend
+  // expects {type: "auth", token: ...} as the very first message), then
+  // re-subscribe to whatever tickers are still in the ref-count map. The
+  // backend closes 4001 if auth is missing or invalid, which trips
+  // react-use-websocket's reconnect logic naturally.
   useEffect(() => {
     if (readyState !== ReadyState.OPEN) return;
+    sendJsonMessage({ type: "auth", token: tokenRef.current ?? "" });
     const tickers = [...refCounts.current.keys()];
     if (tickers.length > 0) {
       sendJsonMessage({ type: "subscribe", tickers });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readyState]);
 
   function subscribe(ticker: string): () => void {
