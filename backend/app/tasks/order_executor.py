@@ -236,6 +236,13 @@ def _compute_fill_quantity(remaining: Decimal, daily_volume: Decimal | None) -> 
     illiquid stocks take multiple cycles — mimicking real liquidity constraints.
     Falls back to filling all remaining units when no volume data is available.
     Floors at 1 unit to prevent infinite micro-fill loops on very low-volume tickers.
+
+    Crypto edge case: the 1-unit floor was sized for equities (1 share is small).
+    On a very low-volume crypto pair where fillable rounds toward zero, a large
+    multi-unit order will fill 1 unit/cycle instead of the realism-model rate —
+    i.e. faster than a strict liquidity sim says. Small crypto orders are
+    unaffected because the outer min(remaining, ...) cap takes precedence.
+    Acceptable for paper trading.
     """
     if daily_volume is None or daily_volume <= 0:
         return remaining

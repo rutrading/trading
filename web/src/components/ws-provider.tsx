@@ -161,6 +161,10 @@ export function useQuote(ticker: string | null): QuoteData | null {
   useEffect(() => {
     if (!ticker) return;
     return ctx.subscribe(ticker);
+    // ctx.subscribe is captured by closure but its identity is intentionally
+    // omitted from deps — including it would resubscribe on every parent
+    // render, dropping and reacquiring the WS subscription each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticker]);
 
   return ticker ? (ctx.quotes.get(ticker.toUpperCase()) ?? null) : null;
@@ -173,6 +177,9 @@ export function useQuotes(tickers: string[]): Map<string, QuoteData> {
   useEffect(() => {
     const unsubs = tickers.map((t) => ctx.subscribe(t));
     return () => unsubs.forEach((fn) => fn());
+    // The joined string key is the intentional stable dep — using `tickers`
+    // directly would re-run on every render even when contents are unchanged.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickers.join(",")]);
 
   const filtered = new Map<string, QuoteData>();
