@@ -1,42 +1,39 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SidebarSimple } from "@phosphor-icons/react/ssr";
 
 import { AccountSidebar, type SidebarAccount } from "./account-sidebar";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = "account-sidebar-collapsed";
+export const SIDEBAR_COLLAPSED_COOKIE = "sidebar-collapsed";
+
+// Roughly one year — long enough to feel persistent without being effectively
+// permanent if a user ever clears it.
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export function SidebarShell({
   accounts,
   asOf,
   children,
+  initialCollapsed = false,
 }: {
   accounts: SidebarAccount[];
   asOf: string;
   children: React.ReactNode;
+  initialCollapsed?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
-
-  // Restore the collapsed preference after mount. Server always renders
-  // expanded to avoid a hydration mismatch; we flip state if localStorage
-  // disagrees. A one-frame flash is the tradeoff for not needing a cookie.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.localStorage.getItem(STORAGE_KEY) === "1") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
-      setCollapsed(true);
-    }
-  }, []);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
 
   const toggle = () => {
     setCollapsed((prev) => {
       const next = !prev;
       try {
-        window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+        document.cookie =
+          `${SIDEBAR_COLLAPSED_COOKIE}=${next ? "1" : "0"}; ` +
+          `path=/; max-age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
       } catch {
-        // private mode / storage disabled — just keep in-memory state
+        // private mode / cookies disabled — keep in-memory state
       }
       return next;
     });

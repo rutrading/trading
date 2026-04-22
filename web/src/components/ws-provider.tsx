@@ -89,7 +89,13 @@ export function WebSocketProvider({
     if (msg.type === "quote" && msg.ticker && msg.data) {
       setQuotes((prev) => {
         const next = new Map(prev);
-        next.set(msg.ticker!, msg.data!);
+        // Merge over any prior cached entry instead of replacing it. Alpaca's
+        // free SIP feed only pushes trade ticks (price, change), not quote
+        // ticks (bid_price, ask_price). When the WS update lands after a REST
+        // snapshot has populated bid/ask, replacing wholesale would drop them
+        // to undefined and the QuoteStrip would render "—".
+        const prior = prev.get(msg.ticker!);
+        next.set(msg.ticker!, prior ? { ...prior, ...msg.data! } : msg.data!);
         return next;
       });
     }

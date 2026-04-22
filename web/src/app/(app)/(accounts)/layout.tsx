@@ -1,5 +1,10 @@
+import { cookies } from "next/headers";
+
 import { getAccounts } from "@/app/actions/auth";
-import { SidebarShell } from "@/components/account-sidebar/sidebar-shell";
+import {
+  SIDEBAR_COLLAPSED_COOKIE,
+  SidebarShell,
+} from "@/components/account-sidebar/sidebar-shell";
 
 // Format with formatToParts so the output is independent of ICU's locale
 // connectors (Node emits "Apr 21, 2026, 12:59 AM" while browsers emit
@@ -37,8 +42,19 @@ export default async function AccountsLayout({
     isJoint: m.tradingAccount.isJoint,
   }));
 
+  // Read the sidebar preference from a cookie so the server-rendered HTML
+  // matches the user's choice. Without this, the client flips the sidebar
+  // closed after mount, producing a one-frame flash.
+  const cookieStore = await cookies();
+  const initialCollapsed =
+    cookieStore.get(SIDEBAR_COLLAPSED_COOKIE)?.value === "1";
+
   return (
-    <SidebarShell accounts={accounts} asOf={formatAsOf(new Date())}>
+    <SidebarShell
+      accounts={accounts}
+      asOf={formatAsOf(new Date())}
+      initialCollapsed={initialCollapsed}
+    >
       {children}
     </SidebarShell>
   );
