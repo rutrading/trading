@@ -14,7 +14,8 @@ import {
   type PortfolioPoint,
 } from "@/app/actions/portfolio";
 import { getOpenOrdersAcrossAccounts } from "@/app/actions/orders";
-import { getQuote } from "@/app/actions/quotes";
+import { getQuotes } from "@/app/actions/quotes";
+import { resolveAccountScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 
@@ -30,21 +31,10 @@ type Props = {
 export default async function DashboardPage({ searchParams }: Props) {
   const { account: accountParam } = await searchParams;
   const accounts = await getAccounts();
-  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
-  for (const m of accounts) {
-    accountsById[m.tradingAccount.id] = {
-      name: m.tradingAccount.name,
-      type: m.tradingAccount.type,
-    };
-  }
-
-  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
-  // Scope to one account when ?account=<id> is present and valid; otherwise all.
-  const scopedId =
-    accountParam && accountParam !== "all" ? Number(accountParam) : null;
-  const activeIds =
-    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
-  const scopedAccount = scopedId ? accountsById[scopedId] : null;
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+    accounts,
+    accountParam,
+  );
 
   // Holdings first because every other downstream fetch (quotes, historical
   // bars, time-series chart) needs the unique-ticker list. Doing it as a
@@ -61,22 +51,21 @@ export default async function DashboardPage({ searchParams }: Props) {
   );
 
   // Quotes and historical bars only depend on holdings, so fan them out
-  // together — this is the parallel branch that the previous serialization
-  // was missing. Both inputs feed the chart-augmentation step below.
+  // together — this is the parallel branch the previous serialization was
+  // missing. Both inputs feed the chart-augmentation step below. Bulk
+  // /quotes makes the per-ticker dimension one HTTP hop instead of N.
   const uniqueTickers = Array.from(new Set(holdings.map((h) => h.ticker)));
-  const [quoteResults, portfolioSeries] = await Promise.all([
-    Promise.all(uniqueTickers.map((t) => getQuote(t))),
+  const [quotes, portfolioSeries] = await Promise.all([
+    getQuotes(uniqueTickers),
     getPortfolioTimeSeries(holdings, totalCash, 30),
   ]);
   const priceByTicker = new Map<string, number>();
   const changeByTicker = new Map<string, number>();
-  for (let i = 0; i < uniqueTickers.length; i++) {
-    const res = quoteResults[i];
-    if (res.ok && res.data.price != null) {
-      priceByTicker.set(uniqueTickers[i], res.data.price);
-      if (res.data.change != null) {
-        changeByTicker.set(uniqueTickers[i], res.data.change);
-      }
+  for (const ticker of uniqueTickers) {
+    const q = quotes[ticker];
+    if (q && q.price != null) {
+      priceByTicker.set(ticker, q.price);
+      if (q.change != null) changeByTicker.set(ticker, q.change);
     }
   }
 
@@ -126,6 +115,17 @@ export default async function DashboardPage({ searchParams }: Props) {
         { time: nowSec, value: livePortfolioValue },
       ];
     }
+  }
+
+  // Per-ticker quantity (summed across accounts) — handed to the portfolio
+  // chart as a prop so its period-change handler only has to refetch bars,
+  // not re-derive holdings or quotes the dashboard already loaded above.
+  const tickerQuantities: Record<string, string> = {};
+  for (const h of holdings) {
+    const prev = tickerQuantities[h.ticker]
+      ? parseFloat(tickerQuantities[h.ticker])
+      : 0;
+    tickerQuantities[h.ticker] = String(prev + parseFloat(h.quantity));
   }
 
   // Top-N preview by current market value, falling back to cost basis when
@@ -199,7 +199,12 @@ export default async function DashboardPage({ searchParams }: Props) {
         // chart's local state from the new server props.
         key={activeIds.join(",")}
         data={augmentedSeries}
-        accountIds={activeIds}
+        tickerQuantities={tickerQuantities}
+        totalCash={totalCash}
+        // null tells the chart to skip the synthetic "now" point. Same
+        // condition the server uses to decide whether to augment the
+        // initial series.
+        liveValue={everyTickerHasLivePrice ? livePortfolioValue : null}
         initialDays={30}
       />
 

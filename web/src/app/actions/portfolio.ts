@@ -3,7 +3,6 @@
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
 import { getHistoricalBars } from "@/app/actions/bars";
-import { getQuote } from "@/app/actions/quotes";
 import { computeRunningCashWalk } from "@/lib/transactions";
 
 export type Holding = {
@@ -171,59 +170,47 @@ export async function getPortfolioTimeSeries(
     .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
 }
 
-// Full pipeline behind the dashboard's portfolio chart: load holdings + cash,
-// fetch historical bars per ticker, fetch live quotes per ticker, then
-// append a synthetic "now" point so the chart's last value matches the
-// header's live Portfolio Value instead of lagging at last-close. Used
-// directly by the client chart to re-render when the user picks a new
-// period (1W / 1M / 3M / 1Y) — the dashboard's initial server render
-// inlines the same logic to avoid double-fetching what it already needs
-// elsewhere on the page.
-export async function getAugmentedPortfolioSeries(
-  tradingAccountIds: number[],
+// Bars-only refetch used by the dashboard's portfolio chart when the user
+// switches period (1W / 1M / 3M / 1Y). Takes the per-ticker quantities and
+// cash that the chart already received as server-rendered props — no need
+// to refetch holdings or live quotes, both of which were identical the
+// moment the dashboard rendered. The synthetic "now" point is appended
+// client-side from `liveValue` (also already in scope).
+export async function refreshPortfolioBars(
+  tickerQuantities: Record<string, string>,
+  totalCash: number,
   days: number,
 ): Promise<PortfolioPoint[]> {
   const session = await getSession();
   if (!session) return [];
-  if (tradingAccountIds.length === 0) return [];
 
-  const { holdings, totalCash } = await getAllHoldings(tradingAccountIds);
-  if (holdings.length === 0) return [];
+  const tickers = Object.keys(tickerQuantities);
+  if (tickers.length === 0) return [];
 
-  const uniqueTickers = Array.from(new Set(holdings.map((h) => h.ticker)));
-  const [bars, quotes] = await Promise.all([
-    getPortfolioTimeSeries(holdings, totalCash, days),
-    Promise.all(uniqueTickers.map((t) => getQuote(t))),
-  ]);
+  const start = new Date(Date.now() - days * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
 
-  if (bars.length === 0) return bars;
+  const barResults = await Promise.all(
+    tickers.map((ticker) =>
+      getHistoricalBars({ ticker, timeframe: "1Day", start }),
+    ),
+  );
 
-  const priceByTicker = new Map<string, number>();
-  for (let i = 0; i < uniqueTickers.length; i++) {
-    const res = quotes[i];
-    if (res.ok && res.data.price != null) {
-      priceByTicker.set(uniqueTickers[i], res.data.price);
+  const valueByTime = new Map<number, number>();
+  for (let i = 0; i < tickers.length; i++) {
+    const res = barResults[i];
+    if (!res.ok) continue;
+    const qty = parseFloat(tickerQuantities[tickers[i]]);
+    if (!(qty > 0)) continue;
+    for (const bar of res.data.bars) {
+      valueByTime.set(bar.time, (valueByTime.get(bar.time) ?? 0) + qty * bar.close);
     }
   }
 
-  // Skip the synthetic point unless EVERY ticker has a live price; otherwise
-  // we'd silently fall back to cost basis for missing tickers and the
-  // appended point would mislead the trend.
-  if (!uniqueTickers.every((t) => priceByTicker.has(t))) return bars;
-
-  let liveValue = totalCash;
-  for (const h of holdings) {
-    const qty = parseFloat(h.quantity);
-    const price = priceByTicker.get(h.ticker);
-    // Guarded above; assertion keeps TS happy.
-    liveValue += qty * (price as number);
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const lastTime = bars[bars.length - 1].time;
-  if (nowSec <= lastTime) return bars;
-
-  return [...bars, { time: nowSec, value: liveValue }];
+  return [...valueByTime.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
 }
 
 export async function getAllTransactions(
