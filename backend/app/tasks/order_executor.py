@@ -82,6 +82,11 @@ def _process_open_orders() -> None:
         if not open_orders:
             return
 
+        # Compute TIF expiry boundaries once per cycle so `_should_expire`
+        # doesn't re-walk up to 14 days for every order. The result depends
+        # only on `now_et` and TIF, not the order itself.
+        expiry_boundaries = _compute_expiry_boundaries(now_et)
+
         # fetch one quote per ticker in a single query
         tickers = open_tickers
         quote_rows = db.query(Quote).filter(Quote.ticker.in_(tickers)).all()
@@ -182,7 +187,7 @@ def _process_open_orders() -> None:
                         order.ticker,
                         fill_price,
                     )
-            elif _should_expire(order, now_et):
+            elif _should_expire(order, now_et, expiry_boundaries):
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
                 # release reserved balance for buy orders
                 if order.side == "buy" and order.reserved_per_share is not None:
@@ -309,7 +314,50 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
     return False
 
 
-def _should_expire(order: Order, now_et: datetime) -> bool:
+def _last_trading_day_boundary(
+    now_et: datetime, h: int, m: int
+) -> datetime | None:
+    """Most recent trading-day boundary at h:m ET that has actually passed.
+
+    Walk backwards from today's boundary, capped at 14 days so a corrupt
+    clock or decade-stale order can't loop unbounded.
+    """
+    today_boundary = now_et.replace(hour=h, minute=m, second=0, microsecond=0)
+    if now_et >= today_boundary and _is_trading_day(now_et):
+        return today_boundary
+    cursor = today_boundary - timedelta(days=1)
+    for _ in range(14):
+        if _is_trading_day(cursor):
+            return cursor
+        cursor -= timedelta(days=1)
+    return None
+
+
+def _compute_expiry_boundaries(now_et: datetime) -> dict[str, datetime | None]:
+    """Compute the most recent trading-day expiry boundary for each TIF.
+
+    Hoisted out of `_should_expire` so the executor's per-cycle loop only
+    pays the 14-day-walk cost three times per cycle (once per TIF) instead
+    of K times (once per open order). The result depends only on `now_et`
+    and the TIF — not on the order — so it's safe to cache across the
+    whole cycle.
+    """
+    return {
+        "day": _last_trading_day_boundary(now_et, *MARKET_CLOSE),
+        "opg": _last_trading_day_boundary(
+            now_et, MARKET_OPEN[0], MARKET_OPEN[1] + FILL_WINDOW_MINUTES
+        ),
+        "cls": _last_trading_day_boundary(
+            now_et, MARKET_CLOSE[0], MARKET_CLOSE[1] + FILL_WINDOW_MINUTES
+        ),
+    }
+
+
+def _should_expire(
+    order: Order,
+    now_et: datetime,
+    boundaries: dict[str, datetime | None] | None = None,
+) -> bool:
     """Return True if an order has passed its TIF-specific expiry and should be cancelled.
 
     Expiry boundaries (ET):
@@ -325,33 +373,15 @@ def _should_expire(order: Order, now_et: datetime) -> bool:
     must not expire Saturday afternoon — the next eligible 16:00 boundary is
     Monday's. Same for opg/cls: a Friday-placed opg must wait through the
     weekend (and any intervening NYSE holidays) before its window opens.
+
+    `boundaries` is the precomputed map from `_compute_expiry_boundaries`.
+    Callers in the executor's hot loop pass it once per cycle to avoid
+    re-running the 14-day walk for every order. Callers (and tests)
+    that pass None get a transparent on-the-fly compute.
     """
-    tif = order.time_in_force
-    if tif == "day":
-        h, m = MARKET_CLOSE
-    elif tif == "opg":
-        h, m = MARKET_OPEN[0], MARKET_OPEN[1] + FILL_WINDOW_MINUTES  # 9:35
-    elif tif == "cls":
-        h, m = MARKET_CLOSE[0], MARKET_CLOSE[1] + FILL_WINDOW_MINUTES  # 16:05
-    else:
-        return False
-
-    today_boundary = now_et.replace(hour=h, minute=m, second=0, microsecond=0)
-
-    # Walk backwards from today's boundary to find the most recent trading-day
-    # boundary that has actually passed. Cap the walk so a corrupt clock or a
-    # decade-stale order can't loop unbounded.
-    if now_et >= today_boundary and _is_trading_day(now_et):
-        last_boundary: datetime | None = today_boundary
-    else:
-        last_boundary = None
-        cursor = today_boundary - timedelta(days=1)
-        for _ in range(14):
-            if _is_trading_day(cursor):
-                last_boundary = cursor
-                break
-            cursor -= timedelta(days=1)
-
+    if boundaries is None:
+        boundaries = _compute_expiry_boundaries(now_et)
+    last_boundary = boundaries.get(order.time_in_force)
     if last_boundary is None:
         return False
 

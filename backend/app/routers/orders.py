@@ -421,7 +421,14 @@ def list_orders(
     query = db.query(Order).filter(Order.trading_account_id == trading_account_id)
 
     if status:
-        query = query.filter(Order.status == status)
+        # Comma-separated list lets the dashboard's open-orders preview
+        # collapse its 3-status fan-out (pending,open,partially_filled)
+        # into one request per account instead of three.
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            query = query.filter(Order.status == statuses[0])
+        elif statuses:
+            query = query.filter(Order.status.in_(statuses))
     if ticker:
         query = query.filter(Order.ticker == ticker.upper().strip())
 

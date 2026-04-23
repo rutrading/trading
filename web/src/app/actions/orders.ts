@@ -44,17 +44,23 @@ export async function getOrders(
   opts?: {
     page?: number;
     perPage?: number;
-    status?: OrderStatus;
+    // Single status or a list — backend joins the list as a comma-separated
+    // value and filters with `Order.status IN (...)`. Used by the dashboard's
+    // open-orders preview to collapse a 3-status fan-out into one request.
+    status?: OrderStatus | OrderStatus[];
     ticker?: string;
   },
 ): Promise<api.ApiResult<OrdersPageResponse>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
+  const status = Array.isArray(opts?.status)
+    ? opts.status.join(",")
+    : opts?.status;
   return api.get<OrdersPageResponse>("/orders", {
     trading_account_id: tradingAccountId.toString(),
     page: (opts?.page ?? 1).toString(),
     per_page: (opts?.perPage ?? 25).toString(),
-    status: opts?.status,
+    status,
     ticker: opts?.ticker,
   });
 }
@@ -63,7 +69,7 @@ export async function getAllOrders(
   tradingAccountIds: number[],
   page = 1,
   perPage = 25,
-  status?: OrderStatus,
+  status?: OrderStatus | OrderStatus[],
 ): Promise<{ orders: Order[]; total: number; page: number; perPage: number }> {
   // Backend caps per_page at 100. Fetch all pages per account, merge, paginate.
   const BACKEND_MAX = 100;
@@ -94,24 +100,22 @@ export async function getAllOrders(
   };
 }
 
-// Open-orders preview for the dashboard. Backend `status` filter only takes
-// one value at a time, so we fan out across the three "in-flight" statuses
-// and merge by recency. Capped to `limit` per status to keep the request
-// volume bounded — the caller only needs the first few for the preview.
+// Open-orders preview for the dashboard. Single bulk request per account via
+// the backend's comma-separated `status` filter — previously this was a 3xN
+// fan-out (one per status per account) that scaled badly on the dashboard.
 export async function getOpenOrdersAcrossAccounts(
   tradingAccountIds: number[],
   limit = 5,
 ): Promise<Order[]> {
   if (tradingAccountIds.length === 0) return [];
   const OPEN_STATUSES: OrderStatus[] = ["pending", "open", "partially_filled"];
-  const buckets = await Promise.all(
-    OPEN_STATUSES.map((s) =>
-      getAllOrders(tradingAccountIds, 1, limit, s).then((r) => r.orders),
-    ),
+  const { orders } = await getAllOrders(
+    tradingAccountIds,
+    1,
+    limit,
+    OPEN_STATUSES,
   );
-  const merged = buckets.flat();
-  merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  return merged.slice(0, limit);
+  return orders.slice(0, limit);
 }
 
 export async function cancelOrder(
