@@ -46,12 +46,21 @@ function colorClass(n: number | null | undefined) {
   return n > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
 }
 
+export type InitialQuote = { price: number | null; change: number | null };
+
 export const HoldingsTable = ({
   holdings,
   totalCash,
+  initialQuotes,
 }: {
   holdings: HoldingRow[];
   totalCash: number;
+  // Server-fetched REST snapshot keyed by ticker. Backstops the WS feed:
+  // Alpaca SIP only ticks during regular hours, so without this the table
+  // shows "—" everywhere after the close. Crypto behaves the same way until
+  // the WS feed has actually pushed at least one tick — REST gives an
+  // immediate seed.
+  initialQuotes?: Record<string, InitialQuote>;
 }) => {
   const tickers = useMemo(() => holdings.map((h) => h.ticker), [holdings]);
   const liveQuotes = useQuotes(tickers);
@@ -70,16 +79,17 @@ export const HoldingsTable = ({
     );
   }
 
-  // Build per-row stats using the live quote when available, falling back to
-  // the holding's average_cost so rows still render sensible numbers while WS
-  // is connecting.
+  // Build per-row stats. WS quote wins if present; otherwise the REST seed
+  // from `initialQuotes` carries us through after-hours / pre-WS-tick
+  // gaps; final fallback is the holding's `average_cost`.
   const rows: RowStats[] = holdings.map((h) => {
     const qty = parseFloat(h.quantity);
     const avg = parseFloat(h.average_cost);
     const costBasisTotal = qty * avg;
     const live = liveQuotes.get(h.ticker);
-    const price = live?.price ?? null;
-    const change = live?.change ?? null;
+    const seed = initialQuotes?.[h.ticker];
+    const price = live?.price ?? seed?.price ?? null;
+    const change = live?.change ?? seed?.change ?? null;
     const currentValue = price != null ? price * qty : costBasisTotal;
     const todayGain = change != null ? change * qty : 0;
     const totalGain = price != null ? (price - avg) * qty : 0;
@@ -109,10 +119,8 @@ export const HoldingsTable = ({
               <TableHead>Symbol</TableHead>
               <TableHead className="text-right">Last<br />price</TableHead>
               <TableHead className="text-right">Last price<br />change</TableHead>
-              <TableHead className="text-right">Today&apos;s<br />gain/loss $</TableHead>
-              <TableHead className="text-right">Today&apos;s<br />gain/loss %</TableHead>
-              <TableHead className="text-right">Total<br />gain/loss $</TableHead>
-              <TableHead className="text-right">Total<br />gain/loss %</TableHead>
+              <TableHead className="text-right">Today&apos;s<br />gain/loss</TableHead>
+              <TableHead className="text-right">Total<br />gain/loss</TableHead>
               <TableHead className="text-right">Current<br />value</TableHead>
               <TableHead className="text-right">% of<br />account</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
@@ -131,8 +139,6 @@ export const HoldingsTable = ({
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground">—</TableCell>
-                <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
                 <TableCell className="text-right text-muted-foreground">—</TableCell>
@@ -181,16 +187,24 @@ export const HoldingsTable = ({
                     {r.change != null ? fmtSigned(r.change) : "—"}
                   </TableCell>
                   <TableCell className={cn("text-right tabular-nums", colorClass(r.todayGain))}>
-                    {r.change != null ? fmtSigned(r.todayGain) : "—"}
-                  </TableCell>
-                  <TableCell className={cn("text-right tabular-nums", colorClass(r.todayGain))}>
-                    {r.change != null ? fmtSignedPct(todayPctRow) : "—"}
+                    {r.change != null ? (
+                      <div className="flex flex-col items-end leading-tight">
+                        <span>{fmtSigned(r.todayGain)}</span>
+                        <span className="text-[10px]">{fmtSignedPct(todayPctRow)}</span>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell className={cn("text-right tabular-nums", colorClass(r.totalGain))}>
-                    {r.price != null ? fmtSigned(r.totalGain) : "—"}
-                  </TableCell>
-                  <TableCell className={cn("text-right tabular-nums", colorClass(r.totalGain))}>
-                    {r.price != null ? fmtSignedPct(totalGainPctRow) : "—"}
+                    {r.price != null ? (
+                      <div className="flex flex-col items-end leading-tight">
+                        <span>{fmtSigned(r.totalGain)}</span>
+                        <span className="text-[10px]">{fmtSignedPct(totalGainPctRow)}</span>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {fmtUsd(r.currentValue)}
@@ -213,16 +227,16 @@ export const HoldingsTable = ({
                 <TableCell />
                 <TableCell />
                 <TableCell className={cn("text-right tabular-nums", colorClass(totalTodayGain))}>
-                  {fmtSigned(totalTodayGain)}
-                </TableCell>
-                <TableCell className={cn("text-right tabular-nums", colorClass(totalTodayGain))}>
-                  {fmtSignedPct(todayGainPct)}
-                </TableCell>
-                <TableCell className={cn("text-right tabular-nums", colorClass(totalTotalGain))}>
-                  {fmtSigned(totalTotalGain)}
+                  <div className="flex flex-col items-end leading-tight">
+                    <span>{fmtSigned(totalTodayGain)}</span>
+                    <span className="text-[10px]">{fmtSignedPct(todayGainPct)}</span>
+                  </div>
                 </TableCell>
                 <TableCell className={cn("text-right tabular-nums", colorClass(totalTotalGain))}>
-                  {fmtSignedPct(totalGainPct)}
+                  <div className="flex flex-col items-end leading-tight">
+                    <span>{fmtSigned(totalTotalGain)}</span>
+                    <span className="text-[10px]">{fmtSignedPct(totalGainPct)}</span>
+                  </div>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {fmtUsd(totalPortfolioValue)}
