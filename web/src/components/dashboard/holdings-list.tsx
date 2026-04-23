@@ -6,12 +6,30 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const fmtSigned = (n: number) =>
+  n >= 0 ? `+$${fmt(n)}` : `-$${fmt(-n)}`;
+
+const tone = (n: number) =>
+  n === 0
+    ? "text-muted-foreground"
+    : n > 0
+      ? "text-emerald-600 dark:text-emerald-400"
+      : "text-red-600 dark:text-red-400";
+
 export const HoldingsList = ({
   holdings,
   accountsById,
+  // Server-fetched live prices keyed by ticker. When provided, the row
+  // displays market value (qty × current price) instead of cost basis so the
+  // dashboard's sort key (current value) matches what the user sees. Without
+  // it, falls back to cost basis (shape used by older callers).
+  priceByTicker,
+  changeByTicker,
 }: {
   holdings: HoldingRow[];
   accountsById?: Record<number, { name: string }>;
+  priceByTicker?: Map<string, number>;
+  changeByTicker?: Map<string, number>;
 }) => {
   if (holdings.length === 0) {
     return (
@@ -30,7 +48,11 @@ export const HoldingsList = ({
       {holdings.map((h) => {
         const qty = parseFloat(h.quantity);
         const avgCost = parseFloat(h.average_cost);
-        const totalCost = qty * avgCost;
+        const livePrice = priceByTicker?.get(h.ticker);
+        const liveChange = changeByTicker?.get(h.ticker);
+        const marketValue = livePrice != null ? qty * livePrice : qty * avgCost;
+        const todayGain =
+          livePrice != null && liveChange != null ? qty * liveChange : null;
         const accountName = accountsById?.[h.trading_account_id]?.name;
         return (
           <Link
@@ -46,8 +68,14 @@ export const HoldingsList = ({
               </p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium tabular-nums">${fmt(totalCost)}</p>
-              <p className="text-xs text-muted-foreground">{h.asset_class === "crypto" ? "Crypto" : "Equity"}</p>
+              <p className="text-sm font-medium tabular-nums">${fmt(marketValue)}</p>
+              <p className={`text-xs tabular-nums ${todayGain != null ? tone(todayGain) : "text-muted-foreground"}`}>
+                {todayGain != null
+                  ? `${fmtSigned(todayGain)} today`
+                  : h.asset_class === "crypto"
+                    ? "Crypto"
+                    : "Equity"}
+              </p>
             </div>
           </Link>
         );

@@ -63,6 +63,7 @@ export async function getAllOrders(
   tradingAccountIds: number[],
   page = 1,
   perPage = 25,
+  status?: OrderStatus,
 ): Promise<{ orders: Order[]; total: number; page: number; perPage: number }> {
   // Backend caps per_page at 100. Fetch all pages per account, merge, paginate.
   const BACKEND_MAX = 100;
@@ -71,7 +72,7 @@ export async function getAllOrders(
       const all: Order[] = [];
       let p = 1;
       while (true) {
-        const res = await getOrders(id, { page: p, perPage: BACKEND_MAX });
+        const res = await getOrders(id, { page: p, perPage: BACKEND_MAX, status });
         if (!res.ok) break;
         all.push(...res.data.orders);
         if (all.length >= res.data.total || res.data.orders.length === 0) break;
@@ -91,6 +92,26 @@ export async function getAllOrders(
     page,
     perPage,
   };
+}
+
+// Open-orders preview for the dashboard. Backend `status` filter only takes
+// one value at a time, so we fan out across the three "in-flight" statuses
+// and merge by recency. Capped to `limit` per status to keep the request
+// volume bounded — the caller only needs the first few for the preview.
+export async function getOpenOrdersAcrossAccounts(
+  tradingAccountIds: number[],
+  limit = 5,
+): Promise<Order[]> {
+  if (tradingAccountIds.length === 0) return [];
+  const OPEN_STATUSES: OrderStatus[] = ["pending", "open", "partially_filled"];
+  const buckets = await Promise.all(
+    OPEN_STATUSES.map((s) =>
+      getAllOrders(tradingAccountIds, 1, limit, s).then((r) => r.orders),
+    ),
+  );
+  const merged = buckets.flat();
+  merged.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  return merged.slice(0, limit);
 }
 
 export async function cancelOrder(
