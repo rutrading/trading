@@ -15,21 +15,13 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { useQuotes } from "@/components/ws-provider";
 import type { HoldingRow } from "@/app/actions/portfolio";
 import { cn } from "@/lib/utils";
-
-import { fmtPrice as fmt } from "@/lib/format";
-
-const fmtUsd = (n: number) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-const fmtSigned = (n: number) => (n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(-n)}`);
-
-const fmtSignedPct = (n: number) =>
-  `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+import {
+  fmtPrice as fmt,
+  fmtSigned,
+  fmtSignedPct,
+  fmtUsd,
+  tone as colorClass,
+} from "@/lib/format";
 
 type RowStats = {
   holding: HoldingRow;
@@ -40,11 +32,6 @@ type RowStats = {
   totalGain: number;
   costBasisTotal: number;
 };
-
-function colorClass(n: number | null | undefined) {
-  if (n == null || n === 0) return "text-muted-foreground";
-  return n > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400";
-}
 
 export type InitialQuote = { price: number | null; change: number | null };
 

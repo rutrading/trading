@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { OrdersTable, type FormattedOrderDates } from "@/components/orders/orders-table";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllOrders } from "@/app/actions/orders";
+import { resolveAccountScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Orders - R U Trading" };
 
@@ -31,20 +32,10 @@ export default async function OrdersPage({ searchParams }: Props) {
   const page = Math.max(1, Number(pageParam) || 1);
 
   const accounts = await getAccounts();
-  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
-  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
-  for (const m of accounts) {
-    accountsById[m.tradingAccount.id] = {
-      name: m.tradingAccount.name,
-      type: m.tradingAccount.type,
-    };
-  }
-
-  const scopedId =
-    accountParam && accountParam !== "all" ? Number(accountParam) : null;
-  const activeIds =
-    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
-  const scopedAccount = scopedId ? accountsById[scopedId] : null;
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+    accounts,
+    accountParam,
+  );
 
   const { orders, total, perPage } = await getAllOrders(activeIds, page);
 

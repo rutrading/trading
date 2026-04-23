@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { TransactionHistory } from "@/components/portfolio/transaction-history";
 import { getAccounts } from "@/app/actions/auth";
-import { getAllHoldings, getAllTransactions } from "@/app/actions/portfolio";
+import { getAllTransactions } from "@/app/actions/portfolio";
+import { resolveAccountScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Activity - R U Trading" };
 
@@ -12,23 +13,23 @@ export default async function ActivityPage({ searchParams }: Props) {
   const page = Math.max(1, Number(pageParam) || 1);
 
   const accounts = await getAccounts();
-  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
-  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+    accounts,
+    accountParam,
+  );
+
+  // Build the cashByAccount map from `tradingAccount.balance` rows we
+  // already loaded above. The previous shape called `getAllHoldings` here
+  // just to read its `cashByAccount` field — that fanned out per-account
+  // /holdings requests and discarded the entire holdings array on the
+  // floor. The trading_account row already carries the authoritative cash
+  // balance, so derive it directly.
+  const cashByAccount: Record<number, string> = {};
   for (const m of accounts) {
-    accountsById[m.tradingAccount.id] = {
-      name: m.tradingAccount.name,
-      type: m.tradingAccount.type,
-    };
+    if (activeIds.includes(m.tradingAccount.id)) {
+      cashByAccount[m.tradingAccount.id] = String(m.tradingAccount.balance);
+    }
   }
-
-  const scopedId =
-    accountParam && accountParam !== "all" ? Number(accountParam) : null;
-  const activeIds =
-    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
-  const scopedAccount = scopedId ? accountsById[scopedId] : null;
-
-  // Need the cashByAccount map for the running-cash walk on transactions.
-  const { cashByAccount } = await getAllHoldings(activeIds);
   const allTxns = await getAllTransactions(activeIds, cashByAccount, page);
 
   return (

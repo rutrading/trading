@@ -1,6 +1,5 @@
-// This page was split into /holdings and /activity. The old combined view is
-// kept here as a permanent redirect so bookmarks and in-code links don't 404.
-// Remove once we're confident nothing still points at /portfolio.
+// /portfolio was split into /holdings and /activity. Kept here as a permanent
+// redirect so any external bookmarks or stale links don't 404.
 
 import { redirect } from "next/navigation";
 
@@ -11,68 +10,3 @@ export default async function PortfolioPage({ searchParams }: Props) {
   const qs = account ? `?account=${account}` : "";
   redirect(`/holdings${qs}`);
 }
-
-/*
-Original combined-view implementation — kept commented for reference.
-
-import type { Metadata } from "next";
-import { HoldingsTable } from "@/components/portfolio/holdings-table";
-import { TransactionHistory } from "@/components/portfolio/transaction-history";
-import { getAccounts } from "@/app/actions/auth";
-import { getAllHoldings, getAllTransactions } from "@/app/actions/portfolio";
-
-export const metadata: Metadata = { title: "Portfolio - R U Trading" };
-
-export default async function PortfolioPage({ searchParams }: Props) {
-  const { page: pageParam, account: accountParam } = await searchParams;
-  const page = Math.max(1, Number(pageParam) || 1);
-
-  const accounts = await getAccounts();
-  const allAccountIds = accounts.map((m) => m.tradingAccount.id);
-  const accountsById: Record<number, { name: string; type: "investment" | "crypto" }> = {};
-  for (const m of accounts) {
-    accountsById[m.tradingAccount.id] = {
-      name: m.tradingAccount.name,
-      type: m.tradingAccount.type,
-    };
-  }
-
-  const scopedId =
-    accountParam && accountParam !== "all" ? Number(accountParam) : null;
-  const activeIds =
-    scopedId && allAccountIds.includes(scopedId) ? [scopedId] : allAccountIds;
-  const scopedAccount = scopedId ? accountsById[scopedId] : null;
-
-  const allHoldings = await getAllHoldings(activeIds);
-  const allTxns = await getAllTransactions(
-    activeIds,
-    allHoldings.cashByAccount,
-    page,
-  );
-
-  return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Portfolio</h1>
-        <p className="text-sm text-muted-foreground">
-          {scopedAccount
-            ? `Holdings and transactions for ${scopedAccount.name}.`
-            : "Holdings and transactions across all of your accounts."}
-        </p>
-      </div>
-      <HoldingsTable
-        holdings={allHoldings.holdings}
-        accountsById={accountsById}
-      />
-      <TransactionHistory
-        transactions={allTxns.transactions}
-        accountsById={scopedAccount ? undefined : accountsById}
-        page={allTxns.page}
-        perPage={allTxns.perPage}
-        total={allTxns.total}
-        scopedAccountId={scopedId ?? undefined}
-      />
-    </div>
-  );
-}
-*/

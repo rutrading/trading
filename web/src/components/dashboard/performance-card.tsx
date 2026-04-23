@@ -1,26 +1,6 @@
 import { ArrowUpRight, ArrowDownRight } from "@phosphor-icons/react/ssr";
 import { cn } from "@/lib/utils";
-
-const fmtUsd = (n: number) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-const fmtSigned = (n: number) =>
-  n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(-n)}`;
-
-const fmtSignedPct = (n: number) =>
-  `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
-
-const tone = (n: number) =>
-  n === 0
-    ? "text-muted-foreground"
-    : n > 0
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-red-600 dark:text-red-400";
+import { fmtSigned, fmtSignedPct, tone } from "@/lib/format";
 
 const Stat = ({
   label,

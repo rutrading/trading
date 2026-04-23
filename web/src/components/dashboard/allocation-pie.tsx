@@ -3,13 +3,7 @@
 // the math is trivial: each slice is a circle stroked with the right
 // dasharray/offset to advance around the ring.
 
-const fmtUsd = (n: number) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
+import { fmtUsd } from "@/lib/format";
 
 type Slice = {
   label: string;
@@ -111,7 +105,7 @@ export const AllocationPie = ({
                   <span className="text-foreground">{slice.label}</span>
                 </div>
                 <div className="flex items-baseline gap-2 tabular-nums">
-                  <span className="text-foreground">{fmtUsd(slice.value)}</span>
+                  <span className="text-foreground">{fmtUsd(slice.value, 0)}</span>
                   <span className="text-xs text-muted-foreground">
                     {pct.toFixed(1)}%
                   </span>

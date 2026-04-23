@@ -2,19 +2,7 @@ import Link from "next/link";
 import { Briefcase } from "@phosphor-icons/react/ssr";
 import type { HoldingRow } from "@/app/actions/portfolio";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
-
-const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const fmtSigned = (n: number) =>
-  n >= 0 ? `+$${fmt(n)}` : `-$${fmt(-n)}`;
-
-const tone = (n: number) =>
-  n === 0
-    ? "text-muted-foreground"
-    : n > 0
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-red-600 dark:text-red-400";
+import { fmtSigned, fmtUsd, tone } from "@/lib/format";
 
 export const HoldingsList = ({
   holdings,
@@ -63,13 +51,13 @@ export const HoldingsList = ({
             <div>
               <p className="text-sm font-medium">{h.ticker}</p>
               <p className="text-xs text-muted-foreground">
-                {qty} shares @ ${fmt(avgCost)}
+                {qty} shares @ {fmtUsd(avgCost)}
                 {accountName ? ` · ${accountName}` : ""}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-sm font-medium tabular-nums">${fmt(marketValue)}</p>
-              <p className={`text-xs tabular-nums ${todayGain != null ? tone(todayGain) : "text-muted-foreground"}`}>
+              <p className="text-sm font-medium tabular-nums">{fmtUsd(marketValue)}</p>
+              <p className={`text-xs tabular-nums ${tone(todayGain)}`}>
                 {todayGain != null
                   ? `${fmtSigned(todayGain)} today`
                   : h.asset_class === "crypto"
