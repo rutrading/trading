@@ -5,6 +5,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -36,6 +37,26 @@ export const orderStatusEnum = pgEnum("order_status", [
   "filled",
   "cancelled",
   "rejected",
+]);
+
+export const strategyTypeEnum = pgEnum("strategy_type", ["ema_crossover"]);
+
+export const strategyStatusEnum = pgEnum("strategy_status", [
+  "active",
+  "paused",
+  "disabled",
+]);
+
+export const strategySignalEnum = pgEnum("strategy_signal", [
+  "buy",
+  "sell",
+  "hold",
+]);
+
+export const strategyActionEnum = pgEnum("strategy_action", [
+  "place_buy",
+  "place_sell",
+  "none",
 ]);
 
 export const user = pgTable("user", {
@@ -283,6 +304,71 @@ export const order = pgTable(
   ],
 );
 
+export const strategy = pgTable(
+  "strategy",
+  {
+    id: serial("id").primaryKey(),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    strategyType: strategyTypeEnum("strategy_type").notNull().default("ema_crossover"),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
+    timeframe: text("timeframe").notNull().default("1Day"),
+    paramsJson: jsonb("params_json").$type<Record<string, unknown>>().notNull(),
+    status: strategyStatusEnum("status").notNull().default("active"),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastSignalAt: timestamp("last_signal_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("strategy_trading_account_id_idx").on(table.tradingAccountId),
+    index("strategy_ticker_idx").on(table.ticker),
+    index("strategy_status_idx").on(table.status),
+    uniqueIndex("strategy_account_type_ticker_idx").on(
+      table.tradingAccountId,
+      table.strategyType,
+      table.ticker,
+    ),
+  ],
+);
+
+export const strategyRun = pgTable(
+  "strategy_run",
+  {
+    id: serial("id").primaryKey(),
+    strategyId: integer("strategy_id")
+      .notNull()
+      .references(() => strategy.id, { onDelete: "cascade" }),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    ticker: text("ticker")
+      .notNull()
+      .references(() => symbol.ticker),
+    runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
+    signal: strategySignalEnum("signal").notNull().default("hold"),
+    action: strategyActionEnum("action").notNull().default("none"),
+    reason: text("reason").notNull(),
+    inputsJson: jsonb("inputs_json").$type<Record<string, unknown>>().notNull(),
+    orderId: integer("order_id").references(() => order.id, { onDelete: "set null" }),
+    error: text("error"),
+  },
+  (table) => [
+    index("strategy_run_strategy_id_idx").on(table.strategyId),
+    index("strategy_run_trading_account_id_idx").on(table.tradingAccountId),
+    index("strategy_run_run_at_idx").on(table.runAt),
+  ],
+);
+
 export const transaction = pgTable(
   "transaction",
   {
@@ -392,6 +478,8 @@ export const tradingAccountRelations = relations(
   tradingAccount,
   ({ many }) => ({
     members: many(accountMember),
+    strategies: many(strategy),
+    strategyRuns: many(strategyRun),
     orders: many(order),
     transactions: many(transaction),
     holdings: many(holding),
@@ -410,10 +498,37 @@ export const symbolRelations = relations(symbol, ({ one, many }) => ({
   company: one(company),
   quote: one(quote),
   dailyBars: many(dailyBar),
+  strategies: many(strategy),
+  strategyRuns: many(strategyRun),
   orders: many(order),
   transactions: many(transaction),
   holdings: many(holding),
   watchlistItems: many(watchlistItem),
+}));
+
+export const strategyRelations = relations(strategy, ({ one, many }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [strategy.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  symbol: one(symbol, { fields: [strategy.ticker], references: [symbol.ticker] }),
+  runs: many(strategyRun),
+}));
+
+export const strategyRunRelations = relations(strategyRun, ({ one }) => ({
+  strategy: one(strategy, {
+    fields: [strategyRun.strategyId],
+    references: [strategy.id],
+  }),
+  tradingAccount: one(tradingAccount, {
+    fields: [strategyRun.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  symbol: one(symbol, {
+    fields: [strategyRun.ticker],
+    references: [symbol.ticker],
+  }),
+  order: one(order, { fields: [strategyRun.orderId], references: [order.id] }),
 }));
 
 export const companyRelations = relations(company, ({ one }) => ({

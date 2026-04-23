@@ -7,6 +7,12 @@ from app.schemas.orders import (
 )
 from app.schemas.quotes import QuoteData, QuoteResponse
 from app.schemas.transactions import TransactionResponse, TransactionsResponse
+from app.schemas.strategies import (
+    StrategyListResponse,
+    StrategyResponse,
+    StrategyRunResponse,
+    StrategyRunsPageResponse,
+)
 from app.schemas.watchlist import (
     WatchlistItemResponse,
     WatchlistMutationResponse,
@@ -25,6 +31,10 @@ __all__ = [
     "QuoteResponse",
     "TransactionResponse",
     "TransactionsResponse",
+    "StrategyListResponse",
+    "StrategyResponse",
+    "StrategyRunResponse",
+    "StrategyRunsPageResponse",
     "WatchlistItemResponse",
     "WatchlistMutationResponse",
     "WatchlistQuoteResponse",

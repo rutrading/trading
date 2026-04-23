@@ -25,7 +25,7 @@ function buildUrl(path: string, params?: QueryParams): string {
 }
 
 async function request<T>(
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   params?: QueryParams,
   body?: JsonBody,
@@ -115,6 +115,10 @@ export function postJson<T>(path: string, body: JsonBody, params?: QueryParams) 
  */
 export function put<T>(path: string, params?: QueryParams) {
   return request<T>("PUT", path, params);
+}
+
+export function patchJson<T>(path: string, body: JsonBody, params?: QueryParams) {
+  return request<T>("PATCH", path, params, body);
 }
 
 /**

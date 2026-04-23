@@ -9,7 +9,10 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "@/lib/toasts";
 
 const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const validateQuantity = (value: string) => {
   const trimmed = value.trim();
@@ -32,14 +35,22 @@ type OrderFormProps = {
   assetClass: "us_equity" | "crypto";
 };
 
-export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: OrderFormProps) => {
+export const OrderForm = ({
+  ticker,
+  price,
+  tradingAccountId,
+  assetClass,
+}: OrderFormProps) => {
   const [orderSide, setOrderSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">("market");
+  const [orderType, setOrderType] = useState<"market" | "limit" | "stop">(
+    "market",
+  );
   const [quantity, setQuantity] = useState("");
   const [limitPrice, setLimitPrice] = useState("");
   const [qtyError, setQtyError] = useState<string | null>(null);
 
-  const qty = qtyError === null && quantity.trim() ? Number(quantity.trim()) : 0;
+  const qty =
+    qtyError === null && quantity.trim() ? Number(quantity.trim()) : 0;
   const estimatedTotal = qty * price;
 
   const handlePlaceOrder = async () => {
@@ -74,7 +85,9 @@ export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: Order
 
   return (
     <div className="rounded-2xl bg-accent p-6">
-      <h2 className="mb-4 text-sm font-medium text-muted-foreground">Place Order</h2>
+      <h2 className="mb-4 text-sm font-medium text-muted-foreground">
+        Place Order
+      </h2>
       <div className="space-y-4 rounded-xl bg-card p-4">
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
           <button
@@ -100,7 +113,7 @@ export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: Order
         </div>
 
         <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
-          {["market", "limit", "stop"].map((type) => (
+          {(["market", "limit", "stop"] as const).map((type) => (
             <button
               key={type}
               onClick={() => setOrderType(type)}
@@ -117,7 +130,9 @@ export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: Order
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="qty" className="text-xs">Quantity</Label>
+            <Label htmlFor="qty" className="text-xs">
+              Quantity
+            </Label>
             <Input
               id="qty"
               type="number"
@@ -159,7 +174,9 @@ export const OrderForm = ({ ticker, price, tradingAccountId, assetClass }: Order
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Est. Total</span>
-            <span className="font-medium tabular-nums">${fmt(estimatedTotal)}</span>
+            <span className="font-medium tabular-nums">
+              ${fmt(estimatedTotal)}
+            </span>
           </div>
         </div>
 

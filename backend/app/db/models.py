@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     UniqueConstraint,
@@ -71,6 +72,32 @@ order_status_enum = Enum(
     name="order_status",
     create_type=False,
 )
+strategy_type_enum = Enum(
+    "ema_crossover",
+    name="strategy_type",
+    create_type=False,
+)
+strategy_status_enum = Enum(
+    "active",
+    "paused",
+    "disabled",
+    name="strategy_status",
+    create_type=False,
+)
+strategy_signal_enum = Enum(
+    "buy",
+    "sell",
+    "hold",
+    name="strategy_signal",
+    create_type=False,
+)
+strategy_action_enum = Enum(
+    "place_buy",
+    "place_sell",
+    "none",
+    name="strategy_action",
+    create_type=False,
+)
 
 
 class User(Base):
@@ -110,6 +137,8 @@ class Symbol(Base):
     )
     daily_bars: Mapped[list["DailyBar"]] = relationship(back_populates="symbol")
     orders: Mapped[list["Order"]] = relationship(back_populates="symbol")
+    strategies: Mapped[list["Strategy"]] = relationship(back_populates="symbol")
+    strategy_runs: Mapped[list["StrategyRun"]] = relationship(back_populates="symbol")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="symbol")
     holdings: Mapped[list["Holding"]] = relationship(back_populates="symbol")
     watchlist_items: Mapped[list["WatchlistItem"]] = relationship(
@@ -208,7 +237,9 @@ class TradingAccount(Base):
     name: Mapped[str] = mapped_column(String)
     type: Mapped[str] = mapped_column(account_type_enum)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("100000"))
-    reserved_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    reserved_balance: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("0")
+    )
     is_joint: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
@@ -219,6 +250,12 @@ class TradingAccount(Base):
     )
 
     orders: Mapped[list["Order"]] = relationship(back_populates="trading_account")
+    strategies: Mapped[list["Strategy"]] = relationship(
+        back_populates="trading_account"
+    )
+    strategy_runs: Mapped[list["StrategyRun"]] = relationship(
+        back_populates="trading_account"
+    )
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="trading_account"
     )
@@ -254,7 +291,9 @@ class Order(Base):
     )
     status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
-    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(14, 6), nullable=True, default=None)
+    reserved_per_share: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 6), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
@@ -266,6 +305,85 @@ class Order(Base):
     trading_account: Mapped["TradingAccount"] = relationship(back_populates="orders")
     symbol: Mapped["Symbol"] = relationship(back_populates="orders")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="order")
+
+
+class Strategy(Base):
+    __tablename__ = "strategy"
+    __table_args__ = (
+        Index("strategy_trading_account_id_idx", "trading_account_id"),
+        Index("strategy_ticker_idx", "ticker"),
+        Index("strategy_status_idx", "status"),
+        UniqueConstraint(
+            "trading_account_id",
+            "strategy_type",
+            "ticker",
+            name="strategy_account_type_ticker_idx",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(String)
+    strategy_type: Mapped[str] = mapped_column(
+        strategy_type_enum, default="ema_crossover"
+    )
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+    timeframe: Mapped[str] = mapped_column(String, default="1Day")
+    params_json: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(strategy_status_enum, default="active")
+    last_run_at: Mapped[datetime | None] = mapped_column(default=None)
+    last_signal_at: Mapped[datetime | None] = mapped_column(default=None)
+    last_error: Mapped[str | None] = mapped_column(String, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    trading_account: Mapped["TradingAccount"] = relationship(
+        back_populates="strategies"
+    )
+    symbol: Mapped["Symbol"] = relationship(back_populates="strategies")
+    runs: Mapped[list["StrategyRun"]] = relationship(back_populates="strategy")
+
+
+class StrategyRun(Base):
+    __tablename__ = "strategy_run"
+    __table_args__ = (
+        Index("strategy_run_strategy_id_idx", "strategy_id"),
+        Index("strategy_run_trading_account_id_idx", "trading_account_id"),
+        Index("strategy_run_run_at_idx", "run_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    strategy_id: Mapped[int] = mapped_column(
+        ForeignKey("strategy.id", ondelete="CASCADE")
+    )
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+    run_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    signal: Mapped[str] = mapped_column(strategy_signal_enum, default="hold")
+    action: Mapped[str] = mapped_column(strategy_action_enum, default="none")
+    reason: Mapped[str] = mapped_column(String)
+    inputs_json: Mapped[dict] = mapped_column(JSON)
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order.id", ondelete="SET NULL"),
+        default=None,
+    )
+    error: Mapped[str | None] = mapped_column(String, default=None)
+
+    strategy: Mapped["Strategy"] = relationship(back_populates="runs")
+    trading_account: Mapped["TradingAccount"] = relationship(
+        back_populates="strategy_runs"
+    )
+    symbol: Mapped["Symbol"] = relationship(back_populates="strategy_runs")
+    order: Mapped["Order | None"] = relationship()
 
 
 class Transaction(Base):
@@ -315,7 +433,9 @@ class Holding(Base):
     ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
     asset_class: Mapped[str] = mapped_column(asset_class_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
-    reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
+    reserved_quantity: Mapped[Decimal] = mapped_column(
+        Numeric(16, 8), default=Decimal("0")
+    )
     average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)

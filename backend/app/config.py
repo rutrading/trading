@@ -21,6 +21,8 @@ class Config:
     fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
     quote_staleness_seconds: int = 60
     quote_flush_interval: int = 30
+    strategy_poll_interval: int = 30
+    strategy_executor_enabled: int = 1
     log_level: str = "INFO"
 
 

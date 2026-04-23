@@ -1,16 +1,33 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const MIGRATIONS_DIR = join(import.meta.dir, "..", "migrations");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, "..", "migrations");
 
 const rewrite = (sql: string): string => {
   let out = sql;
 
-  out = out.replace(/CREATE TABLE (?!IF NOT EXISTS)"/g, 'CREATE TABLE IF NOT EXISTS "');
-  out = out.replace(/CREATE INDEX (?!IF NOT EXISTS)"/g, 'CREATE INDEX IF NOT EXISTS "');
-  out = out.replace(/CREATE UNIQUE INDEX (?!IF NOT EXISTS)"/g, 'CREATE UNIQUE INDEX IF NOT EXISTS "');
-  out = out.replace(/ADD COLUMN (?!IF NOT EXISTS)"/g, 'ADD COLUMN IF NOT EXISTS "');
-  out = out.replace(/ADD VALUE (?!IF NOT EXISTS)'/g, "ADD VALUE IF NOT EXISTS '");
+  out = out.replace(
+    /CREATE TABLE (?!IF NOT EXISTS)"/g,
+    'CREATE TABLE IF NOT EXISTS "',
+  );
+  out = out.replace(
+    /CREATE INDEX (?!IF NOT EXISTS)"/g,
+    'CREATE INDEX IF NOT EXISTS "',
+  );
+  out = out.replace(
+    /CREATE UNIQUE INDEX (?!IF NOT EXISTS)"/g,
+    'CREATE UNIQUE INDEX IF NOT EXISTS "',
+  );
+  out = out.replace(
+    /ADD COLUMN (?!IF NOT EXISTS)"/g,
+    'ADD COLUMN IF NOT EXISTS "',
+  );
+  out = out.replace(
+    /ADD VALUE (?!IF NOT EXISTS)'/g,
+    "ADD VALUE IF NOT EXISTS '",
+  );
   out = out.replace(/DROP TABLE (?!IF EXISTS)"/g, 'DROP TABLE IF EXISTS "');
   out = out.replace(/DROP TYPE (?!IF EXISTS)"/g, 'DROP TYPE IF EXISTS "');
 
