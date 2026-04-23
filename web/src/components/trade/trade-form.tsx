@@ -548,8 +548,11 @@ export function TradeForm({
 
           <Separator />
 
-          {/* Row 3: Action / Qty / Order type / prices */}
-          <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr]">
+          {/* Row 3: Action / Qty / Order type / prices.
+              Quantity gets 2fr because it holds an Input + a w-28 unit
+              Select side-by-side; at 1fr the Input collapsed to ~20px wide
+              and only the last digits of a four-digit amount were visible. */}
+          <div className="grid gap-4 md:grid-cols-[1fr_2fr_1fr_1fr_1fr]">
             <Field>
               <FieldLabel>Action</FieldLabel>
               <Select value={side} onValueChange={(v) => setSide(v as Side)}>

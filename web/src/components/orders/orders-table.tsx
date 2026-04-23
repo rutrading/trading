@@ -307,6 +307,7 @@ export const OrdersTable = ({
                                 handleCancel(o.id, o.ticker);
                               }}
                               aria-label={`Cancel ${o.ticker} order`}
+                              className="h-7 px-3 text-xs"
                             >
                               {cancellingId === o.id && (
                                 <ArrowClockwise className="size-3 animate-spin" />
