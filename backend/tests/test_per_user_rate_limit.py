@@ -109,6 +109,15 @@ class TestPerUserRateLimiterUnit:
 class TestPlaceOrderRateLimit:
     """Integration: hammering POST /orders from the same user eventually 429s."""
 
+    @pytest.fixture(autouse=True)
+    def _force_market_open(self, monkeypatch):
+        # The synchronous market path is now gated on regular hours. These
+        # tests submit market+gtc orders to exercise the rate limiter — pin
+        # the clock so they pass regardless of when the suite runs.
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: True
+        )
+
     def _seed(self, factory):
         with factory() as db:
             seed_user(db, "user-a")

@@ -141,6 +141,31 @@ async def place_order(
     # instead of filling instantly the way a plain market order does.
     deferred_market = payload.order_type == "market" and time_in_force in ("opg", "cls")
 
+    # Reject `market` + `day`/`gtc` on US equities outside regular hours.
+    # The synchronous market path below would otherwise fill against the
+    # last cached `Quote.price` (which off-hours is the prior session's
+    # close) — turning a "buy at the market" into "fill instantly at a
+    # potentially many-hours-stale price." The Trade form already hides
+    # this combo in its TIF dropdown, but a direct API call (curl, replay,
+    # custom client) bypasses that — defense has to live here. Crypto
+    # bypasses the gate (24/7 markets) and `opg`/`cls` defer to the
+    # executor's session-boundary handling, so they're untouched.
+    if (
+        payload.asset_class == "us_equity"
+        and payload.order_type == "market"
+        and not deferred_market
+        and not is_stock_market_open(datetime.now(timezone.utc).astimezone(_ET))
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Market orders on US equities can only execute during regular "
+                "hours (9:30–16:00 ET on weekdays, non-holidays). Use 'opg' "
+                "or 'cls' time-in-force to fill at the next session boundary, "
+                "or place a limit/stop order to wait for a target price."
+            ),
+        )
+
     # Compute ATR before acquiring the trading_account row lock. compute_atr
     # can fall through to a synchronous httpx call to Alpaca with a 10s
     # timeout when the DB has fewer than ATR_PERIODS+1 daily bars cached for

@@ -201,6 +201,15 @@ class TestTransactionsIDOR:
 
 
 class TestPlaceMarketOrder:
+    @pytest.fixture(autouse=True)
+    def _force_market_open(self, monkeypatch):
+        # The synchronous market-fill path is now gated on regular hours.
+        # These tests cover the during-hours behavior — pin the clock so the
+        # suite passes regardless of when it runs.
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: True
+        )
+
     def test_market_order_uses_quote_as_reference_price_and_fills(self, session_factory):
         with session_factory() as db:
             seed_user(db, "user-a")
@@ -812,6 +821,165 @@ class TestTransactionTradeColumnsCheckConstraint:
                 total="100",
             )
             assert txn.id is not None
+
+
+class TestStockMarketHoursGuard:
+    """`market` + `day`/`gtc` on US equities must be rejected when the
+    market is closed. Without this guard the synchronous fill path runs
+    against the last cached `Quote.price`, which after hours is the prior
+    session's close — so a "buy at the market" silently fills at a stale
+    price. The Trade form already hides the combo client-side, but a
+    direct API caller (curl, replay, custom client) bypasses that, so
+    defense has to live in `place_order`. Tests stub
+    `is_stock_market_open` to make the gate deterministic regardless of
+    when the suite runs.
+    """
+
+    def _seed_for_market_buy(self, session_factory):
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=150.0)
+            seed_daily_bar(db, "AAPL", volume=10_000_000)
+            account = seed_account(db, "user-a", balance="10000")
+            return account.id
+
+    @pytest.mark.parametrize("tif", ["day", "gtc"])
+    def test_market_off_hours_rejected_for_stock(
+        self, session_factory, monkeypatch, tif
+    ):
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: False
+        )
+        account_id = self._seed_for_market_buy(session_factory)
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": tif,
+            "quantity": "1",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"].lower()
+        assert "regular hours" in detail
+        # No order persisted, balance untouched.
+        with session_factory() as db:
+            assert db.query(Order).count() == 0
+            account = (
+                db.query(TradingAccount)
+                .filter(TradingAccount.id == account_id)
+                .first()
+            )
+            assert account.balance == Decimal("10000")
+            assert account.reserved_balance == Decimal("0")
+
+    @pytest.mark.parametrize("tif", ["day", "gtc"])
+    def test_market_during_hours_still_fills_for_stock(
+        self, session_factory, monkeypatch, tif
+    ):
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: True
+        )
+        account_id = self._seed_for_market_buy(session_factory)
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": tif,
+            "quantity": "1",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "filled"
+        assert Decimal(body["reference_price"]) == Decimal("150")
+
+    def test_market_off_hours_works_for_crypto(
+        self, session_factory, monkeypatch
+    ):
+        # Crypto is 24/7. Even if `is_stock_market_open` returns False the
+        # guard must let crypto market orders through.
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: False
+        )
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "BTC/USD", asset_class="crypto")
+            seed_quote(db, "BTC/USD", price=50_000.0)
+            seed_daily_bar(db, "BTC/USD", volume=1_000)
+            account = seed_account(
+                db, "user-a", balance="100000", type_="crypto"
+            )
+            account_id = account.id
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "BTC/USD",
+            "asset_class": "crypto",
+            "side": "buy",
+            "order_type": "market",
+            # Frontend sends gtc; backend coerces to gtc anyway for crypto.
+            "time_in_force": "gtc",
+            "quantity": "0.01",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "filled"
+
+    def test_market_opg_off_hours_defers_for_stock(
+        self, session_factory, monkeypatch
+    ):
+        # `market` + `opg`/`cls` is the deferred-market path: reservation
+        # is taken at placement time and the executor fills at the next
+        # session boundary. Off-hours must NOT trigger the new guard,
+        # since the synchronous fill path is skipped entirely.
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: False
+        )
+        # Pin ATR so the reservation math doesn't hit Alpaca.
+        monkeypatch.setattr(
+            "app.routers.orders.compute_atr", lambda _ticker, _db: Decimal("0")
+        )
+        account_id = self._seed_for_market_buy(session_factory)
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": "opg",
+            "quantity": "1",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "open"
+        # Reservation taken at placement time so the buying-power check is
+        # honest when the open eventually fires.
+        with session_factory() as db:
+            account = (
+                db.query(TradingAccount)
+                .filter(TradingAccount.id == account_id)
+                .first()
+            )
+            assert account.reserved_balance > Decimal("0")
 
 
 class TestMockOrderResponseParity:
