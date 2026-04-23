@@ -66,6 +66,23 @@ async function sendWithRetry(
   };
 }
 
+export async function sendVerifyEmail(
+  resend: Resend,
+  { userEmail, verifyLink }: { userEmail: string; verifyLink: string },
+) {
+  return sendWithRetry(
+    resend,
+    {
+      from: EMAIL_FROM,
+      to: userEmail,
+      subject: "Verify your email",
+      text: `Verify your email: ${verifyLink}`,
+      tags: [{ name: "category", value: "verify-email" }],
+    },
+    `rutrading:verify:${userEmail}:${verifyLink}`,
+  );
+}
+
 export async function sendResetPasswordEmail(
   resend: Resend,
   { userEmail, resetLink }: { userEmail: string; resetLink: string },

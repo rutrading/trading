@@ -2,7 +2,7 @@ import type { CreateEmailOptions } from "resend";
 
 type MockableEmailOptions = CreateEmailOptions & {
   _mockContext?: {
-    type: "reset" | "verification" | "welcome" | "change-email";
+    type: "reset" | "verification" | "welcome" | "change-email" | "verify";
     data: Record<string, unknown>;
   };
 };

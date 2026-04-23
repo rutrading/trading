@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from app.auth import SKIP_AUTH, get_current_user
+from app.auth import get_current_user
 from app.db import Order, get_db
 from app.db.models import DailyBar, Holding, Quote, TradingAccount
 from app.dependencies import get_trading_account
@@ -96,9 +96,6 @@ def place_order(
     db: Session = Depends(get_db),
 ):
     """Place a new order (market, limit, stop, or stop-limit)."""
-
-    if SKIP_AUTH:
-        return _mock_order_response(payload)
 
     # verify the user is a member of this trading account
     account = get_trading_account(
@@ -283,9 +280,6 @@ def list_orders(
 ):
     """List orders for a trading account with optional filters and pagination."""
 
-    if SKIP_AUTH:
-        return OrdersPageResponse(orders=[], total=0, page=page, per_page=per_page)
-
     # verify membership
     get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
 
@@ -320,9 +314,6 @@ def get_order(
 ):
     """Get a single order with its transaction history."""
 
-    if SKIP_AUTH:
-        raise HTTPException(status_code=404, detail="Order not found")
-
     order = _get_order_or_404(db, order_id)
 
     # verify the user owns this order's account
@@ -345,9 +336,6 @@ def cancel_order(
     db: Session = Depends(get_db),
 ):
     """Cancel an open or partially-filled order."""
-
-    if SKIP_AUTH:
-        raise HTTPException(status_code=404, detail="Order not found")
 
     order = _get_order_or_404(db, order_id)
 

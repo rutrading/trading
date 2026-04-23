@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   date,
@@ -15,6 +15,13 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
+
+export const experienceLevelEnum = pgEnum("experience_level", [
+  "beginner",
+  "intermediate",
+  "advanced",
+  "expert",
+]);
 
 export const assetClassEnum = pgEnum("asset_class", ["us_equity", "crypto"]);
 
@@ -126,6 +133,9 @@ export const tradingAccount = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
     type: accountTypeEnum("type").notNull(),
+    experienceLevel: experienceLevelEnum("experience_level")
+      .notNull()
+      .default("beginner"),
     balance: numeric("balance", { precision: 14, scale: 2 })
       .notNull()
       .default("100000"),
@@ -179,6 +189,14 @@ export const symbol = pgTable(
   (table) => [
     index("symbol_asset_class_idx").on(table.assetClass),
     index("symbol_name_idx").on(table.name),
+    index("symbol_name_trgm_idx").using(
+      "gin",
+      sql`${table.name} gin_trgm_ops`,
+    ),
+    index("symbol_ticker_pattern_idx").using(
+      "btree",
+      sql`${table.ticker} text_pattern_ops`,
+    ),
   ],
 );
 

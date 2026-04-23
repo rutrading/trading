@@ -71,6 +71,14 @@ order_status_enum = Enum(
     name="order_status",
     create_type=False,
 )
+experience_level_enum = Enum(
+    "beginner",
+    "intermediate",
+    "advanced",
+    "expert",
+    name="experience_level",
+    create_type=False,
+)
 
 
 class User(Base):
@@ -207,6 +215,9 @@ class TradingAccount(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String)
     type: Mapped[str] = mapped_column(account_type_enum)
+    experience_level: Mapped[str] = mapped_column(
+        experience_level_enum, default="beginner"
+    )
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("100000"))
     reserved_balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
     is_joint: Mapped[bool] = mapped_column(Boolean, default=False)

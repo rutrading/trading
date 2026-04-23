@@ -2,10 +2,12 @@
 
 import { cache } from "react";
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
+import { del, put } from "@/lib/api";
+import { BALANCE_MAP, type Experience } from "@/lib/experience";
 
 type ActionResult = { success: true } | { success: false; error: string };
 
@@ -38,17 +40,10 @@ export async function updateProfile(name: string): Promise<ActionResult> {
   }
 }
 
-const BALANCE_MAP = {
-  beginner: "100000",
-  intermediate: "50000",
-  advanced: "25000",
-  expert: "10000",
-} as const;
-
 export async function createAccount(
   name: string,
   type: "investment" | "crypto",
-  experience: "beginner" | "intermediate" | "advanced" | "expert",
+  experience: Experience,
   partnerEmail?: string,
 ): Promise<ActionResult> {
   const session = await getSession();
@@ -78,7 +73,7 @@ export async function createAccount(
   try {
     const [tradingAccount] = await db
       .insert(schema.tradingAccount)
-      .values({ name, type, balance, isJoint })
+      .values({ name, type, balance, isJoint, experienceLevel: experience })
       .returning();
 
     const members: (typeof schema.accountMember.$inferInsert)[] = [
@@ -95,4 +90,65 @@ export async function createAccount(
   } catch {
     return { success: false, error: "Failed to create account" };
   }
+}
+
+async function assertAccountMember(accountId: number, userId: string) {
+  const member = await db.query.accountMember.findFirst({
+    where: and(
+      eq(schema.accountMember.accountId, accountId),
+      eq(schema.accountMember.userId, userId),
+    ),
+  });
+  return !!member;
+}
+
+export async function resetAccountBalance(
+  accountId: number,
+  experience: Experience,
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { success: false, error: "Not authenticated" };
+
+  const authorized = await assertAccountMember(accountId, session.user.id);
+  if (!authorized) return { success: false, error: "Not authorized" };
+
+  const result = await put<{ id: number }>(`/accounts/${accountId}`, {
+    experience_level: experience,
+  });
+  if (!result.ok) return { success: false, error: result.error };
+  return { success: true };
+}
+
+export async function renameAccount(
+  accountId: number,
+  name: string,
+): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { success: false, error: "Not authenticated" };
+
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    return { success: false, error: "Name cannot be empty" };
+  }
+
+  const authorized = await assertAccountMember(accountId, session.user.id);
+  if (!authorized) return { success: false, error: "Not authorized" };
+
+  const result = await put<{ id: number }>(`/accounts/${accountId}`, {
+    name: trimmed,
+  });
+  if (!result.ok) return { success: false, error: result.error };
+  return { success: true };
+}
+
+export async function deleteAccount(accountId: number): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { success: false, error: "Not authenticated" };
+
+  const authorized = await assertAccountMember(accountId, session.user.id);
+  if (!authorized) return { success: false, error: "Not authorized" };
+
+  const result = await del<{ id: number }>(`/accounts/${accountId}`);
+  if (!result.ok) return { success: false, error: result.error };
+  return { success: true };
 }

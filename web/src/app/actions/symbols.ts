@@ -32,6 +32,47 @@ function toSearchResult(row: SymbolResult): SearchResult {
   };
 }
 
+type SymbolListResponse = {
+  items: SymbolResult[];
+  has_more: boolean;
+  total: number;
+};
+
+export type PagedSymbols = {
+  items: SearchResult[];
+  hasMore: boolean;
+  total: number;
+};
+
+export async function listSymbols({
+  query,
+  limit = 50,
+  offset = 0,
+}: {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<PagedSymbols> {
+  const session = await getSession();
+  if (!session) return { items: [], hasMore: false, total: 0 };
+
+  const params: Record<string, string> = {
+    limit: String(limit),
+    offset: String(offset),
+  };
+  const q = (query ?? "").trim();
+  if (q) params.q = q;
+
+  const res = await api.get<SymbolListResponse>("/symbols", params);
+  if (!res.ok) return { items: [], hasMore: false, total: 0 };
+
+  return {
+    items: res.data.items.map(toSearchResult),
+    hasMore: res.data.has_more,
+    total: res.data.total,
+  };
+}
+
 export async function searchSymbols(query: string): Promise<SearchResult[]> {
   const session = await getSession();
   if (!session) return [];
