@@ -18,6 +18,7 @@ import {
   SignOut,
   Moon,
   List,
+  Question,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -199,6 +200,14 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
                   Dark Mode
                 </span>
               </MenuCheckboxItem>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Help</MenuGroupLabel>
+              <MenuItem render={<Link href="/faq" />}>
+                <Question />
+                FAQ
+              </MenuItem>
             </MenuGroup>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={handleSignOut}>
