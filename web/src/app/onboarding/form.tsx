@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, LayoutGroup } from "motion/react";
 import {
@@ -22,8 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Stepper, type Step } from "@/components/ui/stepper";
 import { toast } from "@/lib/toasts";
+import {
+  EXPERIENCE_OPTIONS,
+  getExperienceOption,
+  type Experience,
+} from "@/lib/experience";
 
-type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 type AccountType = "investment" | "crypto";
 type Ownership = "solo" | "joint";
 
@@ -35,33 +40,6 @@ const STEPS: Step[] = [
 ];
 
 const STEP_KEYS = ["experience", "type", "ownership", "confirm"] as const;
-
-const EXPERIENCE_OPTIONS = [
-  {
-    value: "beginner" as const,
-    label: "Beginner",
-    balance: "$100,000",
-    description: "Start with more capital to learn without pressure.",
-  },
-  {
-    value: "intermediate" as const,
-    label: "Intermediate",
-    balance: "$50,000",
-    description: "A balanced starting point to build your strategy.",
-  },
-  {
-    value: "advanced" as const,
-    label: "Advanced",
-    balance: "$25,000",
-    description: "Less room for error, more room to grow.",
-  },
-  {
-    value: "expert" as const,
-    label: "Expert",
-    balance: "$10,000",
-    description: "Prove your skill with limited capital.",
-  },
-];
 
 const TYPE_OPTIONS = [
   {
@@ -222,13 +200,9 @@ export function OnboardingForm() {
   return (
     <>
       <header className="mx-auto flex h-16 w-full max-w-5xl items-center px-6">
-        <button
-          className="text-lg font-semibold tracking-tight"
-          onClick={() => router.refresh()}
-          type="button"
-        >
+        <Link href="/" className="text-lg font-semibold tracking-tight">
           R U Trading
-        </button>
+        </Link>
       </header>
 
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center px-6 pb-16">
@@ -358,9 +332,7 @@ export function OnboardingForm() {
                           Starting balance
                         </p>
                         <p className="mt-1 text-4xl font-bold tracking-tight text-emerald-600">
-                          {EXPERIENCE_OPTIONS.find(
-                            (o) => o.value === experience,
-                          )?.balance}
+                          {getExperienceOption(experience).balance}
                         </p>
                       </div>
 

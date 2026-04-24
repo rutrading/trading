@@ -4,16 +4,33 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { toastManager } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export const SecurityForm = () => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const tooShort = newPassword.length > 0 && newPassword.length < 8;
+  const sameAsCurrent =
+    newPassword.length > 0 && newPassword === currentPassword;
+
+  const canSubmit =
+    !loading &&
+    currentPassword.length > 0 &&
+    newPassword.length >= 8 &&
+    !sameAsCurrent;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canSubmit) return;
     setLoading(true);
 
     const { error } = await authClient.changePassword({
@@ -40,9 +57,9 @@ export const SecurityForm = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="current-password">Current Password</Label>
+    <Form onSubmit={handleSubmit}>
+      <Field>
+        <FieldLabel htmlFor="current-password">Current Password</FieldLabel>
         <Input
           id="current-password"
           type="password"
@@ -53,9 +70,9 @@ export const SecurityForm = () => {
           required
           disabled={loading}
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="new-password">New Password</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="new-password">New Password</FieldLabel>
         <Input
           id="new-password"
           type="password"
@@ -66,19 +83,29 @@ export const SecurityForm = () => {
           required
           minLength={8}
           disabled={loading}
+          aria-invalid={sameAsCurrent || tooShort}
         />
-        <p className="text-xs text-muted-foreground">
-          Must be at least 8 characters
-        </p>
-      </div>
+        {sameAsCurrent ? (
+          <FieldError match={true}>
+            New password can&apos;t match your current password.
+          </FieldError>
+        ) : tooShort ? (
+          <FieldError match={true}>Must be at least 8 characters.</FieldError>
+        ) : (
+          <FieldDescription>
+            Must be at least 8 characters and different from your current
+            password.
+          </FieldDescription>
+        )}
+      </Field>
       <Button
         type="submit"
         size="sm"
-        disabled={loading || !currentPassword || !newPassword}
+        disabled={!canSubmit}
         className="self-start"
       >
         {loading ? "Changing..." : "Change Password"}
       </Button>
-    </form>
+    </Form>
   );
 };

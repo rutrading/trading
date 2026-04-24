@@ -1,6 +1,6 @@
 {
-  "id": "b5223192-e852-47e6-bf50-e1e2b839d322",
-  "prevId": "2ecbebda-9a4b-43d5-a127-5dbb658fc309",
+  "id": "3a105a2c-e430-4f48-b0df-71db3af5c0d5",
+  "prevId": "3ac10138-f2bc-4c0c-9c7b-dadb693e0b1c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -788,6 +788,54 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "order_account_created_idx": {
+          "name": "order_account_created_idx",
+          "columns": [
+            {
+              "expression": "trading_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "order_account_status_created_idx": {
+          "name": "order_account_status_created_idx",
+          "columns": [
+            {
+              "expression": "trading_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1154,6 +1202,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "symbol_name_trgm_idx": {
+          "name": "symbol_name_trgm_idx",
+          "columns": [
+            {
+              "expression": "\"name\" gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "symbol_ticker_pattern_idx": {
+          "name": "symbol_ticker_pattern_idx",
+          "columns": [
+            {
+              "expression": "\"ticker\" text_pattern_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -1185,6 +1263,14 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
+        },
+        "experience_level": {
+          "name": "experience_level",
+          "type": "experience_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'beginner'"
         },
         "balance": {
           "name": "balance",
@@ -1375,6 +1461,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "transaction_account_created_idx": {
+          "name": "transaction_account_created_idx",
+          "columns": [
+            {
+              "expression": "trading_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1421,7 +1528,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "transaction_trade_columns_required_check": {
+          "name": "transaction_trade_columns_required_check",
+          "value": "\"transaction\".\"kind\" <> 'trade' OR (\"transaction\".\"order_id\" IS NOT NULL AND \"transaction\".\"ticker\" IS NOT NULL AND \"transaction\".\"side\" IS NOT NULL AND \"transaction\".\"quantity\" IS NOT NULL AND \"transaction\".\"price\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.user": {
@@ -1688,6 +1800,16 @@
       "values": [
         "us_equity",
         "crypto"
+      ]
+    },
+    "public.experience_level": {
+      "name": "experience_level",
+      "schema": "public",
+      "values": [
+        "beginner",
+        "intermediate",
+        "advanced",
+        "expert"
       ]
     },
     "public.order_side": {

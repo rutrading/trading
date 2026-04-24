@@ -1,5 +1,5 @@
 {
-  "id": "6c2cb057-81a1-4fe6-99f4-8b1f5a2143e7",
+  "id": "3ac10138-f2bc-4c0c-9c7b-dadb693e0b1c",
   "prevId": "eddcf337-3fdb-4915-bc46-5aff7c7c9e93",
   "version": "7",
   "dialect": "postgresql",
@@ -1180,6 +1180,14 @@
           "primaryKey": false,
           "notNull": true
         },
+        "experience_level": {
+          "name": "experience_level",
+          "type": "experience_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'beginner'"
+        },
         "balance": {
           "name": "balance",
           "type": "numeric(14, 2)",
@@ -1250,19 +1258,11 @@
           "primaryKey": true,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "transaction_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'trade'"
-        },
         "order_id": {
           "name": "order_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "trading_account_id": {
           "name": "trading_account_id",
@@ -1274,26 +1274,26 @@
           "name": "ticker",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "side": {
           "name": "side",
           "type": "order_side",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "quantity": {
           "name": "quantity",
           "type": "numeric(16, 8)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "price": {
           "name": "price",
           "type": "numeric(14, 2)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "total": {
           "name": "total",
@@ -1684,6 +1684,16 @@
         "crypto"
       ]
     },
+    "public.experience_level": {
+      "name": "experience_level",
+      "schema": "public",
+      "values": [
+        "beginner",
+        "intermediate",
+        "advanced",
+        "expert"
+      ]
+    },
     "public.order_side": {
       "name": "order_side",
       "schema": "public",
@@ -1722,15 +1732,6 @@
         "gtc",
         "opg",
         "cls"
-      ]
-    },
-    "public.transaction_kind": {
-      "name": "transaction_kind",
-      "schema": "public",
-      "values": [
-        "trade",
-        "deposit",
-        "withdrawal"
       ]
     }
   },

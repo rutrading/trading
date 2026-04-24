@@ -5,7 +5,7 @@ import { useRender } from "@base-ui/react/use-render";
 import { tv, type VariantProps } from "tailwind-variants";
 import { SidebarIcon } from "@phosphor-icons/react";
 import * as React from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

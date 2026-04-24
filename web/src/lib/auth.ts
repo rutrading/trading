@@ -5,7 +5,10 @@ import { bearer } from "better-auth/plugins/bearer";
 import { nextCookies } from "better-auth/next-js";
 import { db } from "../db";
 import * as schema from "../db/schema";
-import { sendResetPasswordAction } from "./email/actions";
+import {
+  sendResetPasswordAction,
+  sendVerifyEmailAction,
+} from "./email/actions";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -25,6 +28,14 @@ export const auth = betterAuth({
       enabled: true,
     },
   },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      // Not awaited to avoid timing attacks
+      sendVerifyEmailAction({ userEmail: user.email, verifyLink: url });
+    },
+  },
+  rateLimit: { enabled: false },
   plugins: [jwt(), bearer(), nextCookies()],
   experimental: { joins: true },
 });

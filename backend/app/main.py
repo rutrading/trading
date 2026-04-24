@@ -14,6 +14,7 @@ from app.auth import AUTH_SERVER_URL, SKIP_AUTH
 from app.config import get_config
 from app.db.redis import close_redis, get_redis
 from app.routers import (
+    accounts,
     company,
     health,
     historical_bars,
@@ -217,3 +218,4 @@ app.include_router(transactions.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(company.router, prefix="/api")
+app.include_router(accounts.router, prefix="/api")

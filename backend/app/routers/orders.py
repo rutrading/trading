@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import SKIP_AUTH, get_current_user
+from app.auth import get_current_user
 from app.db import Order, get_db
 from app.db.models import DailyBar, Holding, Quote, TradingAccount, Transaction
 from app.dependencies import get_trading_account
@@ -113,9 +113,6 @@ async def place_order(
     db: Session = Depends(get_db),
 ):
     """Place a new order (market, limit, stop, or stop-limit)."""
-
-    if SKIP_AUTH:
-        return _mock_order_response(payload)
 
     # Per-user rate limit. Each placement holds a row lock and runs ATR +
     # buying-power math; a stuck client or loop could otherwise saturate the
@@ -412,9 +409,6 @@ def list_orders(
 ):
     """List orders for a trading account with optional filters and pagination."""
 
-    if SKIP_AUTH:
-        return OrdersPageResponse(orders=[], total=0, page=page, per_page=per_page)
-
     # verify membership
     get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
 
@@ -479,9 +473,6 @@ def get_order(
 ):
     """Get a single order with its transaction history."""
 
-    if SKIP_AUTH:
-        raise HTTPException(status_code=404, detail="Order not found")
-
     order = _get_order_or_404(db, order_id)
 
     # verify the user owns this order's account, collapsing the existing-but-
@@ -514,9 +505,6 @@ async def cancel_order(
     db: Session = Depends(get_db),
 ):
     """Cancel an open or partially-filled order."""
-
-    if SKIP_AUTH:
-        raise HTTPException(status_code=404, detail="Order not found")
 
     # Per-user rate limit. Cancellation also grabs row locks and runs
     # reservation-release math, so it needs the same cap as placement.

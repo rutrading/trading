@@ -2,6 +2,8 @@
 
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
 import { MagnifyingGlass } from "@phosphor-icons/react";
+import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -74,7 +76,7 @@ function CommandDialogPopup({
       <CommandDialogViewport>
         <CommandDialogPrimitive.Popup
           className={cn(
-            "-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] shadow-lg/5 outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:bg-muted/72 before:shadow-[0_1px_--theme(--color-black/4%)] data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] shadow-lg/5 outline-none transition-[scale,opacity,translate,filter] duration-200 ease-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:bg-muted/72 before:shadow-[0_1px_--theme(--color-black/4%)] data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-starting-style:blur-[2px] data-ending-style:blur-[2px] **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -127,12 +129,14 @@ function CommandInput({
 
 function CommandList({
   className,
+  viewportRef,
   ...props
 }: React.ComponentProps<typeof AutocompleteList>) {
   return (
     <AutocompleteList
       className={cn("not-empty:scroll-py-2 not-empty:p-2", className)}
       data-slot="command-list"
+      viewportRef={viewportRef}
       {...props}
     />
   );
@@ -231,6 +235,114 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
   );
 }
 
+
+type CommandVirtualizer = Virtualizer<HTMLDivElement, Element>;
+
+type CommandVirtualListProps<T> = {
+  items: T[];
+  renderItem: (
+    item: T,
+    virtualItem: ReturnType<CommandVirtualizer["getVirtualItems"]>[number],
+  ) => React.ReactNode;
+  estimateSize?: number;
+  overscan?: number;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  loadMore?: () => void;
+  virtualizerRef?: RefObject<CommandVirtualizer | null>;
+  className?: string;
+  renderLoader?: () => React.ReactNode;
+};
+
+function CommandVirtualList<T>({
+  items,
+  renderItem,
+  estimateSize = 32,
+  overscan = 20,
+  hasMore = false,
+  isLoadingMore = false,
+  loadMore,
+  virtualizerRef,
+  className,
+  renderLoader,
+}: CommandVirtualListProps<T>) {
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollElementRef.current,
+    estimateSize: () => estimateSize,
+    overscan,
+    paddingStart: 8,
+    paddingEnd: 8,
+    scrollPaddingEnd: 8,
+    scrollPaddingStart: 8,
+    useFlushSync: false,
+  });
+
+  useEffect(() => {
+    if (virtualizerRef) {
+      virtualizerRef.current = virtualizer;
+    }
+  }, [virtualizer, virtualizerRef]);
+
+  const handleScrollElementRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollElementRef.current = element;
+      if (element) {
+        virtualizer.measure();
+      }
+    },
+    [virtualizer],
+  );
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastIndex = virtualItems.at(-1)?.index ?? -1;
+
+  useEffect(() => {
+    if (!hasMore || !loadMore || isLoadingMore) return;
+    if (items.length === 0) return;
+    if (lastIndex >= items.length - 1) {
+      loadMore();
+    }
+  }, [lastIndex, items.length, hasMore, isLoadingMore, loadMore]);
+
+  const totalSize = virtualizer.getTotalSize();
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      role="presentation"
+      ref={handleScrollElementRef}
+      data-slot="command-virtual-list"
+      className={cn(
+        "max-h-64 overflow-auto overscroll-contain scroll-p-2 px-2",
+        className,
+      )}
+    >
+      <div
+        role="presentation"
+        className="relative w-full"
+        style={{ height: totalSize }}
+      >
+        {virtualItems.map((vi) => {
+          const item = items[vi.index];
+          if (!item) return null;
+          return renderItem(item, vi);
+        })}
+        {hasMore && isLoadingMore && (
+          <div className="absolute inset-x-0 flex items-center justify-center py-2 text-xs text-muted-foreground">
+            {renderLoader?.() ?? "Loading more…"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -261,4 +373,6 @@ export {
   CommandPanel,
   CommandSeparator,
   CommandShortcut,
+  CommandVirtualList,
 };
+export type { CommandVirtualizer };

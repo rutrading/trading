@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { updateProfile } from "@/app/actions/auth";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { toastManager } from "@/components/ui/toast";
 
 export const ProfileForm = ({
@@ -19,22 +20,33 @@ export const ProfileForm = ({
   const router = useRouter();
   const [name, setName] = useState(initialName);
   const [email, setEmail] = useState(initialEmail);
-  const [error, setError] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const trimmedName = name.trim();
   const nameChanged = name !== initialName;
   const emailChanged = email !== initialEmail;
   const hasChanges = nameChanged || emailChanged;
 
+  const nameEmpty = nameChanged && trimmedName.length === 0;
+  const emailInvalid =
+    emailChanged && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const canSubmit =
+    !loading && hasChanges && !nameEmpty && !emailInvalid;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
+    if (!canSubmit) return;
+    setNameError("");
+    setEmailError("");
     setLoading(true);
 
     if (nameChanged) {
-      const result = await updateProfile(name);
+      const result = await updateProfile(trimmedName);
       if (!result.success) {
-        setError(result.error);
+        setNameError(result.error);
         setLoading(false);
         return;
       }
@@ -46,7 +58,7 @@ export const ProfileForm = ({
         callbackURL: "/settings",
       });
       if (authError) {
-        setError(authError.message ?? "Failed to update email");
+        setEmailError(authError.message ?? "Failed to update email");
         setLoading(false);
         return;
       }
@@ -65,39 +77,59 @@ export const ProfileForm = ({
     router.refresh();
   };
 
+  const nameInvalid = nameEmpty || nameError.length > 0;
+  const emailShowError = emailInvalid || emailError.length > 0;
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="name">Display Name</Label>
+    <Form onSubmit={handleSubmit}>
+      <Field>
+        <FieldLabel htmlFor="name">Display Name</FieldLabel>
         <Input
           id="name"
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (nameError) setNameError("");
+          }}
           required
           disabled={loading}
+          aria-invalid={nameInvalid}
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="email">Email</Label>
+        {nameError ? (
+          <FieldError match={true}>{nameError}</FieldError>
+        ) : nameEmpty ? (
+          <FieldError match={true}>Display name can&apos;t be empty.</FieldError>
+        ) : null}
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="email">Email</FieldLabel>
         <Input
           id="email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (emailError) setEmailError("");
+          }}
           required
           disabled={loading}
+          aria-invalid={emailShowError}
         />
-      </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+        {emailError ? (
+          <FieldError match={true}>{emailError}</FieldError>
+        ) : emailInvalid ? (
+          <FieldError match={true}>Enter a valid email address.</FieldError>
+        ) : null}
+      </Field>
       <Button
         type="submit"
         size="sm"
-        disabled={loading || !hasChanges}
+        disabled={!canSubmit}
         className="self-start"
       >
         {loading ? "Saving..." : "Save Changes"}
       </Button>
-    </form>
+    </Form>
   );
 };

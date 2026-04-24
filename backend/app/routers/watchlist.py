@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.auth import SKIP_AUTH, get_current_user
+from app.auth import get_current_user
 from app.db import get_db
 from app.db.models import Quote, Symbol, WatchlistItem
 from app.db.redis import get_redis
@@ -133,9 +133,6 @@ async def list_watchlist(
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WatchlistResponse:
-    if SKIP_AUTH:
-        return WatchlistResponse(watchlist=[])
-
     user_id = user["sub"]
     items = (
         db.query(WatchlistItem)
@@ -186,9 +183,6 @@ def add_to_watchlist(
 ) -> WatchlistMutationResponse:
     ticker = ticker.upper().strip()
 
-    if SKIP_AUTH:
-        return WatchlistMutationResponse(ticker=ticker, added=True)
-
     user_id = user["sub"]
 
     symbol = db.query(Symbol).filter(Symbol.ticker == ticker).first()
@@ -215,9 +209,6 @@ def remove_from_watchlist(
     db: Session = Depends(get_db),
 ) -> WatchlistMutationResponse:
     ticker = ticker.upper().strip()
-
-    if SKIP_AUTH:
-        return WatchlistMutationResponse(ticker=ticker, removed=True)
 
     user_id = user["sub"]
 

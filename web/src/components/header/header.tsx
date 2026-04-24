@@ -1,20 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { useIsMobile } from "@/hooks/use-media-query";
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { useTheme } from "next-themes";
 import {
   Briefcase,
   ChartLine,
   ClockCounterClockwise,
+  CurrencyCircleDollar,
   Newspaper,
   Binoculars,
   GearSix,
   Receipt,
-  CurrencyCircleDollar,
   SignOut,
-  User,
   Moon,
+  List,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -29,11 +32,22 @@ import {
   MenuGroupLabel,
   MenuGroup,
 } from "@/components/ui/menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetClose,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetPanel,
+} from "@/components/ui/sheet";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: ChartLine },
+  { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Holdings", href: "/holdings", icon: Briefcase },
   { label: "Activity", href: "/activity", icon: ClockCounterClockwise },
   { label: "Trade", href: "/trade", icon: CurrencyCircleDollar },
@@ -42,9 +56,7 @@ const NAV_ITEMS = [
   { label: "Watchlist", href: "/watchlist", icon: Binoculars },
 ] as const;
 
-const SETTINGS_TAB = { label: "Settings", href: "/settings", icon: GearSix } as const;
-
-const ALL_TABS = [...NAV_ITEMS, SETTINGS_TAB];
+const ALL_TABS = NAV_ITEMS;
 
 function getActiveTab(pathname: string) {
   const match = ALL_TABS.find(
@@ -61,6 +73,11 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
   const active = getActiveTab(pathname);
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
+  const isMobile = useIsMobile();
+  const mounted = useIsMounted();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  if (!mounted) return null;
 
   async function handleSignOut() {
     await authClient.signOut();
@@ -68,38 +85,84 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
   }
 
   return (
-    <header className="mb-8 grid grid-cols-[1fr_auto_1fr] items-center">
+    <header className="mb-8 flex items-center justify-between gap-4">
       <Link
         href="/"
-        className="justify-self-start text-xl font-bold tracking-tight"
+        className="text-xl font-bold tracking-tight"
       >
-        <span className="md:hidden">RU</span>
-        <span className="hidden md:inline">R U Trading</span>
+        R U Trading
       </Link>
 
-      <Tabs value={active}>
-        <TabsList className="bg-transparent *:data-[slot=tab-indicator]:bg-muted *:data-[slot=tab-indicator]:dark:bg-input">
-          {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
-            <TabsTab key={label} value={label} render={<Link href={href} />} nativeButton={false} className="text-foreground/60 data-active:text-foreground">
-              <Icon size={16} />
-              {label}
-            </TabsTab>
-          ))}
-          <TabsTab
-            key={SETTINGS_TAB.label}
-            value={SETTINGS_TAB.label}
-            render={<Link href={SETTINGS_TAB.href} />}
-            nativeButton={false}
-            className="hidden md:inline-flex text-foreground/60 data-active:text-foreground"
-          >
-            <GearSix size={16} />
-            Settings
-          </TabsTab>
-        </TabsList>
-      </Tabs>
+      {!isMobile && (
+        <Tabs value={active}>
+          <TabsList className="bg-transparent *:data-[slot=tab-indicator]:bg-muted *:data-[slot=tab-indicator]:dark:bg-input">
+            {NAV_ITEMS.map(({ label, href, icon: Icon }) => (
+              <TabsTab key={label} value={label} render={<Link href={href} />} nativeButton={false} className="text-foreground/60 data-active:text-foreground">
+                <Icon size={16} />
+                {label}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
+      )}
 
-      <div className="flex items-center gap-3 justify-self-end">
+      <div className="flex items-center gap-3">
         <CommandMenu />
+        {isMobile && (
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger
+              render={
+                <Button variant="ghost" size="icon" aria-label="Open navigation">
+                  <List size={20} />
+                </Button>
+              }
+            />
+            <SheetContent side="right" className="w-80">
+              <SheetHeader className="border-b px-5 py-4">
+                <SheetTitle className="text-base">R U Trading</SheetTitle>
+                <SheetDescription className="text-xs">
+                  Signed in as {userName}
+                </SheetDescription>
+              </SheetHeader>
+              <SheetPanel>
+                <nav className="flex flex-col gap-0.5 py-2">
+                  {ALL_TABS.map(({ label, href, icon: Icon }) => {
+                    const isActive =
+                      href === pathname ||
+                      (href !== "/" && pathname.startsWith(href));
+                    return (
+                      <SheetClose
+                        key={label}
+                        nativeButton={false}
+                        render={
+                          <Link
+                            href={href}
+                            className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-accent text-foreground"
+                                : "text-foreground/70 hover:bg-accent/60 hover:text-foreground"
+                            }`}
+                          >
+                            <Icon
+                              size={18}
+                              weight={isActive ? "fill" : "regular"}
+                              className={
+                                isActive
+                                  ? "text-primary"
+                                  : "opacity-70 group-hover:opacity-100"
+                              }
+                            />
+                            {label}
+                          </Link>
+                        }
+                      />
+                    );
+                  })}
+                </nav>
+              </SheetPanel>
+            </SheetContent>
+          </Sheet>
+        )}
         <Menu>
           <MenuTrigger className="cursor-pointer">
             {userImage ? (
@@ -116,14 +179,10 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
             )}
           </MenuTrigger>
           <MenuPopup align="end" sideOffset={8} className="w-52">
-            <div className="px-3 py-2">
-              <p className="text-sm font-medium">{userName}</p>
-            </div>
-            <MenuSeparator />
             <MenuGroup>
               <MenuGroupLabel>Account</MenuGroupLabel>
               <MenuItem render={<Link href="/settings" />}>
-                <GearSix size={16} />
+                <GearSix />
                 Settings
               </MenuItem>
             </MenuGroup>
@@ -135,15 +194,15 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
                 checked={isDark}
                 onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
               >
-                <span className="inline-flex items-center gap-2">
-                  <Moon size={16} className="opacity-80" />
+                <span className="flex items-center gap-2 [&>svg]:-mx-0.5">
+                  <Moon />
                   Dark Mode
                 </span>
               </MenuCheckboxItem>
             </MenuGroup>
             <MenuSeparator />
-            <MenuItem onClick={handleSignOut}>
-              <SignOut size={16} />
+            <MenuItem variant="destructive" onClick={handleSignOut}>
+              <SignOut />
               Sign Out
             </MenuItem>
           </MenuPopup>

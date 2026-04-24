@@ -17,6 +17,13 @@ import {
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
 
+export const experienceLevelEnum = pgEnum("experience_level", [
+  "beginner",
+  "intermediate",
+  "advanced",
+  "expert",
+]);
+
 export const assetClassEnum = pgEnum("asset_class", ["us_equity", "crypto"]);
 
 export const orderSideEnum = pgEnum("order_side", ["buy", "sell"]);
@@ -133,6 +140,9 @@ export const tradingAccount = pgTable(
     id: serial("id").primaryKey(),
     name: text("name").notNull(),
     type: accountTypeEnum("type").notNull(),
+    experienceLevel: experienceLevelEnum("experience_level")
+      .notNull()
+      .default("beginner"),
     balance: numeric("balance", { precision: 14, scale: 2 })
       .notNull()
       .default("100000"),
@@ -186,6 +196,14 @@ export const symbol = pgTable(
   (table) => [
     index("symbol_asset_class_idx").on(table.assetClass),
     index("symbol_name_idx").on(table.name),
+    index("symbol_name_trgm_idx").using(
+      "gin",
+      sql`${table.name} gin_trgm_ops`,
+    ),
+    index("symbol_ticker_pattern_idx").using(
+      "btree",
+      sql`${table.ticker} text_pattern_ops`,
+    ),
   ],
 );
 
@@ -334,9 +352,9 @@ export const transaction = pgTable(
       table.createdAt.desc(),
     ),
     // Trade-kind transactions must retain the columns that became nullable
-    // when deposit/withdrawal kinds were added in 0005_fat_nemesis.sql.
-    // Mirrors the SQL constraint from 0008_transaction_trade_columns_check.sql
-    // and the CheckConstraint on the SQLAlchemy Transaction model.
+    // when deposit/withdrawal kinds were added. Mirrors the SQL constraint
+    // emitted in 0007_cheerful_human_robot.sql and the CheckConstraint on
+    // the SQLAlchemy Transaction model.
     check(
       "transaction_trade_columns_required_check",
       sql`${table.kind} <> 'trade' OR (${table.orderId} IS NOT NULL AND ${table.ticker} IS NOT NULL AND ${table.side} IS NOT NULL AND ${table.quantity} IS NOT NULL AND ${table.price} IS NOT NULL)`,

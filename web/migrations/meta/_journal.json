@@ -40,36 +40,22 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1776658152178,
-      "tag": "0005_fat_nemesis",
+      "when": 1776651540314,
+      "tag": "0005_gorgeous_stardust",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1776659579746,
-      "tag": "0006_cooing_night_thrasher",
+      "when": 1776765600000,
+      "tag": "0006_symbol_trgm_indexes",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1776746489055,
-      "tag": "0007_magenta_crusher_hogan",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1776832889055,
-      "tag": "0008_transaction_trade_columns_check",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1776760526126,
-      "tag": "0009_quick_unicorn",
+      "when": 1777046727865,
+      "tag": "0007_cheerful_human_robot",
       "breakpoints": true
     }
   ]

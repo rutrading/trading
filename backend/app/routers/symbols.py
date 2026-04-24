@@ -58,6 +58,48 @@ def _symbol_to_dict(s: Symbol) -> dict:
     }
 
 
+@router.get("/symbols")
+async def list_symbols(
+    q: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    """Paginated symbol list optionally filtered by `q` (ticker prefix or name substring), returning `{ items, has_more, total }`."""
+    q_norm = (q or "").strip().upper()
+
+    with db_session() as db:
+        query = db.query(Symbol).filter(Symbol.tradable)
+        if q_norm:
+            query = query.filter(
+                or_(
+                    Symbol.ticker.ilike(f"{q_norm}%"),
+                    Symbol.name.ilike(f"%{q_norm}%"),
+                ),
+            )
+
+        total = query.count()
+
+        if q_norm:
+            ordering = (
+                (Symbol.ticker != q_norm).asc(),
+                (Symbol.ticker.ilike(f"{q_norm}%")).desc(),
+                Symbol.ticker.asc(),
+            )
+        else:
+            ordering = (Symbol.ticker.asc(),)
+
+        rows = (
+            query.order_by(*ordering).offset(offset).limit(limit).all()
+        )
+        items = [_symbol_to_dict(s) for s in rows]
+
+    return {
+        "items": items,
+        "has_more": offset + len(items) < total,
+        "total": total,
+    }
+
+
 @router.get("/symbols/search")
 async def search_symbols(q: str = Query(..., min_length=1)):
     """Search local symbol table by ticker prefix or name substring.
