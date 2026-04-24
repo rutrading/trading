@@ -22,7 +22,13 @@ const PER_PAGE = 25;
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
+export const WatchlistTable = ({
+  items,
+  qtyByTicker,
+}: {
+  items: WatchlistItem[];
+  qtyByTicker: Record<string, number>;
+}) => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tickers = useMemo(() => items.map((w) => w.ticker), [items]);
@@ -81,6 +87,8 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           <thead>
             <tr className="border-b border-border text-xs text-muted-foreground">
               <th className="px-4 py-2.5 text-left font-medium">Symbol</th>
+              <th className="px-4 py-2.5 text-right font-medium">Qty Owned</th>
+              <th className="px-4 py-2.5 text-right font-medium">Value Owned</th>
               <th className="px-4 py-2.5 text-right font-medium">Price</th>
               <th className="px-4 py-2.5 text-right font-medium">Change</th>
               <th className="hidden px-4 py-2.5 text-right font-medium md:table-cell">Bid</th>
@@ -96,16 +104,41 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
               const change = live?.change_percent ?? w.quote?.change_percent;
               const bid = live?.bid_price ?? w.quote?.bid_price ?? null;
               const ask = live?.ask_price ?? w.quote?.ask_price ?? null;
+              const qty = qtyByTicker[w.ticker] ?? 0;
+              const valueOwned = qty > 0 && price != null ? qty * price : null;
               return (
                 <tr
                   key={w.ticker}
                   className="group border-b border-border last:border-0 transition-colors hover:bg-muted/30"
                 >
                   <td className="px-4 py-3">
-                    <Link href={`/stocks/${w.ticker}`} className="inline-flex items-center gap-2">
-                      <Star size={14} weight="fill" className="shrink-0 text-amber-400" />
-                      <span className="text-sm font-semibold leading-none">{w.ticker}</span>
-                    </Link>
+                    <div className="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(w.ticker)}
+                        disabled={removingTickers.has(w.ticker)}
+                        aria-label={`Remove ${w.ticker} from watchlist`}
+                        className="rounded-sm text-amber-400 transition-opacity hover:opacity-70 disabled:opacity-50"
+                      >
+                        <Star size={14} weight="fill" className="shrink-0" />
+                      </button>
+                      <Link
+                        href={`/stocks/${w.ticker}`}
+                        className="text-sm font-semibold leading-none hover:underline"
+                      >
+                        {w.ticker}
+                      </Link>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {qty > 0 ? fmt(qty) : "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {valueOwned != null ? `$${fmt(valueOwned)}` : "—"}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-medium tabular-nums">
