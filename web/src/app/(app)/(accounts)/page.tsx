@@ -15,6 +15,7 @@ import {
 } from "@/app/actions/portfolio";
 import { getOpenOrdersAcrossAccounts } from "@/app/actions/orders";
 import { getQuotes } from "@/app/actions/quotes";
+import { getWatchlist } from "@/app/actions/watchlist";
 import { resolveAccountScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
@@ -40,10 +41,12 @@ export default async function DashboardPage({ searchParams }: Props) {
   // bars, time-series chart) needs the unique-ticker list. Doing it as a
   // single round-trip means the per-account /holdings hits don't double up
   // with the redundant fetch the time-series action used to do internally.
-  const [{ holdings, totalCash }, openOrders] = await Promise.all([
+  const [{ holdings, totalCash }, openOrders, watchlistRes] = await Promise.all([
     getAllHoldings(activeIds),
     getOpenOrdersAcrossAccounts(activeIds, PREVIEW_LIMIT),
+    getWatchlist(),
   ]);
+  const watchlist = watchlistRes.ok ? watchlistRes.data.watchlist : [];
 
   const totalCost = holdings.reduce(
     (s, h) => s + parseFloat(h.quantity) * parseFloat(h.average_cost),
@@ -185,6 +188,7 @@ export default async function DashboardPage({ searchParams }: Props) {
           todayGainPct={todayGainPct}
           totalGain={totalTotalGain}
           totalGainPct={totalGainPct}
+          watchlist={watchlist}
         />
         <AllocationPie
           cash={totalCash}
