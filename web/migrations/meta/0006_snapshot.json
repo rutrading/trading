@@ -1,6 +1,6 @@
 {
-  "id": "3a105a2c-e430-4f48-b0df-71db3af5c0d5",
-  "prevId": "c8184014-0778-44b2-bc05-0492526e71cd",
+  "id": "c8184014-0778-44b2-bc05-0492526e71cd",
+  "prevId": "3ac10138-f2bc-4c0c-9c7b-dadb693e0b1c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -456,7 +456,7 @@
         },
         "average_cost": {
           "name": "average_cost",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": true,
           "default": "'0'"
@@ -664,13 +664,13 @@
         },
         "limit_price": {
           "name": "limit_price",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": false
         },
         "stop_price": {
           "name": "stop_price",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": false
         },
@@ -683,13 +683,7 @@
         },
         "average_fill_price": {
           "name": "average_fill_price",
-          "type": "numeric(20, 10)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reference_price": {
-          "name": "reference_price",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
           "notNull": false
         },
@@ -709,7 +703,7 @@
         },
         "reserved_per_share": {
           "name": "reserved_per_share",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 6)",
           "primaryKey": false,
           "notNull": false
         },
@@ -781,54 +775,6 @@
               "expression": "created_at",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "order_account_created_idx": {
-          "name": "order_account_created_idx",
-          "columns": [
-            {
-              "expression": "trading_account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "order_account_status_created_idx": {
-          "name": "order_account_status_created_idx",
-          "columns": [
-            {
-              "expression": "trading_account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
               "nulls": "last"
             }
           ],
@@ -1342,19 +1288,11 @@
           "primaryKey": true,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "transaction_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'trade'"
-        },
         "order_id": {
           "name": "order_id",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "trading_account_id": {
           "name": "trading_account_id",
@@ -1366,26 +1304,26 @@
           "name": "ticker",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "side": {
           "name": "side",
           "type": "order_side",
           "typeSchema": "public",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "quantity": {
           "name": "quantity",
           "type": "numeric(16, 8)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "price": {
           "name": "price",
-          "type": "numeric(20, 10)",
+          "type": "numeric(14, 2)",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "total": {
           "name": "total",
@@ -1461,27 +1399,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "transaction_account_created_idx": {
-          "name": "transaction_account_created_idx",
-          "columns": [
-            {
-              "expression": "trading_account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -1528,12 +1445,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "transaction_trade_columns_required_check": {
-          "name": "transaction_trade_columns_required_check",
-          "value": "\"transaction\".\"kind\" <> 'trade' OR (\"transaction\".\"order_id\" IS NOT NULL AND \"transaction\".\"ticker\" IS NOT NULL AND \"transaction\".\"side\" IS NOT NULL AND \"transaction\".\"quantity\" IS NOT NULL AND \"transaction\".\"price\" IS NOT NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.user": {
@@ -1850,15 +1762,6 @@
         "gtc",
         "opg",
         "cls"
-      ]
-    },
-    "public.transaction_kind": {
-      "name": "transaction_kind",
-      "schema": "public",
-      "values": [
-        "trade",
-        "deposit",
-        "withdrawal"
       ]
     }
   },
