@@ -202,9 +202,9 @@ def add_to_watchlist(
     return WatchlistMutationResponse(ticker=ticker, added=True)
 
 
-@router.delete("/watchlist/{ticker}", response_model=WatchlistMutationResponse)
+@router.delete("/watchlist", response_model=WatchlistMutationResponse)
 def remove_from_watchlist(
-    ticker: str,
+    ticker: str = Query(..., min_length=1, max_length=16),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WatchlistMutationResponse:

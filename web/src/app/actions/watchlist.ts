@@ -37,5 +37,5 @@ export async function addToWatchlist(ticker: string): Promise<api.ApiResult<Muta
 export async function removeFromWatchlist(ticker: string): Promise<api.ApiResult<MutateResponse>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
-  return api.del<MutateResponse>(`/watchlist/${encodeURIComponent(ticker)}`);
+  return api.del<MutateResponse>("/watchlist", { ticker });
 }
