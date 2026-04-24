@@ -4,7 +4,8 @@ import { StockHeader } from "@/components/stocks/stock-header";
 import { StockChart } from "@/components/StockChart";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm } from "@/components/stocks/order-form";
-import { getSymbol } from "@/app/actions/symbols";
+import { CompanyProfileCard } from "@/components/stocks/company-profile";
+import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
 
@@ -22,7 +23,11 @@ export default async function StockPage({ params }: Props) {
   const { ticker } = await params;
   const symbol = ticker.join("/").toUpperCase();
 
-  const [dbSymbol, watchlistRes] = await Promise.all([getSymbol(symbol), getWatchlist()]);
+  const [dbSymbol, watchlistRes, company] = await Promise.all([
+    getSymbol(symbol),
+    getWatchlist(),
+    getCompanyProfile(symbol),
+  ]);
   if (!dbSymbol && !STOCKS[symbol]) notFound();
 
   const watched = watchlistRes.ok
@@ -63,6 +68,7 @@ export default async function StockPage({ params }: Props) {
       </div>
       <div className="space-y-6">
         <OrderForm ticker={symbol} price={stock.price} />
+        <CompanyProfileCard ticker={symbol} company={company} />
       </div>
     </div>
   );
