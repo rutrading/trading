@@ -5,13 +5,9 @@ import {
   CaretRight,
 } from "@phosphor-icons/react/ssr";
 import { cn } from "@/lib/utils";
-import {
-  fmtPrice,
-  fmtSigned,
-  fmtSignedPct,
-  tone,
-} from "@/lib/format";
+import { fmtSigned, fmtSignedPct, tone } from "@/lib/format";
 import type { WatchlistItem } from "@/app/actions/watchlist";
+import { WatchlistRow } from "./watchlist-row";
 
 const Stat = ({
   label,
@@ -45,27 +41,6 @@ const Stat = ({
   </div>
 );
 
-const WatchlistRow = ({ item }: { item: WatchlistItem }) => {
-  const price = item.quote?.price;
-  const changePct = item.quote?.change_percent;
-  return (
-    <Link
-      href={`/stocks/${item.ticker}`}
-      className="flex items-center justify-between rounded-xl bg-card px-4 py-2.5 transition-colors hover:bg-card/80"
-    >
-      <span className="font-medium">{item.ticker}</span>
-      <div className="flex items-baseline gap-3 tabular-nums">
-        <span className="text-sm">
-          {price != null ? `$${fmtPrice(price)}` : "—"}
-        </span>
-        <span className={cn("text-xs", tone(changePct))}>
-          {changePct != null ? fmtSignedPct(changePct) : "—"}
-        </span>
-      </div>
-    </Link>
-  );
-};
-
 export const PerformanceCard = ({
   todayGain,
   todayGainPct,
@@ -87,17 +62,17 @@ export const PerformanceCard = ({
       <Stat label="Today's Gain/Loss" amount={todayGain} pct={todayGainPct} />
       <Stat label="Total Gain/Loss" amount={totalGain} pct={totalGainPct} />
     </div>
-    {watchlist.length > 0 && (
-      <div className="mt-6">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-sm font-medium">Watchlist</p>
-          <Link
-            href="/watchlist"
-            className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
-          >
-            See all <CaretRight size={12} />
-          </Link>
-        </div>
+    <div className="mt-6">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-sm font-medium">Watchlist</p>
+        <Link
+          href="/watchlist"
+          className="inline-flex items-center gap-0.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          See all <CaretRight size={12} />
+        </Link>
+      </div>
+      {watchlist.length > 0 ? (
         <ul className="space-y-2">
           {watchlist.slice(0, 3).map((item) => (
             <li key={item.ticker}>
@@ -105,7 +80,11 @@ export const PerformanceCard = ({
             </li>
           ))}
         </ul>
-      </div>
-    )}
+      ) : (
+        <p className="rounded-xl bg-card px-4 py-3 text-sm text-muted-foreground">
+          No assets being tracked
+        </p>
+      )}
+    </div>
   </div>
 );
