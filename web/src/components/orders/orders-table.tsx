@@ -299,7 +299,7 @@ export const OrdersTable = ({
                           {CANCELLABLE.has(o.status) && (
                             <Button
                               type="button"
-                              variant="destructive"
+                              variant="destructive-outline"
                               size="sm"
                               disabled={cancellingId === o.id}
                               onClick={(e) => {
