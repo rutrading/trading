@@ -9,6 +9,8 @@ import { useTheme } from "next-themes";
 import {
   Briefcase,
   ChartLine,
+  ClockCounterClockwise,
+  CurrencyCircleDollar,
   Newspaper,
   Binoculars,
   GearSix,
@@ -46,6 +48,9 @@ import { useRouter } from "next/navigation";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: ChartLine },
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { label: "Holdings", href: "/holdings", icon: Briefcase },
+  { label: "Activity", href: "/activity", icon: ClockCounterClockwise },
+  { label: "Trade", href: "/trade", icon: CurrencyCircleDollar },
   { label: "Orders", href: "/orders", icon: Receipt },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "Watchlist", href: "/watchlist", icon: Binoculars },

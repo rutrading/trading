@@ -16,15 +16,19 @@ class OrderResponse(BaseModel):
     quantity: str
     limit_price: str | None
     stop_price: str | None
+    reference_price: str | None
     filled_quantity: str
     average_fill_price: str | None
     status: str
     rejection_reason: str | None
     created_at: str
     updated_at: str
+    last_fill_at: str | None
 
     @classmethod
-    def from_order(cls, order: Order) -> "OrderResponse":
+    def from_order(
+        cls, order: Order, last_fill_at: str | None = None
+    ) -> "OrderResponse":
         return cls(
             id=order.id,
             trading_account_id=order.trading_account_id,
@@ -38,6 +42,9 @@ class OrderResponse(BaseModel):
             if order.limit_price is not None
             else None,
             stop_price=str(order.stop_price) if order.stop_price is not None else None,
+            reference_price=str(order.reference_price)
+            if order.reference_price is not None
+            else None,
             filled_quantity=str(order.filled_quantity),
             average_fill_price=str(order.average_fill_price)
             if order.average_fill_price is not None
@@ -46,6 +53,7 @@ class OrderResponse(BaseModel):
             rejection_reason=order.rejection_reason,
             created_at=order.created_at.isoformat(),
             updated_at=order.updated_at.isoformat(),
+            last_fill_at=last_fill_at,
         )
 
 

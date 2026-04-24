@@ -130,6 +130,45 @@ class TestSubscribe:
         added = await manager.subscribe(ws, ["AAPL"])
         assert added == []
 
+    async def test_subscribe_caps_per_message(self):
+        # MAX_TICKERS_PER_MESSAGE = 50: a single subscribe message larger than
+        # that is silently capped to the first 50 entries (so abusive clients
+        # cannot flood _subs in one shot).
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        big_batch = [f"T{i:04d}" for i in range(ws_manager.MAX_TICKERS_PER_MESSAGE + 25)]
+        added = await manager.subscribe(ws, big_batch)
+        assert len(added) == ws_manager.MAX_TICKERS_PER_MESSAGE
+
+    async def test_subscribe_caps_per_connection(self):
+        # MAX_TICKERS_PER_CONNECTION = 200: even split across multiple sub
+        # messages, a single connection can accumulate at most 200 tickers.
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        cap = ws_manager.MAX_TICKERS_PER_CONNECTION
+        per_msg = ws_manager.MAX_TICKERS_PER_MESSAGE
+        # Send batches of MAX_TICKERS_PER_MESSAGE until we fill the connection.
+        # Use disjoint ticker sets so each batch attempts genuinely-new entries.
+        for batch_idx in range((cap // per_msg) + 1):
+            batch = [
+                f"T{batch_idx:02d}{i:04d}" for i in range(per_msg)
+            ]
+            await manager.subscribe(ws, batch)
+        # At most cap tickers should be tracked for this single connection.
+        assert len(manager._subs[ws]) <= cap
+
+    async def test_subscribe_idempotent_under_cap(self):
+        # Re-subscribing to a ticker already in the set must not "consume" a
+        # cap slot — keeps clients robust against retries.
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        await manager.subscribe(ws, ["AAPL"])
+        assert len(manager._subs[ws]) == 1
+
 
 class TestUnsubscribe:
     async def test_unsubscribe_removes_ticker_when_no_subs(self):
@@ -341,3 +380,61 @@ class TestLeastActiveWsTicker:
 
         result = manager.least_active_ws_ticker({"AAPL", "MSFT"})
         assert result == "AAPL"  # no timestamp defaults to 0.0
+
+
+class TestSystemTickers:
+    async def test_sync_adds_new_system_tickers(self):
+        manager = ConnectionManager()
+        added, removed = manager.sync_system_tickers({"AAPL", "MSFT"})
+        assert set(added) == {"AAPL", "MSFT"}
+        assert removed == []
+        adds, rms = manager.drain_pending()
+        assert set(adds) == {"AAPL", "MSFT"}
+        assert rms == []
+
+    async def test_sync_removes_dropped_system_tickers(self):
+        manager = ConnectionManager()
+        manager.sync_system_tickers({"AAPL", "MSFT"})
+        manager.drain_pending()  # clear
+        added, removed = manager.sync_system_tickers({"AAPL"})
+        assert added == []
+        assert removed == ["MSFT"]
+        adds, rms = manager.drain_pending()
+        assert adds == []
+        assert rms == ["MSFT"]
+
+    async def test_sync_skips_remove_when_client_still_subscribed(self):
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        manager.drain_pending()  # clear client-driven adds
+        manager.sync_system_tickers({"AAPL"})
+        added, removed = manager.sync_system_tickers(set())
+        assert removed == []  # AAPL still tracked by client
+        assert "AAPL" not in manager._system_tickers
+
+    async def test_client_disconnect_keeps_system_ticker_alive(self):
+        manager = ConnectionManager()
+        manager.sync_system_tickers({"AAPL"})
+        manager.drain_pending()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        # client disconnect path that bypasses grace (simulated by directly
+        # calling unsubscribe which is the non-grace branch)
+        removed = await manager.unsubscribe(ws, ["AAPL"])
+        assert removed == []  # system ticker kept alive
+        _, rms = manager.drain_pending()
+        assert rms == []
+
+    async def test_sync_add_skipped_when_client_already_subscribed(self):
+        manager = ConnectionManager()
+        ws = make_ws()
+        await manager.connect(ws, "user1")
+        await manager.subscribe(ws, ["AAPL"])
+        manager.drain_pending()
+        added, removed = manager.sync_system_tickers({"AAPL"})
+        # client already subscribed — no new pending_add needed
+        assert added == []
+        assert "AAPL" in manager._system_tickers

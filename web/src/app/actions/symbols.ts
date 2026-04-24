@@ -84,11 +84,15 @@ export async function searchSymbols(query: string): Promise<SearchResult[]> {
   return res.ok ? res.data.map(toSearchResult) : [];
 }
 
-export async function getTrendingSymbols(): Promise<SearchResult[]> {
+export async function getTrendingSymbols(
+  assetClass?: "us_equity" | "crypto",
+): Promise<SearchResult[]> {
   const session = await getSession();
   if (!session) return [];
 
-  const res = await api.get<SymbolResult[]>("/symbols/trending");
+  const res = await api.get<SymbolResult[]>("/symbols/trending", {
+    asset_class: assetClass,
+  });
   return res.ok ? res.data.map(toSearchResult) : [];
 }
 

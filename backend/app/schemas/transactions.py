@@ -7,11 +7,12 @@ from app.db.models import Transaction
 
 class TransactionResponse(BaseModel):
     id: int
-    order_id: int
-    ticker: str
-    side: str
-    quantity: str
-    price: str
+    kind: str
+    order_id: int | None
+    ticker: str | None
+    side: str | None
+    quantity: str | None
+    price: str | None
     total: str
     created_at: str
 
@@ -19,11 +20,12 @@ class TransactionResponse(BaseModel):
     def from_transaction(cls, txn: Transaction) -> "TransactionResponse":
         return cls(
             id=txn.id,
+            kind=txn.kind,
             order_id=txn.order_id,
             ticker=txn.ticker,
             side=txn.side,
-            quantity=str(txn.quantity),
-            price=str(txn.price),
+            quantity=str(txn.quantity) if txn.quantity is not None else None,
+            price=str(txn.price) if txn.price is not None else None,
             total=str(txn.total),
             created_at=txn.created_at.isoformat(),
         )

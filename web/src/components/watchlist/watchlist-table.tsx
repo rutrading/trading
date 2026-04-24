@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuotes } from "@/components/ws-provider";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
   Pagination,
@@ -23,6 +25,8 @@ const fmt = (n: number) =>
 export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const tickers = useMemo(() => items.map((w) => w.ticker), [items]);
+  const liveQuotes = useQuotes(tickers);
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
   const clampedPage = Math.min(page, totalPages);
@@ -34,13 +38,25 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
   const hasNext = clampedPage < totalPages;
   const pageHref = (p: number) => `/watchlist?page=${p}`;
 
+  const [removingTickers, setRemovingTickers] = useState<Set<string>>(new Set());
+
   const handleRemove = async (ticker: string) => {
-    const res = await removeFromWatchlist(ticker);
-    if (res.ok) {
-      toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
-      router.refresh();
-    } else {
-      toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+    if (removingTickers.has(ticker)) return;
+    setRemovingTickers((prev) => new Set(prev).add(ticker));
+    try {
+      const res = await removeFromWatchlist(ticker);
+      if (res.ok) {
+        toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
+        router.refresh();
+      } else {
+        toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+      }
+    } finally {
+      setRemovingTickers((prev) => {
+        const next = new Set(prev);
+        next.delete(ticker);
+        return next;
+      });
     }
   };
 
@@ -74,8 +90,12 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           </thead>
           <tbody>
             {pageItems.map((w) => {
-              const price = w.quote?.price;
-              const change = w.quote?.change_percent;
+              // Prefer live WS ticks; fall back to the server-rendered snapshot.
+              const live = liveQuotes.get(w.ticker);
+              const price = live?.price ?? w.quote?.price;
+              const change = live?.change_percent ?? w.quote?.change_percent;
+              const bid = live?.bid_price ?? w.quote?.bid_price ?? null;
+              const ask = live?.ask_price ?? w.quote?.ask_price ?? null;
               return (
                 <tr
                   key={w.ticker}
@@ -112,18 +132,21 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.bid_price != null ? `$${fmt(w.quote.bid_price)}` : "—"}
+                      {bid != null ? `$${fmt(bid)}` : "—"}
                     </span>
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.ask_price != null ? `$${fmt(w.quote.ask_price)}` : "—"}
+                      {ask != null ? `$${fmt(ask)}` : "—"}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-center">
                     <button
+                      type="button"
                       onClick={() => handleRemove(w.ticker)}
-                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      disabled={removingTickers.has(w.ticker)}
+                      aria-label={`Remove ${w.ticker} from watchlist`}
+                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
                     >
                       <X size={14} />
                     </button>
