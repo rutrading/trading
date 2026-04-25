@@ -175,6 +175,9 @@ async def lifespan(app: FastAPI):
 
     await feed.start()
 
+    symbol_sync_task = asyncio.create_task(symbols.run_symbol_sync_loop())
+    logger.info("Symbol sync task started")
+
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
@@ -183,8 +186,13 @@ async def lifespan(app: FastAPI):
     yield
 
     await feed.stop()
+    symbol_sync_task.cancel()
     flush_task.cancel()
     executor_task.cancel()
+    try:
+        await symbol_sync_task
+    except asyncio.CancelledError:
+        pass
     try:
         await flush_task
     except asyncio.CancelledError:
