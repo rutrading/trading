@@ -68,6 +68,23 @@ class AlpacaFeed(BaseFeed):
             asyncio.create_task(self._drain_loop()),
         ]
 
+    async def stop(self) -> None:
+        # Explicitly close the upstream Alpaca WS sockets before cancelling
+        # the run loops. Free-tier accounts only allow one concurrent
+        # connection, so during a redeploy the new container hits a 406
+        # "connection limit exceeded" until the old container's socket
+        # gets reaped. Closing here releases the slot in milliseconds
+        # instead of waiting for TCP timeout.
+        for attr in ("_ws_stocks", "_ws_crypto"):
+            ws = getattr(self, attr, None)
+            if ws is not None:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        await super().stop()
+
     # ---- stream state machine ---------------------------------------------
 
     async def _run_stream(self, stream_name: str) -> None:
@@ -127,12 +144,23 @@ class AlpacaFeed(BaseFeed):
                         backoff = BACKOFF_BASE
             except (_StreamError, ConnectionClosed, Exception) as exc:
                 failures += 1
-                self._log_once(
-                    f"ws-err:{stream_name}",
-                    "Alpaca %s stream error: %s",
-                    stream_name,
-                    exc,
-                )
+                # 406 from Alpaca means another session (typically the
+                # previous container during a redeploy) still holds the
+                # single allowed WS slot. It's expected and self-resolves
+                # once that socket closes — log at info, not warning, so
+                # deploy logs stay quiet.
+                if isinstance(exc, _StreamError) and "code=406" in str(exc):
+                    logger.info(
+                        "Alpaca %s stream waiting for previous session to release",
+                        stream_name,
+                    )
+                else:
+                    self._log_once(
+                        f"ws-err:{stream_name}",
+                        "Alpaca %s stream error: %s",
+                        stream_name,
+                        exc,
+                    )
             finally:
                 setattr(self, ws_attr, None)
 
