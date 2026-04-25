@@ -1,13 +1,16 @@
-"""Trading account mutations: rename, reset balance, delete."""
+"""Trading account mutations: rename, reset, deposit cash, delete."""
+
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
-from app.db import TradingAccount, get_db
+from app.db import Holding, Order, TradingAccount, Transaction, get_db
 from app.dependencies import get_trading_account
 from app.experience import BALANCE_MAP, EXPERIENCE_OPTIONS, ExperienceLevel
+from app.services.transactions import create_deposit
 
 router = APIRouter()
 
@@ -43,44 +46,105 @@ class AccountDeleteResponse(BaseModel):
     deleted: bool
 
 
-@router.put("/accounts/{account_id}", response_model=AccountMutationResponse)
-def update_account(
-    account_id: int,
-    experience_level: ExperienceLevel | None = Query(default=None),
-    name: str | None = Query(default=None, min_length=1, max_length=64),
-    user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> AccountMutationResponse:
-    """Update an account's name and/or experience level.
-
-    Changing the experience level resets the available cash to the level's
-    starting balance while preserving cash already reserved by open orders,
-    so outstanding orders and holdings are untouched.
-    """
-
-    account = get_trading_account(
-        trading_account_id=account_id, user=user, db=db
-    )
-
-    if name is not None:
-        account.name = name.strip()
-
-    if experience_level is not None:
-        account.experience_level = experience_level
-        # Available cash = balance - reserved_balance. We want available to
-        # equal the level's starting balance, so set balance = starting +
-        # reserved. Open orders keep their reservation; holdings stay.
-        account.balance = BALANCE_MAP[experience_level] + account.reserved_balance
-
-    db.commit()
-    db.refresh(account)
-
+def _account_response(account: TradingAccount) -> AccountMutationResponse:
     return AccountMutationResponse(
         id=account.id,
         name=account.name,
         experience_level=account.experience_level,  # type: ignore[arg-type]
         balance=str(account.balance),
     )
+
+
+@router.put("/accounts/{account_id}", response_model=AccountMutationResponse)
+def update_account(
+    account_id: int,
+    name: str = Query(..., min_length=1, max_length=64),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AccountMutationResponse:
+    """Rename an account."""
+
+    account = get_trading_account(
+        trading_account_id=account_id, user=user, db=db
+    )
+    account.name = name.strip()
+
+    db.commit()
+    db.refresh(account)
+
+    return _account_response(account)
+
+
+class ResetAccountRequest(BaseModel):
+    experience_level: ExperienceLevel
+
+
+@router.post("/accounts/{account_id}/reset", response_model=AccountMutationResponse)
+def reset_account(
+    account_id: int,
+    body: ResetAccountRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AccountMutationResponse:
+    """Wipe transactions/holdings/orders and reseed with a single deposit.
+
+    Locks the account row to serialize against the order executor; see
+    ``app/services/trading.py`` for the lock-ordering convention.
+    """
+
+    account = get_trading_account(
+        trading_account_id=account_id, user=user, db=db
+    )
+    db.refresh(account, with_for_update=True)
+
+    db.query(Transaction).filter(Transaction.trading_account_id == account.id).delete(
+        synchronize_session=False
+    )
+    db.query(Order).filter(Order.trading_account_id == account.id).delete(
+        synchronize_session=False
+    )
+    db.query(Holding).filter(Holding.trading_account_id == account.id).delete(
+        synchronize_session=False
+    )
+
+    account.experience_level = body.experience_level
+    account.balance = Decimal("0")
+    account.reserved_balance = Decimal("0")
+    create_deposit(db, account, BALANCE_MAP[body.experience_level])
+
+    db.commit()
+    db.refresh(account)
+
+    return _account_response(account)
+
+
+class DepositRequest(BaseModel):
+    amount: Decimal = Field(gt=Decimal("0"))
+
+
+@router.post("/accounts/{account_id}/deposits", response_model=AccountMutationResponse)
+def create_account_deposit(
+    account_id: int,
+    body: DepositRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AccountMutationResponse:
+    """Add a deposit transaction and increment cash balance.
+
+    Backend enforces ``amount > 0``; any "minimum deposit" floor is a UX
+    rule enforced client-side. Account-creation seed deposits also flow
+    through here, so the floor must stay at 0 server-side.
+    """
+
+    account = get_trading_account(
+        trading_account_id=account_id, user=user, db=db
+    )
+    db.refresh(account, with_for_update=True)
+    create_deposit(db, account, body.amount)
+    db.commit()
+    db.refresh(account)
+
+    return _account_response(account)
 
 
 @router.delete("/accounts/{account_id}", response_model=AccountDeleteResponse)

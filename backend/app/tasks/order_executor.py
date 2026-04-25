@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
 from app.services.market_calendar import NYSE_HOLIDAYS, is_stock_market_open
-from app.services.trading import _to_money, compute_market_fill_price, execute_fill
+from app.services.trading import to_money, compute_market_fill_price, execute_fill
 
 ET = ZoneInfo("America/New_York")
 POLL_INTERVAL = 5  # seconds between executor cycles
@@ -198,7 +198,7 @@ def _process_open_orders() -> None:
                         .first()
                     )
                     if account is not None:
-                        account.reserved_balance = _to_money(
+                        account.reserved_balance = to_money(
                             max(
                                 Decimal("0"),
                                 account.reserved_balance - remaining * order.reserved_per_share,

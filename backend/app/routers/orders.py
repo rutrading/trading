@@ -25,7 +25,7 @@ from app.services.atr import compute_atr
 from app.services.market_calendar import is_stock_market_open
 from app.services.trading import (
     OrderValidationError,
-    _to_money,
+    to_money,
     compute_market_fill_price,
     compute_stop_reservation_per_share,
     execute_fill,
@@ -360,7 +360,7 @@ async def place_order(
             # Postgres will persist; otherwise rounding drift accumulates
             # across partial fills and the buying-power check sees a stale
             # higher-precision number.
-            account.reserved_balance = _to_money(account.reserved_balance + quantity * rps)
+            account.reserved_balance = to_money(account.reserved_balance + quantity * rps)
             account.updated_at = datetime.now(timezone.utc)
 
         # for non-market sell orders, commit the shares so concurrent sell orders
@@ -574,7 +574,7 @@ async def cancel_order(
 
     # release reserved balance for open buy orders
     if order.side == "buy" and order.reserved_per_share is not None:
-        account.reserved_balance = _to_money(
+        account.reserved_balance = to_money(
             max(
                 Decimal("0"),
                 account.reserved_balance - remaining * order.reserved_per_share,
