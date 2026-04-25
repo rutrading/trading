@@ -51,7 +51,7 @@ MARKET_MAX_SLIPPAGE = Decimal("0.02")     # 2% ceiling — prevents unrealistic 
 _MONEY_QUANT = Decimal("0.01")
 
 
-def _to_money(value: Decimal) -> Decimal:
+def to_money(value: Decimal) -> Decimal:
     """Round a Decimal money value to numeric(14,2), banker's rounding."""
     return value.quantize(_MONEY_QUANT, rounding=ROUND_HALF_EVEN)
 
@@ -256,7 +256,7 @@ def execute_fill(
     # `total` lands in transaction.total (numeric(14,2)) and drives the
     # account.balance update — quantize once here so every downstream consumer
     # sees the same value Postgres will store.
-    total = _to_money(fill_quantity * fill_price)
+    total = to_money(fill_quantity * fill_price)
 
     # pre-fill balance check for buy orders — safety net in case funds were
     # consumed by other orders between placement and execution
@@ -269,7 +269,7 @@ def execute_fill(
         if available < total:
             order.status = "cancelled"
             order.rejection_reason = "Insufficient buying power at fill time"
-            account.reserved_balance = _to_money(
+            account.reserved_balance = to_money(
                 max(
                     Decimal("0"),
                     account.reserved_balance - remaining * per_share,
@@ -341,7 +341,7 @@ def execute_fill(
 
         # deduct from balance — quantize so the in-memory value matches what
         # numeric(14,2) will store on flush
-        account.balance = _to_money(account.balance - total)
+        account.balance = to_money(account.balance - total)
 
         # release the per-share reservation for the filled quantity
         if order.reserved_per_share is not None:
@@ -360,7 +360,7 @@ def execute_fill(
                     release,
                     account.reserved_balance,
                 )
-            account.reserved_balance = _to_money(max(Decimal("0"), new_reserved))
+            account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
 
     elif order.side == "sell":
         if holding is None:
@@ -385,7 +385,7 @@ def execute_fill(
 
         # add proceeds to balance — quantize so the in-memory value matches
         # what numeric(14,2) will store on flush
-        account.balance = _to_money(account.balance + total)
+        account.balance = to_money(account.balance + total)
 
     account.updated_at = datetime.now(timezone.utc)
 

@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
-import { resetAccountBalance } from "@/app/actions/auth";
+import { resetAccount } from "@/app/actions/auth";
 import { toast } from "@/lib/toasts";
 import {
   EXPERIENCE_OPTIONS,
@@ -31,7 +31,7 @@ type Props = {
   currentLevel: Experience;
 };
 
-export const ResetBalance = ({ accountId, accountName, currentLevel }: Props) => {
+export const ResetAccount = ({ accountId, accountName, currentLevel }: Props) => {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<Experience>(currentLevel);
@@ -39,14 +39,14 @@ export const ResetBalance = ({ accountId, accountName, currentLevel }: Props) =>
 
   function handleReset() {
     startTransition(async () => {
-      const result = await resetAccountBalance(accountId, selectedLevel);
+      const result = await resetAccount(accountId, selectedLevel);
       if (!result.success) {
         toast.error("Reset failed", result.error);
         return;
       }
       toast.success(
-        "Balance reset",
-        `${accountName} restored to ${getExperienceOption(selectedLevel).balance}.`,
+        "Account reset",
+        `${accountName} restored to ${getExperienceOption(selectedLevel).balance} with a clean slate.`,
       );
       setOpen(false);
       router.refresh();
@@ -64,16 +64,17 @@ export const ResetBalance = ({ accountId, accountName, currentLevel }: Props) =>
         }}
       >
         <ArrowCounterClockwise size={14} />
-        Reset balance
+        Reset Account
       </Button>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reset balance</AlertDialogTitle>
+            <AlertDialogTitle>Reset Account</AlertDialogTitle>
             <AlertDialogDescription>
-              Choose an experience level to restore {accountName}&apos;s virtual
-              cash. This resets positions and orders.
+              Choose an experience level to reset {accountName}. This permanently
+              deletes all positions, orders, and transaction history. The account
+              starts fresh with the chosen level&apos;s balance.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3 px-6 pb-4">
@@ -128,7 +129,7 @@ export const ResetBalance = ({ accountId, accountName, currentLevel }: Props) =>
               Cancel
             </Button>
             <Button onClick={handleReset} disabled={pending}>
-              {pending ? "Resetting..." : "Reset balance"}
+              {pending ? "Resetting..." : "Reset Account"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

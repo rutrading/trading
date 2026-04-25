@@ -1,6 +1,6 @@
 /**
  * Shared source of truth for experience levels, starting balances, and the
- * copy shown in the onboarding flow / reset-balance dialog. Update here,
+ * copy shown in the onboarding flow / reset-account dialog. Update here,
  * not in the individual components.
  */
 
