@@ -17,6 +17,7 @@ type InputProps = Omit<
 function Input({
   className,
   size = "default",
+  style,
   unstyled = false,
   nativeInput = false,
   ...props
@@ -49,6 +50,7 @@ function Input({
           className={inputClassName}
           data-slot="input"
           size={typeof size === "number" ? size : undefined}
+          style={typeof style === "function" ? undefined : style}
           {...props}
         />
       ) : (
@@ -56,6 +58,7 @@ function Input({
           className={inputClassName}
           data-slot="input"
           size={typeof size === "number" ? size : undefined}
+          style={style}
           {...props}
         />
       )}
