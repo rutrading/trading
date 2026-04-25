@@ -71,20 +71,34 @@ export async function createAccount(
   }
 
   try {
-    const [tradingAccount] = await db
-      .insert(schema.tradingAccount)
-      .values({ name, type, balance, isJoint, experienceLevel: experience })
-      .returning();
+    // All three writes (account row + members + seed deposit) must succeed
+    // together. A partial failure (e.g. the deposit insert errors) would
+    // leave an account without its seed deposit, permanently breaking the
+    // running-cash walk in getAllTransactions for that account.
+    await db.transaction(async (tx) => {
+      const [tradingAccount] = await tx
+        .insert(schema.tradingAccount)
+        .values({ name, type, balance, isJoint, experienceLevel: experience })
+        .returning();
 
-    const members: (typeof schema.accountMember.$inferInsert)[] = [
-      { accountId: tradingAccount.id, userId: session.user.id },
-    ];
+      const members: (typeof schema.accountMember.$inferInsert)[] = [
+        { accountId: tradingAccount.id, userId: session.user.id },
+      ];
 
-    if (partnerId) {
-      members.push({ accountId: tradingAccount.id, userId: partnerId });
-    }
+      if (partnerId) {
+        members.push({ accountId: tradingAccount.id, userId: partnerId });
+      }
 
-    await db.insert(schema.accountMember).values(members);
+      await tx.insert(schema.accountMember).values(members);
+
+      // Seed the transaction history with the starting deposit so the ledger
+      // balances back to zero instead of the implicit $100k floor.
+      await tx.insert(schema.transaction).values({
+        kind: "deposit",
+        tradingAccountId: tradingAccount.id,
+        total: balance,
+      });
+    });
 
     return { success: true };
   } catch {

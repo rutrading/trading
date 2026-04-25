@@ -9,6 +9,8 @@ import { useTheme } from "next-themes";
 import {
   Briefcase,
   ChartLine,
+  ClockCounterClockwise,
+  CurrencyCircleDollar,
   Newspaper,
   Binoculars,
   GearSix,
@@ -16,6 +18,7 @@ import {
   SignOut,
   Moon,
   List,
+  Question,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -45,7 +48,9 @@ import { useRouter } from "next/navigation";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: ChartLine },
-  { label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { label: "Holdings", href: "/holdings", icon: Briefcase },
+  { label: "Activity", href: "/activity", icon: ClockCounterClockwise },
+  { label: "Trade", href: "/trade", icon: CurrencyCircleDollar },
   { label: "Orders", href: "/orders", icon: Receipt },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "Watchlist", href: "/watchlist", icon: Binoculars },
@@ -194,6 +199,14 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
                   Dark Mode
                 </span>
               </MenuCheckboxItem>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Help</MenuGroupLabel>
+              <MenuItem render={<Link href="/faq" />}>
+                <Question />
+                FAQ
+              </MenuItem>
             </MenuGroup>
             <MenuSeparator />
             <MenuItem variant="destructive" onClick={handleSignOut}>

@@ -1,6 +1,7 @@
 """WebSocket endpoint for browser clients.
 
 Protocol (JSON messages from client):
+  { "type": "auth",        "token": "<jwt>" }   ← required first message
   { "type": "ping" }
   { "type": "subscribe",   "tickers": ["AAPL", "MSFT"] }
   { "type": "unsubscribe", "tickers": ["AAPL"] }
@@ -14,12 +15,16 @@ Server sends:
   { "type": "error", "message": "..." }
 
 Authentication:
-  Pass JWT as a query parameter: ws://host/api/ws?token=<jwt>
-  In dev mode (SKIP_AUTH=true), no token is needed.
+  Open the connection unauthenticated, then send `{type: "auth", token: <jwt>}`
+  as the first frame within AUTH_TIMEOUT_SECONDS. The server closes the
+  connection with code 4001 if the frame is missing, malformed, or the token
+  fails verification. Putting the JWT in the first frame instead of the
+  upgrade URL keeps it out of access logs and the browser's Referer header.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -34,6 +39,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# How long to wait for the first {type: "auth", token: ...} frame before
+# closing as unauthorized. Long enough to absorb a slow client, short enough
+# that an attacker can't tie up a connection slot indefinitely.
+AUTH_TIMEOUT_SECONDS = 5.0
 
 # set by main.py on startup
 _manager: ConnectionManager | None = None
@@ -99,23 +109,56 @@ async def _handle_message(manager: ConnectionManager, ws: WebSocket, msg: dict) 
     await _send(ws, {"type": "unsubscribed", "tickers": tickers})
 
 
+async def _await_auth_token(ws: WebSocket) -> str | None:
+    """Wait for the first frame and extract its `token` field.
+
+    Returns the token string when the frame is a valid
+    `{type: "auth", token: "<jwt>"}` payload received within
+    AUTH_TIMEOUT_SECONDS. Returns None on timeout, malformed JSON,
+    wrong-shape payload, or if the client disconnects first.
+    """
+    try:
+        raw = await asyncio.wait_for(ws.receive_text(), timeout=AUTH_TIMEOUT_SECONDS)
+    except (TimeoutError, WebSocketDisconnect):
+        return None
+
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(msg, dict):
+        return None
+    if msg.get("type") != "auth":
+        return None
+    token = msg.get("token")
+    return token if isinstance(token, str) and token else None
+
+
 @router.websocket("/api/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     """Main websocket endpoint for quote subscriptions."""
     manager = _manager
     if manager is None:
+        # accept first so the browser receives a structured close instead of
+        # a network-level upgrade failure (which surfaces as a generic
+        # WebSocket error in devtools without a code).
+        await ws.accept()
         await ws.close(code=1011, reason="Server not ready")
         return
 
-    # authenticate via query param token
-    token = ws.query_params.get("token")
-    payload = verify_token(token)
+    # Accept the connection unauthenticated, then require the first frame
+    # to be `{type: "auth", token: "<jwt>"}`. Keeps the JWT out of the
+    # request URL (and therefore out of access logs and Referer headers).
+    await ws.accept()
+    token = await _await_auth_token(ws)
+    payload = verify_token(token) if token else None
     if payload is None:
         await ws.close(code=4001, reason="Unauthorized")
         return
 
     user_id = payload.get("sub", "unknown")
-    await manager.connect(ws, user_id)
+    await manager.connect(ws, user_id, already_accepted=True)
 
     try:
         while True:

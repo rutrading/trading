@@ -16,6 +16,8 @@ const rewrite = (sql: string): string => {
   out = out.replace(/DROP TABLE (?!IF EXISTS)"/g, 'DROP TABLE IF EXISTS "');
   out = out.replace(/DROP TYPE (?!IF EXISTS)"/g, 'DROP TYPE IF EXISTS "');
 
+  // NOTE: `$$` in a String.replace replacement string is the escape for a literal
+  // `$`. To emit the SQL DO-block dollar-quote `$$`, write `$$$$` here.
   out = out.replace(
     /^(CREATE TYPE [^;]+;)/gm,
     "DO $$$$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$$$;",

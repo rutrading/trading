@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     Enum,
     Float,
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -69,6 +71,13 @@ order_status_enum = Enum(
     "cancelled",
     "rejected",
     name="order_status",
+    create_type=False,
+)
+transaction_kind_enum = Enum(
+    "trade",
+    "deposit",
+    "withdrawal",
+    name="transaction_kind",
     create_type=False,
 )
 experience_level_enum = Enum(
@@ -131,6 +140,12 @@ class Quote(Base):
     ticker: Mapped[str] = mapped_column(
         String, ForeignKey("symbol.ticker", ondelete="CASCADE"), primary_key=True
     )
+    # NB: price columns here are Postgres double precision (Float). Callers
+    # converting to Decimal for trade math should do `Decimal(str(value))` —
+    # the float→Decimal conversion is lossy in the last few binary digits.
+    # The truncation is acceptable for a paper-trading sim because the value
+    # is only used to compute fill prices, which are themselves persisted at
+    # numeric(20,10) precision in transaction.price.
     price: Mapped[float | None] = mapped_column(Float, default=None)
     bid_price: Mapped[float | None] = mapped_column(Float, default=None)
     bid_size: Mapped[float | None] = mapped_column(Float, default=None)
@@ -243,6 +258,21 @@ class Order(Base):
         Index("order_ticker_idx", "ticker"),
         Index("order_status_idx", "status"),
         Index("order_created_at_idx", "created_at"),
+        # Composite indexes mirroring web/src/db/schema.ts so the planner
+        # can serve the dominant `WHERE trading_account_id = $1 [AND
+        # status = $2] ORDER BY created_at DESC LIMIT N` queries via an
+        # in-order index walk instead of a per-account sort.
+        Index(
+            "order_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
+        Index(
+            "order_account_status_created_idx",
+            "trading_account_id",
+            "status",
+            text("created_at DESC"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -255,17 +285,22 @@ class Order(Base):
     order_type: Mapped[str] = mapped_column(order_type_enum)
     time_in_force: Mapped[str] = mapped_column(time_in_force_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
-    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
-    stop_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), default=None)
+    limit_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), default=None)
+    stop_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), default=None)
     filled_quantity: Mapped[Decimal] = mapped_column(
         Numeric(16, 8), default=Decimal("0")
     )
     average_fill_price: Mapped[Decimal | None] = mapped_column(
-        Numeric(14, 2), default=None
+        Numeric(20, 10), default=None
+    )
+    # Snapshot of the live market price at placement time for market orders
+    # (null for limit/stop/stop_limit — their intent lives in limit_price/stop_price).
+    reference_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 10), nullable=True, default=None
     )
     status: Mapped[str] = mapped_column(order_status_enum, default="pending")
     rejection_reason: Mapped[str | None] = mapped_column(String, default=None)
-    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(14, 6), nullable=True, default=None)
+    reserved_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
@@ -286,27 +321,48 @@ class Transaction(Base):
         Index("transaction_order_id_idx", "order_id"),
         Index("transaction_ticker_idx", "ticker"),
         Index("transaction_created_at_idx", "created_at"),
+        # Composite index mirroring web/src/db/schema.ts so the planner
+        # can serve `WHERE trading_account_id = $1 ORDER BY created_at
+        # DESC LIMIT N` via an in-order index walk.
+        Index(
+            "transaction_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
+        # Trade-kind transactions must retain the columns that became
+        # nullable when deposit/withdrawal kinds were added. Mirrors the
+        # CHECK constraint added in 0008_transaction_trade_columns_check.sql.
+        CheckConstraint(
+            "kind <> 'trade' OR (order_id IS NOT NULL AND ticker IS NOT NULL "
+            "AND side IS NOT NULL AND quantity IS NOT NULL AND price IS NOT NULL)",
+            name="transaction_trade_columns_required_check",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    order_id: Mapped[int] = mapped_column(ForeignKey("order.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(transaction_kind_enum, default="trade")
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order.id", ondelete="CASCADE"), nullable=True
+    )
     trading_account_id: Mapped[int] = mapped_column(
         ForeignKey("trading_account.id", ondelete="CASCADE")
     )
-    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
-    side: Mapped[str] = mapped_column(order_side_enum)
-    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8))
-    price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    ticker: Mapped[str | None] = mapped_column(
+        String, ForeignKey("symbol.ticker"), nullable=True
+    )
+    side: Mapped[str | None] = mapped_column(order_side_enum, nullable=True)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 8), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 10), nullable=True)
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )
 
-    order: Mapped["Order"] = relationship(back_populates="transactions")
+    order: Mapped["Order | None"] = relationship(back_populates="transactions")
     trading_account: Mapped["TradingAccount"] = relationship(
         back_populates="transactions"
     )
-    symbol: Mapped["Symbol"] = relationship(back_populates="transactions")
+    symbol: Mapped["Symbol | None"] = relationship(back_populates="transactions")
 
 
 class Holding(Base):
@@ -327,7 +383,7 @@ class Holding(Base):
     asset_class: Mapped[str] = mapped_column(asset_class_enum)
     quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
     reserved_quantity: Mapped[Decimal] = mapped_column(Numeric(16, 8), default=Decimal("0"))
-    average_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(20, 10), default=Decimal("0"))
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(timezone.utc)
     )

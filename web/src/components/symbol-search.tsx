@@ -72,23 +72,20 @@ function HighlightedTicker({
   );
 }
 
-function useSymbolSearch() {
+function useSymbolSearch(assetClass?: "us_equity" | "crypto") {
   const [searchResults, setSearchResults] = useState<SymbolItem[]>([]);
   const [trending, setTrending] = useState<SymbolItem[]>([]);
   const [isPending, startTransition] = useTransition();
   const [inputValue, setInputValue] = useState("");
   const debouncedQuery = useDebouncedValue(inputValue);
-  const trendingLoaded = useRef(false);
 
-  // load trending once on mount
+  // reload trending when the asset-class hint changes
   useEffect(() => {
-    if (trendingLoaded.current) return;
-    trendingLoaded.current = true;
     startTransition(async () => {
-      const results = await getTrendingSymbols();
+      const results = await getTrendingSymbols(assetClass);
       setTrending(results.map(toItem));
     });
-  }, []);
+  }, [assetClass]);
 
   // fire search when debounced query changes
   useEffect(() => {
@@ -121,6 +118,8 @@ type SymbolSearchProps = {
   className?: string;
   autoFocus?: boolean;
   size?: "sm" | "default" | "lg";
+  filter?: (item: SymbolItem) => boolean;
+  assetClass?: "us_equity" | "crypto";
 };
 
 export function SymbolSearch({
@@ -129,15 +128,19 @@ export function SymbolSearch({
   className,
   autoFocus,
   size = "sm",
+  filter,
+  assetClass,
 }: SymbolSearchProps) {
   const {
-    searchResults,
-    trending,
+    searchResults: rawResults,
+    trending: rawTrending,
     isPending,
     isSettled,
     inputValue,
     setInputValue,
-  } = useSymbolSearch();
+  } = useSymbolSearch(assetClass);
+  const searchResults = filter ? rawResults.filter(filter) : rawResults;
+  const trending = filter ? rawTrending.filter(filter) : rawTrending;
   const [open, setOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -214,7 +217,10 @@ export function SymbolSearch({
           size={size}
           placeholder={placeholder}
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => {
+            setInputValue(e.target.value.toUpperCase());
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKeyDown}
           autoFocus={autoFocus}

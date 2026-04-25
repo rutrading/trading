@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ChartLine,
   Briefcase,
+  ClockCounterClockwise,
   Newspaper,
   Binoculars,
   GearSix,
@@ -63,7 +64,9 @@ interface Group {
 
 const PAGES: PageItem[] = [
   { kind: "page", value: "dashboard home overview", label: "Dashboard", href: "/", icon: ChartLine },
-  { kind: "page", value: "portfolio holdings stocks positions", label: "Portfolio", href: "/portfolio", icon: Briefcase },
+  { kind: "page", value: "portfolio chart performance allocation", label: "Portfolio", href: "/portfolio", icon: ChartLine },
+  { kind: "page", value: "holdings positions stocks", label: "Holdings", href: "/holdings", icon: Briefcase },
+  { kind: "page", value: "activity transactions history", label: "Activity", href: "/activity", icon: ClockCounterClockwise },
   { kind: "page", value: "news articles headlines market", label: "News", href: "/news", icon: Newspaper },
   { kind: "page", value: "watchlist tracked favorites saved", label: "Watchlist", href: "/watchlist", icon: Binoculars },
   { kind: "page", value: "settings account profile preferences", label: "Settings", href: "/settings", icon: GearSix },

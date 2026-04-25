@@ -2,12 +2,16 @@
 
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
+import { getHistoricalBars } from "@/app/actions/bars";
+import { computeRunningCashWalk } from "@/lib/transactions";
 
 export type Holding = {
   id: number;
   ticker: string;
+  name: string | null;
   asset_class: "us_equity" | "crypto";
   quantity: string;
+  reserved_quantity: string;
   average_cost: string;
   created_at: string;
   updated_at: string;
@@ -15,11 +19,12 @@ export type Holding = {
 
 export type Transaction = {
   id: number;
-  order_id: number;
-  ticker: string;
-  side: "buy" | "sell";
-  quantity: string;
-  price: string;
+  kind: "trade" | "deposit" | "withdrawal";
+  order_id: number | null;
+  ticker: string | null;
+  side: "buy" | "sell" | null;
+  quantity: string | null;
+  price: string | null;
   total: string;
   created_at: string;
 };
@@ -61,4 +66,184 @@ export async function getTransactions(
     per_page: perPage.toString(),
     ticker,
   });
+}
+
+export type HoldingRow = Holding & { trading_account_id: number };
+export type TransactionRow = Transaction & {
+  trading_account_id: number;
+  cash_after: string;
+};
+
+export type AllHoldings = {
+  holdings: HoldingRow[];
+  cashByAccount: Record<number, string>;
+  totalCash: number;
+};
+
+export async function getAllHoldings(
+  tradingAccountIds: number[],
+): Promise<AllHoldings> {
+  const results = await Promise.all(
+    tradingAccountIds.map(async (id) => {
+      const res = await getHoldings(id);
+      return { id, res };
+    }),
+  );
+
+  const holdings: HoldingRow[] = [];
+  const cashByAccount: Record<number, string> = {};
+  let totalCash = 0;
+
+  for (const { id, res } of results) {
+    if (!res.ok) {
+      cashByAccount[id] = "0";
+      continue;
+    }
+    cashByAccount[id] = res.data.cash_balance;
+    totalCash += parseFloat(res.data.cash_balance);
+    for (const h of res.data.holdings) {
+      holdings.push({ ...h, trading_account_id: id });
+    }
+  }
+
+  return { holdings, cashByAccount, totalCash };
+}
+
+export type PortfolioPoint = { time: number; value: number };
+
+// Approximation of portfolio value over time. For each unique held ticker
+// we pull `days` of daily closes and sum (qty × close) on each date, then
+// add the user's *current* cash balance. Caveats baked in:
+//   - Uses CURRENT quantity for every historical date, so a position you
+//     opened last week appears as if you've held it the whole window.
+//   - Cash is treated as constant — there is no per-date cash snapshot.
+// For a paper-trading dashboard those simplifications are fine.
+//
+// Callers must pass the already-loaded holdings/cash. The dashboard already
+// has them on hand — fetching twice would double the per-account /holdings
+// requests and contributes to pool exhaustion under fan-out.
+export async function getPortfolioTimeSeries(
+  holdings: HoldingRow[],
+  totalCash: number,
+  days = 30,
+): Promise<PortfolioPoint[]> {
+  const session = await getSession();
+  if (!session) return [];
+  if (holdings.length === 0) return [];
+
+  // Sum quantity per ticker across all in-scope accounts. The same ticker
+  // can legitimately live in two accounts (joint vs individual), and for the
+  // chart we only care about the position's total exposure.
+  const qtyByTicker = new Map<string, number>();
+  for (const h of holdings) {
+    const qty = parseFloat(h.quantity);
+    if (!(qty > 0)) continue;
+    qtyByTicker.set(h.ticker, (qtyByTicker.get(h.ticker) ?? 0) + qty);
+  }
+  const tickers = [...qtyByTicker.keys()];
+  if (tickers.length === 0) return [];
+
+  // ISO date with no time component — `1Day` bars are anchored to the
+  // session date and the backend handles timezone alignment.
+  const start = new Date(Date.now() - days * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const barResults = await Promise.all(
+    tickers.map((ticker) =>
+      getHistoricalBars({ ticker, timeframe: "1Day", start }),
+    ),
+  );
+
+  const valueByTime = new Map<number, number>();
+  for (let i = 0; i < tickers.length; i++) {
+    const res = barResults[i];
+    if (!res.ok) continue;
+    const qty = qtyByTicker.get(tickers[i]) ?? 0;
+    for (const bar of res.data.bars) {
+      valueByTime.set(bar.time, (valueByTime.get(bar.time) ?? 0) + qty * bar.close);
+    }
+  }
+
+  return [...valueByTime.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
+}
+
+// Bars-only refetch used by the dashboard's portfolio chart when the user
+// switches period (1W / 1M / 3M / 1Y). Takes the per-ticker quantities and
+// cash that the chart already received as server-rendered props — no need
+// to refetch holdings or live quotes, both of which were identical the
+// moment the dashboard rendered. The synthetic "now" point is appended
+// client-side from `liveValue` (also already in scope).
+export async function refreshPortfolioBars(
+  tickerQuantities: Record<string, string>,
+  totalCash: number,
+  days: number,
+): Promise<PortfolioPoint[]> {
+  const session = await getSession();
+  if (!session) return [];
+
+  const tickers = Object.keys(tickerQuantities);
+  if (tickers.length === 0) return [];
+
+  const start = new Date(Date.now() - days * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const barResults = await Promise.all(
+    tickers.map((ticker) =>
+      getHistoricalBars({ ticker, timeframe: "1Day", start }),
+    ),
+  );
+
+  const valueByTime = new Map<number, number>();
+  for (let i = 0; i < tickers.length; i++) {
+    const res = barResults[i];
+    if (!res.ok) continue;
+    const qty = parseFloat(tickerQuantities[tickers[i]]);
+    if (!(qty > 0)) continue;
+    for (const bar of res.data.bars) {
+      valueByTime.set(bar.time, (valueByTime.get(bar.time) ?? 0) + qty * bar.close);
+    }
+  }
+
+  return [...valueByTime.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
+}
+
+export async function getAllTransactions(
+  tradingAccountIds: number[],
+  cashByAccount: Record<number, string>,
+  page = 1,
+  perPage = 25,
+): Promise<{ transactions: TransactionRow[]; total: number; page: number; perPage: number }> {
+  // Backend caps per_page at 100. Fetch all pages per account, merge, paginate.
+  const BACKEND_MAX = 100;
+  const results = await Promise.all(
+    tradingAccountIds.map(async (id) => {
+      const rows: Transaction[] = [];
+      let p = 1;
+      while (true) {
+        const res = await getTransactions(id, p, undefined, BACKEND_MAX);
+        if (!res.ok) break;
+        rows.push(...res.data.transactions);
+        if (rows.length >= res.data.total || res.data.transactions.length === 0) break;
+        p += 1;
+        if (p > 100) break;
+      }
+      return { id, rows };
+    }),
+  );
+
+  const merged = computeRunningCashWalk(results, cashByAccount);
+  const total = merged.length;
+  const start = (page - 1) * perPage;
+  return {
+    transactions: merged.slice(start, start + perPage),
+    total,
+    page,
+    perPage,
+  };
 }

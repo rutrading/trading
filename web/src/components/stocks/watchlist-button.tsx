@@ -1,24 +1,32 @@
 "use client";
 
-import { useOptimistic, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Star } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { addToWatchlist, removeFromWatchlist } from "@/app/actions/watchlist";
 import { toastManager } from "@/components/ui/toast";
 
 export function WatchlistButton({ ticker, initialWatched }: { ticker: string; initialWatched: boolean }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [watched, setOptimisticWatched] = useOptimistic(initialWatched);
+  const [watched, setWatched] = useState(initialWatched);
+
+  // Resync when the parent server component re-renders with a new value
+  // (e.g. after router.refresh post-mutation).
+  useEffect(() => {
+    setWatched(initialWatched);
+  }, [initialWatched]);
 
   const handleToggle = () => {
+    const next = !watched;
+    setWatched(next);
     startTransition(async () => {
-      setOptimisticWatched(!watched);
-      const res = watched
-        ? await removeFromWatchlist(ticker)
-        : await addToWatchlist(ticker);
-
-      if (!res.ok) {
-        setOptimisticWatched(watched);
+      const res = next ? await addToWatchlist(ticker) : await removeFromWatchlist(ticker);
+      if (res.ok) {
+        router.refresh();
+      } else {
+        setWatched(!next);
         toastManager.add({ title: `Failed to update watchlist`, type: "error" });
       }
     });
