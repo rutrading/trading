@@ -47,6 +47,17 @@ def _alpaca_headers(config=None) -> dict[str, str]:
     }
 
 
+def _has_alpaca_credentials(config=None) -> bool:
+    if config is None:
+        config = get_config()
+    key = (config.alpaca_api_key or "").strip()
+    secret = (config.alpaca_secret_key or "").strip()
+    return key not in {"", "your_alpaca_key_here"} and secret not in {
+        "",
+        "your_alpaca_secret_here",
+    }
+
+
 def _symbol_to_dict(s: Symbol) -> dict:
     return {
         "ticker": s.ticker,
@@ -285,11 +296,9 @@ async def fetch_and_upsert_symbol(
         return _symbol_to_dict(s)
 
 
-@router.post("/symbols/seed")
-async def seed_symbols():
+async def sync_symbols_from_alpaca() -> dict[str, int]:
     """
     Bulk fetch all tradable assets from Alpaca and upsert into symbol table.
-    Called during setup and by the daily refresh scheduler.
     """
     config = get_config()
     headers = _alpaca_headers(config)
@@ -319,6 +328,9 @@ async def seed_symbols():
 
     now = datetime.now(timezone.utc)
     count = 0
+    inserted = 0
+    updated = 0
+    seen_tickers: set[str] = set()
 
     with db_session() as db:
         existing_tickers = {row[0] for row in db.query(Symbol.ticker).all()}
@@ -327,6 +339,7 @@ async def seed_symbols():
             t = asset.get("symbol", "")
             if not t:
                 continue
+            seen_tickers.add(t)
 
             if t in existing_tickers:
                 db.query(Symbol).filter(Symbol.ticker == t).update(
@@ -339,6 +352,7 @@ async def seed_symbols():
                         "updated_at": now,
                     }
                 )
+                updated += 1
             else:
                 db.add(
                     Symbol(
@@ -352,9 +366,90 @@ async def seed_symbols():
                         updated_at=now,
                     )
                 )
+                inserted += 1
             count += 1
+
+        deactivated = 0
+        if seen_tickers:
+            deactivated = (
+                db.query(Symbol)
+                .filter(Symbol.tradable, ~Symbol.ticker.in_(seen_tickers))
+                .update(
+                    {"tradable": False, "updated_at": now},
+                    synchronize_session=False,
+                )
+            )
 
         db.commit()
 
-    logger.info("Seeded %d symbols", count)
-    return {"count": count}
+    logger.info(
+        "Synced %d symbols from Alpaca (%d inserted, %d updated, %d deactivated)",
+        count,
+        inserted,
+        updated,
+        deactivated,
+    )
+    return {
+        "count": count,
+        "inserted": inserted,
+        "updated": updated,
+        "deactivated": deactivated,
+    }
+
+
+async def sync_symbols_if_needed() -> None:
+    config = get_config()
+    if not config.symbol_seed_on_startup:
+        logger.info("Symbol startup seed disabled")
+        return
+
+    try:
+        with db_session() as db:
+            count = db.query(func.count(Symbol.ticker)).scalar() or 0
+    except Exception:
+        logger.exception("Unable to check symbol table for startup seed")
+        return
+
+    if count > 0:
+        logger.info("Symbol table already has %d rows; skipping startup seed", count)
+        return
+
+    if not _has_alpaca_credentials(config):
+        logger.warning("Skipping symbol startup seed: Alpaca credentials not configured")
+        return
+
+    logger.info("Symbol table is empty; seeding from Alpaca")
+    try:
+        await sync_symbols_from_alpaca()
+    except Exception:
+        logger.exception("Symbol startup seed failed")
+
+
+async def run_symbol_sync_loop() -> None:
+    await sync_symbols_if_needed()
+
+    config = get_config()
+    interval = config.symbol_seed_refresh_interval_seconds
+    if interval <= 0:
+        logger.info("Periodic symbol sync disabled")
+        return
+
+    while True:
+        await asyncio.sleep(interval)
+        if not _has_alpaca_credentials():
+            logger.warning("Skipping periodic symbol sync: Alpaca credentials not configured")
+            continue
+        try:
+            result = await sync_symbols_from_alpaca()
+            logger.info("Periodic symbol sync complete: %d symbols", result["count"])
+        except Exception:
+            logger.exception("Periodic symbol sync failed")
+
+
+@router.post("/symbols/seed")
+async def seed_symbols():
+    """Manual symbol sync endpoint. Disabled unless explicitly enabled."""
+    config = get_config()
+    if not config.allow_symbol_seed_endpoint:
+        raise HTTPException(status_code=404, detail="Not found")
+    return await sync_symbols_from_alpaca()
