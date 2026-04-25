@@ -2,24 +2,35 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.config import get_config
 from app.auth import get_current_user
-from app.db import Strategy, StrategyRun, Symbol, get_db
+from app.db import Holding, Order, Strategy, StrategyRun, Symbol, get_db
+from app.db.session import get_session_factory
 from app.dependencies import get_trading_account
 from app.schemas import (
+    StrategyBacktestResponse,
+    StrategyCatalogResponse,
     StrategyListResponse,
     StrategyResponse,
+    StrategySnapshotResponse,
     StrategyRunsPageResponse,
     StrategyRunResponse,
+    StrategyTemplateResponse,
 )
+from app.services.strategy_engine import catalog_payload, run_backtest
 from app.tasks.strategy_executor import run_strategy_once
 
 router = APIRouter()
@@ -27,6 +38,7 @@ router = APIRouter()
 ALLOWED_TIMEFRAMES = {"1Day"}
 ALLOWED_TYPES = {"ema_crossover"}
 ALLOWED_STATUS = {"active", "paused", "disabled"}
+MAX_ACTIVE_STRATEGIES_PER_ACCOUNT = 5
 
 
 def _is_missing_strategy_schema_error(exc: Exception) -> bool:
@@ -59,8 +71,11 @@ class CreateStrategyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     strategy_type: str = "ema_crossover"
     ticker: str = Field(min_length=1, max_length=16)
+    symbols_json: list[str] = Field(default_factory=list)
     timeframe: str = "1Day"
+    capital_allocation: str = "10000"
     params_json: dict = Field(default_factory=dict)
+    risk_json: dict = Field(default_factory=dict)
     status: str = "active"
 
     @field_validator("ticker")
@@ -71,9 +86,30 @@ class CreateStrategyRequest(BaseModel):
 
 class UpdateStrategyRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
+    ticker: str | None = None
+    symbols_json: list[str] | None = None
     timeframe: str | None = None
+    capital_allocation: str | None = None
     params_json: dict | None = None
+    risk_json: dict | None = None
     status: str | None = None
+
+
+class BacktestRequest(BaseModel):
+    strategy_type: str = "ema_crossover"
+    ticker: str = Field(min_length=1, max_length=16)
+    symbols_json: list[str] = Field(default_factory=list)
+    timeframe: str = "1Day"
+    capital_allocation: str = "10000"
+    params_json: dict = Field(default_factory=dict)
+    risk_json: dict = Field(default_factory=dict)
+    start: str
+    end: str
+
+
+class StrategyControlRequest(BaseModel):
+    trading_account_id: int
+    action: str = Field(pattern="^(pause_all|resume_all|disable_all)$")
 
 
 def _normalize_params(params: dict | None) -> dict:
@@ -134,11 +170,70 @@ def _normalize_params(params: dict | None) -> dict:
     return normalized
 
 
+def _normalize_risk(risk: dict | None) -> dict:
+    raw = dict(risk or {})
+    try:
+        max_position_quantity = str(raw.get("max_position_quantity", "100"))
+        max_daily_orders = int(raw.get("max_daily_orders", 5))
+        cooldown_minutes = int(raw.get("cooldown_minutes", 30))
+        max_daily_notional = str(raw.get("max_daily_notional", "10000"))
+        allow_pyramiding = bool(raw.get("allow_pyramiding", False))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid risk_json")
+
+    try:
+        if Decimal(max_position_quantity) <= 0:
+            raise HTTPException(status_code=400, detail="max_position_quantity must be > 0")
+        if Decimal(max_daily_notional) <= 0:
+            raise HTTPException(status_code=400, detail="max_daily_notional must be > 0")
+    except (InvalidOperation, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="max_position_quantity and max_daily_notional must be numeric",
+        )
+
+    if max_daily_orders <= 0:
+        raise HTTPException(status_code=400, detail="max_daily_orders must be > 0")
+    if cooldown_minutes < 0:
+        raise HTTPException(status_code=400, detail="cooldown_minutes cannot be negative")
+
+    return {
+        "max_position_quantity": max_position_quantity,
+        "max_daily_orders": max_daily_orders,
+        "cooldown_minutes": cooldown_minutes,
+        "max_daily_notional": max_daily_notional,
+        "allow_pyramiding": allow_pyramiding,
+    }
+
+
+def _normalize_symbols(ticker: str, symbols_json: list[str]) -> tuple[str, list[str]]:
+    symbols = [ticker.strip().upper(), *[s.strip().upper() for s in symbols_json]]
+    symbols = [s for i, s in enumerate(symbols) if s and s not in symbols[:i]]
+    if not symbols:
+        raise HTTPException(status_code=400, detail="At least one symbol is required")
+    return symbols[0], symbols
+
+
 def _get_strategy_or_404(db: Session, strategy_id: int) -> Strategy:
     strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
     if strategy is None:
         raise HTTPException(status_code=404, detail="Strategy not found")
     return strategy
+
+
+def _active_strategy_count(query_result: object) -> int:
+    return query_result if isinstance(query_result, int) else 0
+
+
+def _load_symbols(db: Session, tickers: list[str]) -> list[Symbol]:
+    if len(tickers) == 1:
+        row = db.query(Symbol).filter(Symbol.ticker == tickers[0]).first()
+        return [row] if row is not None else []
+    query = db.query(Symbol).filter(Symbol.ticker.in_(tickers)).order_by(Symbol.ticker.asc())
+    rows = query.all()
+    if isinstance(rows, list):
+        return rows
+    return []
 
 
 @router.get("/strategies", response_model=StrategyListResponse)
@@ -180,6 +275,20 @@ def create_strategy(
             detail="Automated strategies are currently limited to investment accounts",
         )
 
+    active_count = _active_strategy_count(
+        db.query(Strategy)
+        .filter(
+            Strategy.trading_account_id == account.id,
+            Strategy.status == "active",
+        )
+        .count()
+    )
+    if payload.status == "active" and active_count >= MAX_ACTIVE_STRATEGIES_PER_ACCOUNT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Active strategy limit reached ({MAX_ACTIVE_STRATEGIES_PER_ACCOUNT} per account)",
+        )
+
     if payload.strategy_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported strategy_type")
     if payload.timeframe not in ALLOWED_TIMEFRAMES:
@@ -187,21 +296,31 @@ def create_strategy(
     if payload.status not in ALLOWED_STATUS:
         raise HTTPException(status_code=400, detail="Unsupported status")
 
-    symbol = db.query(Symbol).filter(Symbol.ticker == payload.ticker).first()
-    if symbol is None:
-        raise HTTPException(status_code=404, detail=f"{payload.ticker} not found")
-    if symbol.asset_class != "us_equity":
+    primary_ticker, symbols = _normalize_symbols(payload.ticker, payload.symbols_json)
+    symbol_rows = _load_symbols(db, symbols)
+    found = {row.ticker for row in symbol_rows}
+    missing = [ticker for ticker in symbols if ticker not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"{', '.join(missing)} not found")
+    if any(symbol.asset_class != "us_equity" for symbol in symbol_rows):
         raise HTTPException(
             status_code=400,
             detail="Automated strategy v1 supports US equity symbols only",
         )
+
+    try:
+        capital_allocation = Decimal(payload.capital_allocation)
+    except InvalidOperation:
+        raise HTTPException(status_code=400, detail="Invalid capital_allocation")
+    if capital_allocation <= 0:
+        raise HTTPException(status_code=400, detail="capital_allocation must be > 0")
 
     existing = (
         db.query(Strategy)
         .filter(
             Strategy.trading_account_id == account.id,
             Strategy.strategy_type == payload.strategy_type,
-            Strategy.ticker == payload.ticker,
+            Strategy.ticker == primary_ticker,
         )
         .first()
     )
@@ -215,9 +334,12 @@ def create_strategy(
         trading_account_id=account.id,
         name=payload.name,
         strategy_type=payload.strategy_type,
-        ticker=payload.ticker,
+        ticker=primary_ticker,
+        symbols_json=symbols,
         timeframe=payload.timeframe,
+        capital_allocation=capital_allocation,
         params_json=_normalize_params(payload.params_json),
+        risk_json=_normalize_risk(payload.risk_json),
         status=payload.status,
     )
     db.add(strategy)
@@ -243,16 +365,58 @@ def update_strategy(
 
     if payload.name is not None:
         strategy.name = payload.name
+    if payload.ticker is not None or payload.symbols_json is not None:
+        ticker_value = payload.ticker or strategy.ticker
+        primary, symbols = _normalize_symbols(
+            ticker_value,
+            payload.symbols_json if payload.symbols_json is not None else list(strategy.symbols_json or []),
+        )
+        symbol_rows = _load_symbols(db, symbols)
+        found = {row.ticker for row in symbol_rows}
+        missing = [ticker for ticker in symbols if ticker not in found]
+        if missing:
+            raise HTTPException(status_code=404, detail=f"{', '.join(missing)} not found")
+        if any(symbol.asset_class != "us_equity" for symbol in symbol_rows):
+            raise HTTPException(
+                status_code=400,
+                detail="Automated strategy v1 supports US equity symbols only",
+            )
+        strategy.ticker = primary
+        strategy.symbols_json = symbols
     if payload.timeframe is not None:
         if payload.timeframe not in ALLOWED_TIMEFRAMES:
             raise HTTPException(status_code=400, detail="Unsupported timeframe")
         strategy.timeframe = payload.timeframe
+    if payload.capital_allocation is not None:
+        try:
+            strategy.capital_allocation = Decimal(payload.capital_allocation)
+        except InvalidOperation:
+            raise HTTPException(status_code=400, detail="Invalid capital_allocation")
+        if strategy.capital_allocation <= 0:
+            raise HTTPException(status_code=400, detail="capital_allocation must be > 0")
     if payload.status is not None:
         if payload.status not in ALLOWED_STATUS:
             raise HTTPException(status_code=400, detail="Unsupported status")
+        if payload.status == "active":
+            active_count = _active_strategy_count(
+                db.query(Strategy)
+                .filter(
+                    Strategy.trading_account_id == strategy.trading_account_id,
+                    Strategy.status == "active",
+                    Strategy.id != strategy.id,
+                )
+                .count()
+            )
+            if active_count >= MAX_ACTIVE_STRATEGIES_PER_ACCOUNT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Active strategy limit reached ({MAX_ACTIVE_STRATEGIES_PER_ACCOUNT} per account)",
+                )
         strategy.status = payload.status
     if payload.params_json is not None:
         strategy.params_json = _normalize_params(payload.params_json)
+    if payload.risk_json is not None:
+        strategy.risk_json = _normalize_risk(payload.risk_json)
 
     strategy.updated_at = datetime.now(timezone.utc)
     db.commit()
@@ -329,3 +493,240 @@ def run_strategy_manually(
     if not ok:
         raise HTTPException(status_code=404, detail="Strategy not found")
     return {"ok": True}
+
+
+@router.get("/strategy-catalog", response_model=StrategyCatalogResponse)
+def strategy_catalog(
+    user: dict = Depends(get_current_user),
+):
+    _ = user
+    return StrategyCatalogResponse(
+        templates=[StrategyTemplateResponse(**template) for template in catalog_payload()]
+    )
+
+
+def _snapshot_payload(db: Session, trading_account_id: int) -> dict:
+    strategies = (
+        db.query(Strategy)
+        .filter(Strategy.trading_account_id == trading_account_id)
+        .order_by(Strategy.created_at.desc())
+        .all()
+    )
+    runs = (
+        db.query(StrategyRun)
+        .filter(StrategyRun.trading_account_id == trading_account_id)
+        .order_by(StrategyRun.run_at.desc())
+        .limit(20)
+        .all()
+    )
+    open_orders = (
+        db.query(Order)
+        .filter(
+            Order.trading_account_id == trading_account_id,
+            Order.status.in_(["pending", "open", "partially_filled"]),
+        )
+        .order_by(Order.created_at.desc())
+        .limit(25)
+        .all()
+    )
+    holdings = (
+        db.query(Holding)
+        .filter(Holding.trading_account_id == trading_account_id)
+        .order_by(Holding.ticker.asc())
+        .all()
+    )
+    return {
+        "trading_account_id": trading_account_id,
+        "strategies": [StrategyResponse.from_strategy(strategy) for strategy in strategies],
+        "runs": [StrategyRunResponse.from_run(run) for run in runs],
+        "open_orders": [
+            {
+                "id": order.id,
+                "ticker": order.ticker,
+                "side": order.side,
+                "status": order.status,
+                "order_type": order.order_type,
+                "time_in_force": order.time_in_force,
+                "quantity": str(order.quantity),
+                "limit_price": str(order.limit_price) if order.limit_price is not None else None,
+                "stop_price": str(order.stop_price) if order.stop_price is not None else None,
+                "created_at": order.created_at.isoformat(),
+            }
+            for order in open_orders
+        ],
+        "open_positions": [
+            {
+                "id": holding.id,
+                "ticker": holding.ticker,
+                "quantity": str(holding.quantity),
+                "reserved_quantity": str(holding.reserved_quantity),
+                "average_cost": str(holding.average_cost),
+            }
+            for holding in holdings
+        ],
+        "strategy_executor_enabled": str(
+            getattr(get_config(), "strategy_executor_enabled", 1)
+        ).lower()
+        not in {"0", "false", "off", "no"},
+    }
+
+
+async def _stream_strategy_snapshots(trading_account_id: int):
+    session_factory = get_session_factory()
+    previous_payload = ""
+    while True:
+        session = session_factory()
+        try:
+            payload = json.dumps(
+                jsonable_encoder(_snapshot_payload(session, trading_account_id))
+            )
+        finally:
+            session.close()
+
+        if payload != previous_payload:
+            yield f"event: snapshot\ndata: {payload}\n\n"
+            previous_payload = payload
+        else:
+            yield "event: keepalive\ndata: {}\n\n"
+        await asyncio.sleep(3)
+
+
+@router.get("/strategy-snapshot", response_model=StrategySnapshotResponse)
+def strategy_snapshot(
+    trading_account_id: int,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_strategy_schema_ready(db)
+    get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
+    return _snapshot_payload(db, trading_account_id)
+
+
+@router.get("/strategy-stream")
+async def strategy_stream(
+    trading_account_id: int,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_strategy_schema_ready(db)
+    get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
+    return StreamingResponse(
+        _stream_strategy_snapshots(trading_account_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/strategies/backtest", response_model=StrategyBacktestResponse)
+def backtest_strategy(
+    payload: BacktestRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_strategy_schema_ready(db)
+    _ = user
+
+    if payload.strategy_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported strategy_type")
+    if payload.timeframe not in ALLOWED_TIMEFRAMES:
+        raise HTTPException(status_code=400, detail="Unsupported timeframe")
+
+    _, symbols = _normalize_symbols(payload.ticker, payload.symbols_json)
+    symbol_rows = _load_symbols(db, symbols)
+    found = {row.ticker for row in symbol_rows}
+    missing = [ticker for ticker in symbols if ticker not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"{', '.join(missing)} not found")
+    if any(symbol.asset_class != "us_equity" for symbol in symbol_rows):
+        raise HTTPException(
+            status_code=400,
+            detail="Backtesting v1 supports US equity symbols only",
+        )
+
+    try:
+        capital_allocation = Decimal(payload.capital_allocation)
+    except InvalidOperation:
+        raise HTTPException(status_code=400, detail="Invalid capital_allocation")
+    if capital_allocation <= 0:
+        raise HTTPException(status_code=400, detail="capital_allocation must be > 0")
+
+    try:
+        start = datetime.fromisoformat(payload.start.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(payload.end.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid start or end")
+
+    result = run_backtest(
+        db=db,
+        strategy_type=payload.strategy_type,
+        symbols=symbols,
+        timeframe=payload.timeframe,
+        params_json=_normalize_params(payload.params_json),
+        risk_json=_normalize_risk(payload.risk_json),
+        capital_allocation=capital_allocation,
+        start=start,
+        end=end,
+    )
+    return StrategyBacktestResponse(
+        equity_curve=[
+            {
+                "time": point["time"],
+                "equity": str(point["equity"]),
+                "drawdown": str(point["drawdown"]),
+            }
+            for point in result["equity_curve"]
+        ],
+        drawdown_curve=[
+            {
+                "time": point["time"],
+                "equity": str(point["equity"]),
+                "drawdown": str(point["drawdown"]),
+            }
+            for point in result["drawdown_curve"]
+        ],
+        trades=[
+            {
+                "ticker": trade.ticker,
+                "side": trade.side,
+                "quantity": str(trade.quantity),
+                "price": str(trade.price),
+                "timestamp": trade.timestamp.isoformat(),
+                "profit": str(trade.profit) if trade.profit is not None else None,
+            }
+            for trade in result["trades"]
+        ],
+        win_rate=result["win_rate"],
+        avg_return_per_trade=result["avg_return_per_trade"],
+        max_drawdown=result["max_drawdown"],
+        ending_equity=result["ending_equity"],
+    )
+
+
+@router.post("/strategy-controls")
+def strategy_controls(
+    payload: StrategyControlRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_strategy_schema_ready(db)
+    get_trading_account(trading_account_id=payload.trading_account_id, user=user, db=db)
+
+    strategies = (
+        db.query(Strategy)
+        .filter(Strategy.trading_account_id == payload.trading_account_id)
+        .all()
+    )
+    next_status = {
+        "pause_all": "paused",
+        "resume_all": "active",
+        "disable_all": "disabled",
+    }[payload.action]
+    for strategy in strategies:
+        strategy.status = next_status
+        strategy.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"updated": len(strategies), "status": next_status}

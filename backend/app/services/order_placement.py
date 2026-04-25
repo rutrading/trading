@@ -46,6 +46,7 @@ def place_order(
     db: Session,
     account: TradingAccount,
     payload: PlaceOrderInput,
+    commit: bool = True,
 ) -> Order:
     time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
 
@@ -144,8 +145,10 @@ def place_order(
             fill_price=fill_price,
             fill_quantity=payload.quantity,
         )
-        db.commit()
-        db.refresh(order)
+        db.flush()
+        if commit:
+            db.commit()
+            db.refresh(order)
 
         logger.info(
             "Market order filled: %s %s %s @ %s (quoted %s, slippage %.4f%%) for account %d",
@@ -181,8 +184,10 @@ def place_order(
 
         order.status = "open"
         db.add(order)
-        db.commit()
-        db.refresh(order)
+        db.flush()
+        if commit:
+            db.commit()
+            db.refresh(order)
 
         logger.info(
             "Order placed: %s %s %s (%s) for account %d, status=%s",

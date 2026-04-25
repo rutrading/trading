@@ -14,14 +14,19 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
 from app.config import get_config
-from app.db.models import Holding, Strategy, StrategyRun, Symbol, TradingAccount
+from app.db.models import Holding, Quote, Strategy, StrategyRun, Symbol, TradingAccount
 from app.db.session import get_session_factory
 from app.services.order_placement import (
     OrderPlacementError,
     PlaceOrderInput,
     place_order,
 )
-from app.services.strategy_signals import SignalDecision, evaluate_strategy_signal
+from app.services.strategy_engine import (
+    evaluate_strategy_symbol,
+    normalize_symbols,
+    normalized_risk_config,
+    resolve_signal_order_quantity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,7 @@ def _log_run(
     action: str,
     reason: str,
     inputs: dict,
+    ticker: str | None = None,
     order_id: int | None = None,
     error: str | None = None,
 ) -> None:
@@ -105,7 +111,7 @@ def _log_run(
         StrategyRun(
             strategy_id=strategy.id,
             trading_account_id=strategy.trading_account_id,
-            ticker=strategy.ticker,
+            ticker=ticker or strategy.ticker,
             signal=signal,
             action=action,
             reason=reason,
@@ -118,10 +124,15 @@ def _log_run(
 
 def _guardrails(db: Session, strategy: Strategy, now_utc: datetime) -> GuardrailResult:
     params = strategy.params_json or {}
+    risk = normalized_risk_config(strategy.risk_json or {})
 
-    cooldown_minutes = _safe_int(params.get("cooldown_minutes"), 30)
-    max_daily_orders = _safe_int(params.get("max_daily_orders"), 5)
-    max_position_quantity = _safe_decimal(params.get("max_position_quantity"), "100")
+    cooldown_minutes = _safe_int(
+        risk.get("cooldown_minutes", params.get("cooldown_minutes")), 30
+    )
+    max_daily_orders = _safe_int(
+        risk.get("max_daily_orders", params.get("max_daily_orders")), 5
+    )
+    max_daily_notional = _safe_decimal(risk.get("max_daily_notional", "10000"), "10000")
 
     latest_run = (
         db.query(StrategyRun)
@@ -153,39 +164,54 @@ def _guardrails(db: Session, strategy: Strategy, now_utc: datetime) -> Guardrail
     if today_count >= max_daily_orders:
         return GuardrailResult(False, "max_daily_orders_reached")
 
-    holding = (
-        db.query(Holding)
+    today_notional = (
+        db.query(StrategyRun)
         .filter(
-            Holding.trading_account_id == strategy.trading_account_id,
-            Holding.ticker == strategy.ticker,
+            StrategyRun.strategy_id == strategy.id,
+            StrategyRun.run_at >= start_utc,
+            StrategyRun.action.in_(["place_buy", "place_sell"]),
         )
-        .first()
+        .all()
     )
-    current_qty = holding.quantity if holding else Decimal("0")
-    if current_qty >= max_position_quantity:
-        return GuardrailResult(False, "max_position_reached")
+    notional_total = Decimal("0")
+    for run in today_notional:
+        qty = _safe_decimal((run.inputs_json or {}).get("quantity"), "0")
+        price = _safe_decimal(
+            getattr(getattr(run, "order", None), "average_fill_price", None)
+            or (run.inputs_json or {}).get("reference_price")
+            or (run.inputs_json or {}).get("price"),
+            "0",
+        )
+        notional_total += qty * price
+    if notional_total >= max_daily_notional:
+        return GuardrailResult(False, "max_daily_notional_reached")
 
     return GuardrailResult(True, "ok")
 
 
 def _already_signaled_this_bar(
-    strategy: Strategy, signal: str, bar_date: str | None
+    strategy: Strategy, ticker: str, signal: str, bar_date: str | None
 ) -> bool:
     if signal not in {"buy", "sell"} or not bar_date:
         return False
     params = strategy.params_json or {}
     state = params.get("state") if isinstance(params.get("state"), dict) else {}
+    symbol_state = state.get(ticker) if isinstance(state.get(ticker), dict) else {}
     return (
-        state.get("last_signal") == signal
-        and state.get("last_signal_bar_date") == bar_date
+        symbol_state.get("last_signal") == signal
+        and symbol_state.get("last_signal_bar_date") == bar_date
     )
 
 
-def _record_signal_state(strategy: Strategy, signal: str, bar_date: str | None) -> None:
+def _record_signal_state(
+    strategy: Strategy, ticker: str, signal: str, bar_date: str | None
+) -> None:
     params = dict(strategy.params_json or {})
     state = dict(params.get("state") or {})
-    state["last_signal"] = signal
-    state["last_signal_bar_date"] = bar_date
+    symbol_state = dict(state.get(ticker) or {})
+    symbol_state["last_signal"] = signal
+    symbol_state["last_signal_bar_date"] = bar_date
+    state[ticker] = symbol_state
     params["state"] = state
     strategy.params_json = params
 
@@ -224,30 +250,8 @@ def _process_strategy(
         )
         return
 
-    decision: SignalDecision = evaluate_strategy_signal(strategy, db)
-    strategy.last_run_at = now_utc
-
-    if decision.signal == "hold":
-        _log_run(
-            db,
-            strategy=strategy,
-            signal="hold",
-            action="none",
-            reason=decision.reason,
-            inputs=decision.inputs,
-        )
-        return
-
-    if _already_signaled_this_bar(strategy, decision.signal, decision.bar_date):
-        _log_run(
-            db,
-            strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="already_signaled_for_bar",
-            inputs=decision.inputs,
-        )
-        return
+    symbols = normalize_symbols(strategy)
+    processed_any = False
 
     account = (
         db.query(TradingAccount)
@@ -256,106 +260,156 @@ def _process_strategy(
         .first()
     )
     if account is None:
-        _log_run(
-            db,
-            strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="account_missing",
-            inputs=decision.inputs,
-            error="Trading account not found",
-        )
         return
 
-    symbol = db.query(Symbol).filter(Symbol.ticker == strategy.ticker).first()
-    if symbol is None:
-        _log_run(
-            db,
-            strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="symbol_missing",
-            inputs=decision.inputs,
-            error="Symbol not found",
-        )
+    if db.query(Symbol).filter(Symbol.ticker == strategy.ticker).first() is None:
         return
 
-    quantity = _safe_decimal((strategy.params_json or {}).get("order_quantity"), "1")
-    if quantity <= 0:
-        _log_run(
-            db,
-            strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="invalid_order_quantity",
-            inputs=decision.inputs,
-            error="order_quantity must be > 0",
-        )
+    params = strategy.params_json or {}
+    risk = normalized_risk_config(strategy.risk_json or {})
+    quantity_default = _safe_decimal(params.get("order_quantity"), "1")
+    if quantity_default <= 0:
         return
 
-    holding = (
-        db.query(Holding)
-        .filter(
-            Holding.trading_account_id == strategy.trading_account_id,
-            Holding.ticker == strategy.ticker,
+    capital_allocation = _safe_decimal(strategy.capital_allocation, "10000")
+    if symbols:
+        capital_allocation = capital_allocation / len(symbols)
+
+    for ticker in symbols:
+        signal, inputs, bar_date = evaluate_strategy_symbol(strategy, db, ticker)
+        processed_any = True
+        if signal == "hold":
+            _log_run(
+                db,
+                strategy=strategy,
+                signal="hold",
+                action="none",
+                reason=inputs.get("error", "no_cross"),
+                inputs={"ticker": ticker, **inputs},
+                ticker=ticker,
+            )
+            continue
+
+        if _already_signaled_this_bar(strategy, ticker, signal, bar_date):
+            _log_run(
+                db,
+                strategy=strategy,
+                signal=signal,
+                action="none",
+                reason="already_signaled_for_bar",
+                inputs={"ticker": ticker, **inputs},
+                ticker=ticker,
+            )
+            continue
+
+        symbol = db.query(Symbol).filter(Symbol.ticker == ticker).first()
+        if symbol is None:
+            _log_run(
+                db,
+                strategy=strategy,
+                signal=signal,
+                action="none",
+                reason="symbol_missing",
+                inputs={"ticker": ticker, **inputs},
+                ticker=ticker,
+                error="Symbol not found",
+            )
+            continue
+
+        holding = (
+            db.query(Holding)
+            .filter(
+                Holding.trading_account_id == strategy.trading_account_id,
+                Holding.ticker == ticker,
+            )
+            .first()
         )
-        .first()
-    )
-    if decision.signal == "sell" and (holding is None or holding.quantity <= 0):
-        _log_run(
-            db,
-            strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="no_position_to_sell",
-            inputs=decision.inputs,
+
+        side = "buy" if signal == "buy" else "sell"
+        quote = db.query(Quote).filter(Quote.ticker == ticker).first()
+        reference_price = Decimal(str(quote.price)) if quote and quote.price else Decimal("0")
+        current_quantity = holding.quantity if holding else Decimal("0")
+        quantity, blocked_reason = resolve_signal_order_quantity(
+            signal=signal,
+            requested_quantity=quantity_default,
+            current_quantity=current_quantity,
+            price=reference_price,
+            capital_allocation=capital_allocation,
+            risk_json=risk,
         )
-        _record_signal_state(strategy, decision.signal, decision.bar_date)
+
+        if blocked_reason is not None:
+            _log_run(
+                db,
+                strategy=strategy,
+                signal=signal,
+                action="none",
+                reason=blocked_reason,
+                inputs={
+                    "ticker": ticker,
+                    "quantity": str(quantity),
+                    "reference_price": str(reference_price),
+                    **inputs,
+                },
+                ticker=ticker,
+            )
+            continue
+
+        try:
+            order = place_order(
+                db=db,
+                account=account,
+                payload=PlaceOrderInput(
+                    ticker=ticker,
+                    asset_class=symbol.asset_class,
+                    side=side,
+                    order_type="market",
+                    time_in_force="day",
+                    quantity=quantity,
+                ),
+                commit=False,
+            )
+        except OrderPlacementError as exc:
+            strategy.last_error = exc.detail
+            _log_run(
+                db,
+                strategy=strategy,
+                signal=signal,
+                action="none",
+                reason="order_rejected",
+                inputs={
+                    "ticker": ticker,
+                    "quantity": str(quantity),
+                    "reference_price": str(reference_price),
+                    **inputs,
+                },
+                ticker=ticker,
+                error=exc.detail,
+            )
+            continue
+
+        strategy.last_error = None
         strategy.last_signal_at = now_utc
-        return
-
-    side = "buy" if decision.signal == "buy" else "sell"
-    if side == "sell" and holding is not None:
-        quantity = min(quantity, holding.quantity)
-
-    try:
-        order = place_order(
-            db=db,
-            account=account,
-            payload=PlaceOrderInput(
-                ticker=strategy.ticker,
-                asset_class=symbol.asset_class,
-                side=side,
-                order_type="market",
-                time_in_force="day",
-                quantity=quantity,
-            ),
-        )
-    except OrderPlacementError as exc:
-        strategy.last_error = exc.detail
+        strategy.last_run_at = now_utc
+        _record_signal_state(strategy, ticker, signal, bar_date)
         _log_run(
             db,
             strategy=strategy,
-            signal=decision.signal,
-            action="none",
-            reason="order_rejected",
-            inputs=decision.inputs,
-            error=exc.detail,
+            signal=signal,
+            action="place_buy" if signal == "buy" else "place_sell",
+            reason=inputs.get("error", "ema_cross"),
+            inputs={
+                "ticker": ticker,
+                "quantity": str(quantity),
+                "reference_price": str(reference_price),
+                **inputs,
+            },
+            ticker=ticker,
+            order_id=order.id,
         )
-        return
 
-    strategy.last_error = None
-    strategy.last_signal_at = now_utc
-    _record_signal_state(strategy, decision.signal, decision.bar_date)
-    _log_run(
-        db,
-        strategy=strategy,
-        signal=decision.signal,
-        action="place_buy" if decision.signal == "buy" else "place_sell",
-        reason=decision.reason,
-        inputs=decision.inputs,
-        order_id=order.id,
-    )
+    if processed_any:
+        strategy.last_run_at = now_utc
 
 
 def process_active_strategies_once(*, force: bool = False) -> None:
@@ -373,26 +427,23 @@ def process_active_strategies_once(*, force: bool = False) -> None:
         _missing_schema_logged = False
 
         now_et = datetime.now(ET)
-        strategies = (
-            db.query(Strategy)
-            .filter(Strategy.status == "active")
-            .order_by(Strategy.id.asc())
-            .all()
-        )
-        if not strategies:
-            return
+        processed_ids: set[int] = set()
+        while True:
+            query = db.query(Strategy).filter(Strategy.status == "active")
+            if processed_ids:
+                query = query.filter(~Strategy.id.in_(processed_ids))
 
-        for strategy in strategies:
+            strategy = (
+                query.with_for_update(skip_locked=True)
+                .order_by(Strategy.id.asc())
+                .first()
+            )
+            if strategy is None:
+                return
+
+            processed_ids.add(strategy.id)
             try:
-                locked = (
-                    db.query(Strategy)
-                    .filter(Strategy.id == strategy.id)
-                    .with_for_update()
-                    .first()
-                )
-                if locked is None or locked.status != "active":
-                    continue
-                _process_strategy(db, locked, now_et, force=force)
+                _process_strategy(db, strategy, now_et, force=force)
                 db.commit()
             except Exception:
                 db.rollback()
@@ -407,7 +458,7 @@ def run_strategy_once(strategy_id: int, *, force: bool = True) -> bool:
         strategy = (
             db.query(Strategy)
             .filter(Strategy.id == strategy_id)
-            .with_for_update()
+            .with_for_update(skip_locked=True)
             .first()
         )
         if strategy is None:

@@ -352,8 +352,13 @@ export const strategy = pgTable(
     ticker: text("ticker")
       .notNull()
       .references(() => symbol.ticker),
+    symbolsJson: jsonb("symbols_json").$type<string[]>().notNull().default([]),
     timeframe: text("timeframe").notNull().default("1Day"),
+    capitalAllocation: numeric("capital_allocation", { precision: 14, scale: 2 })
+      .notNull()
+      .default("10000"),
     paramsJson: jsonb("params_json").$type<Record<string, unknown>>().notNull(),
+    riskJson: jsonb("risk_json").$type<Record<string, unknown>>().notNull().default({}),
     status: strategyStatusEnum("status").notNull().default("active"),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     lastSignalAt: timestamp("last_signal_at", { withTimezone: true }),

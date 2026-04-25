@@ -376,8 +376,13 @@ class Strategy(Base):
         strategy_type_enum, default="ema_crossover"
     )
     ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+    symbols_json: Mapped[list[str]] = mapped_column(JSON, default=list)
     timeframe: Mapped[str] = mapped_column(String, default="1Day")
+    capital_allocation: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("10000")
+    )
     params_json: Mapped[dict] = mapped_column(JSON)
+    risk_json: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(strategy_status_enum, default="active")
     last_run_at: Mapped[datetime | None] = mapped_column(default=None)
     last_signal_at: Mapped[datetime | None] = mapped_column(default=None)

@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timezone
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
@@ -6,7 +8,17 @@ from fastapi import HTTPException
 
 from app.db.models import Strategy, Symbol
 from app.routers import strategies as strategies_router
-from app.routers.strategies import CreateStrategyRequest, create_strategy
+from app.routers.strategies import (
+    BacktestRequest,
+    CreateStrategyRequest,
+    StrategyControlRequest,
+    _stream_strategy_snapshots,
+    backtest_strategy,
+    create_strategy,
+    strategy_controls,
+)
+from app.schemas import StrategyResponse, StrategyRunResponse
+from app.services.strategy_engine import BacktestTrade
 
 
 class _Account:
@@ -152,3 +164,245 @@ def test_create_strategy_validates_ema_params(monkeypatch):
             user={"sub": "dev"},
             db=db,
         )
+
+
+def test_create_strategy_normalizes_symbols_and_risk(monkeypatch):
+    db = _make_db(symbol=None, existing_strategy=None)
+    monkeypatch.setattr(
+        strategies_router,
+        "get_trading_account",
+        lambda trading_account_id, user, db: _Account(trading_account_id, "investment"),
+    )
+    monkeypatch.setattr(
+        strategies_router,
+        "_load_symbols",
+        lambda db, tickers: [_make_symbol(ticker) for ticker in tickers],
+    )
+
+    response = create_strategy(
+        _payload(
+            ticker="msft",
+            symbols_json=["AAPL", "msft", "AAPL"],
+            capital_allocation="25000.50",
+            risk_json={
+                "max_position_quantity": "25",
+                "max_daily_orders": 2,
+                "cooldown_minutes": 5,
+                "max_daily_notional": "5000",
+                "allow_pyramiding": True,
+            },
+        ),
+        user={"sub": "dev"},
+        db=db,
+    )
+
+    added = db.add.call_args[0][0]
+    assert added.ticker == "MSFT"
+    assert added.symbols_json == ["MSFT", "AAPL"]
+    assert added.capital_allocation == Decimal("25000.50")
+    assert added.risk_json == {
+        "max_position_quantity": "25",
+        "max_daily_orders": 2,
+        "cooldown_minutes": 5,
+        "max_daily_notional": "5000",
+        "allow_pyramiding": True,
+    }
+    assert response.symbols_json == ["MSFT", "AAPL"]
+    assert response.capital_allocation == "25000.50"
+
+
+def test_create_strategy_enforces_active_limit(monkeypatch):
+    db = _make_db(symbol=_make_symbol("AAPL"), existing_strategy=None)
+    monkeypatch.setattr(
+        strategies_router,
+        "get_trading_account",
+        lambda trading_account_id, user, db: _Account(trading_account_id, "investment"),
+    )
+    monkeypatch.setattr(
+        strategies_router,
+        "_active_strategy_count",
+        lambda _query_result: strategies_router.MAX_ACTIVE_STRATEGIES_PER_ACCOUNT,
+    )
+
+    with pytest.raises(HTTPException, match="Active strategy limit reached"):
+        create_strategy(_payload(), user={"sub": "dev"}, db=db)
+
+
+def test_strategy_controls_updates_all_matching_strategies(monkeypatch):
+    strategy_a = Strategy(status="active")
+    strategy_a.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    strategy_b = Strategy(status="disabled")
+    strategy_b.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = [strategy_a, strategy_b]
+    monkeypatch.setattr(
+        strategies_router,
+        "get_trading_account",
+        lambda trading_account_id, user, db: _Account(trading_account_id, "investment"),
+    )
+
+    response = strategy_controls(
+        StrategyControlRequest(trading_account_id=1, action="pause_all"),
+        user={"sub": "dev"},
+        db=db,
+    )
+
+    assert response == {"updated": 2, "status": "paused"}
+    assert strategy_a.status == "paused"
+    assert strategy_b.status == "paused"
+    assert strategy_a.updated_at > datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert strategy_b.updated_at > datetime(2026, 1, 1, tzinfo=timezone.utc)
+    db.commit.assert_called_once()
+
+
+def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch):
+    db = MagicMock()
+    monkeypatch.setattr(
+        strategies_router,
+        "_load_symbols",
+        lambda db, tickers: [_make_symbol(ticker) for ticker in tickers],
+    )
+
+    captured: dict = {}
+
+    def fake_run_backtest(**kwargs):
+        captured.update(kwargs)
+        return {
+            "equity_curve": [
+                {"time": 1, "equity": Decimal("10012.34"), "drawdown": Decimal("0")}
+            ],
+            "drawdown_curve": [
+                {"time": 1, "equity": Decimal("10012.34"), "drawdown": Decimal("0")}
+            ],
+            "trades": [
+                BacktestTrade(
+                    ticker="MSFT",
+                    side="buy",
+                    quantity=Decimal("1"),
+                    price=Decimal("250.5"),
+                    timestamp=datetime(2026, 1, 5, tzinfo=timezone.utc),
+                    profit=Decimal("12.34"),
+                )
+            ],
+            "win_rate": 1.0,
+            "avg_return_per_trade": 0.12,
+            "max_drawdown": -0.03,
+            "ending_equity": "10012.34",
+        }
+
+    monkeypatch.setattr(strategies_router, "run_backtest", fake_run_backtest)
+
+    response = backtest_strategy(
+        BacktestRequest(
+            ticker="msft",
+            symbols_json=["AAPL", "msft"],
+            timeframe="1Day",
+            capital_allocation="10000",
+            params_json={
+                "fast_period": 2,
+                "slow_period": 4,
+                "order_quantity": "1",
+            },
+            risk_json={
+                "max_position_quantity": "5",
+                "max_daily_orders": 2,
+                "cooldown_minutes": 0,
+                "max_daily_notional": "5000",
+            },
+            start="2026-01-01T00:00:00Z",
+            end="2026-01-31T00:00:00Z",
+        ),
+        user={"sub": "dev"},
+        db=db,
+    )
+
+    assert captured["symbols"] == ["MSFT", "AAPL"]
+    assert captured["capital_allocation"] == Decimal("10000")
+    assert captured["params_json"] == {
+        "fast_period": 2,
+        "slow_period": 4,
+        "order_quantity": "1",
+        "max_position_quantity": "100",
+        "max_daily_orders": 5,
+        "cooldown_minutes": 30,
+    }
+    assert captured["risk_json"] == {
+        "max_position_quantity": "5",
+        "max_daily_orders": 2,
+        "cooldown_minutes": 0,
+        "max_daily_notional": "5000",
+        "allow_pyramiding": False,
+    }
+    assert response.trades[0].ticker == "MSFT"
+    assert response.trades[0].profit == "12.34"
+    assert response.ending_equity == "10012.34"
+
+
+class _DummySession:
+    def close(self):
+        return None
+
+
+async def test_stream_strategy_snapshots_serializes_response_models(monkeypatch):
+    monkeypatch.setattr(
+        strategies_router,
+        "get_session_factory",
+        lambda: _DummySession,
+    )
+    monkeypatch.setattr(
+        strategies_router,
+        "_snapshot_payload",
+        lambda db, trading_account_id: {
+            "trading_account_id": trading_account_id,
+            "strategies": [
+                StrategyResponse(
+                    id=1,
+                    trading_account_id=trading_account_id,
+                    name="EMA 2/4 MSFT",
+                    strategy_type="ema_crossover",
+                    ticker="MSFT",
+                    symbols_json=["MSFT", "AAPL"],
+                    timeframe="1Day",
+                    capital_allocation="10000",
+                    params_json={"fast_period": 2, "slow_period": 4},
+                    risk_json={"max_daily_notional": "5000"},
+                    status="active",
+                    last_run_at=None,
+                    last_signal_at=None,
+                    last_error=None,
+                    created_at="2026-01-01T00:00:00+00:00",
+                    updated_at="2026-01-01T00:00:00+00:00",
+                )
+            ],
+            "runs": [
+                StrategyRunResponse(
+                    id=1,
+                    strategy_id=1,
+                    trading_account_id=trading_account_id,
+                    ticker="MSFT",
+                    run_at="2026-01-02T00:00:00+00:00",
+                    signal="buy",
+                    action="place_buy",
+                    reason="ema_cross",
+                    inputs_json={"bar_count": 10},
+                    order_id=None,
+                    error=None,
+                )
+            ],
+            "open_orders": [],
+            "open_positions": [],
+            "strategy_executor_enabled": True,
+        },
+    )
+
+    stream = _stream_strategy_snapshots(7)
+    chunk = await anext(stream)
+    await stream.aclose()
+
+    assert chunk.startswith("event: snapshot\ndata: ")
+    payload = chunk.removeprefix("event: snapshot\ndata: ").strip()
+    body = json.loads(payload)
+    assert body["trading_account_id"] == 7
+    assert body["strategies"][0]["symbols_json"] == ["MSFT", "AAPL"]
+    assert body["runs"][0]["action"] == "place_buy"

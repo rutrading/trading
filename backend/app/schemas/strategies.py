@@ -11,8 +11,11 @@ class StrategyResponse(BaseModel):
     name: str
     strategy_type: str
     ticker: str
+    symbols_json: list[str]
     timeframe: str
+    capital_allocation: str
     params_json: dict
+    risk_json: dict
     status: str
     last_run_at: str | None
     last_signal_at: str | None
@@ -28,8 +31,11 @@ class StrategyResponse(BaseModel):
             name=strategy.name,
             strategy_type=strategy.strategy_type,
             ticker=strategy.ticker,
+            symbols_json=list(strategy.symbols_json or []),
             timeframe=strategy.timeframe,
+            capital_allocation=str(strategy.capital_allocation),
             params_json=strategy.params_json or {},
+            risk_json=strategy.risk_json or {},
             status=strategy.status,
             last_run_at=strategy.last_run_at.isoformat()
             if strategy.last_run_at
@@ -82,3 +88,51 @@ class StrategyRunsPageResponse(BaseModel):
     total: int
     page: int
     per_page: int
+
+
+class StrategyTemplateResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    supported_timeframes: list[str]
+    default_params_json: dict
+    default_risk_json: dict
+    status: str
+
+
+class StrategyCatalogResponse(BaseModel):
+    templates: list[StrategyTemplateResponse]
+
+
+class StrategyBacktestTradeResponse(BaseModel):
+    ticker: str
+    side: str
+    quantity: str
+    price: str
+    timestamp: str
+    profit: str | None = None
+
+
+class StrategyBacktestPointResponse(BaseModel):
+    time: int
+    equity: str
+    drawdown: str
+
+
+class StrategyBacktestResponse(BaseModel):
+    equity_curve: list[StrategyBacktestPointResponse]
+    drawdown_curve: list[StrategyBacktestPointResponse]
+    trades: list[StrategyBacktestTradeResponse]
+    win_rate: float
+    avg_return_per_trade: float
+    max_drawdown: float
+    ending_equity: str
+
+
+class StrategySnapshotResponse(BaseModel):
+    trading_account_id: int
+    strategies: list[StrategyResponse]
+    runs: list[StrategyRunResponse]
+    open_orders: list[dict]
+    open_positions: list[dict]
+    strategy_executor_enabled: bool
