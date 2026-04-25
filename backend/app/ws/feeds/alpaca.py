@@ -85,8 +85,6 @@ class AlpacaFeed(BaseFeed):
                 setattr(self, attr, None)
         await super().stop()
 
-    # ---- stream state machine ---------------------------------------------
-
     async def _run_stream(self, stream_name: str) -> None:
         """Alternate between WS streaming and REST polling until stopped."""
         url, ws_attr, subscribed = self._stream_config(stream_name)
@@ -113,8 +111,6 @@ class AlpacaFeed(BaseFeed):
             "_ws_crypto",
             self._subscribed_crypto,
         )
-
-    # ---- WS mode -----------------------------------------------------------
 
     async def _ws_session(
         self,
@@ -223,8 +219,6 @@ class AlpacaFeed(BaseFeed):
 
         return authenticated
 
-    # ---- REST fallback -----------------------------------------------------
-
     async def _poll_rest(self, stream_name: str, subscribed: MutableSet[str]) -> None:
         """Poll REST snapshots for subscribed tickers until REST_WINDOW elapses."""
         logger.info(
@@ -279,8 +273,6 @@ class AlpacaFeed(BaseFeed):
         if self._running:
             logger.info("Alpaca %s retrying WS after REST window", stream_name)
 
-    # ---- tick handlers -----------------------------------------------------
-
     async def _handle_trade(self, msg: dict) -> None:
         ticker = msg.get("S", "")
         price = msg.get("p")
@@ -320,8 +312,6 @@ class AlpacaFeed(BaseFeed):
             mapping["ask_price"] = str(ask)
         if mapping:
             await self._cache_fields(ticker, mapping)
-
-    # ---- subscription reconciliation ---------------------------------------
 
     async def _drain_loop(self) -> None:
         while self._running:
@@ -390,8 +380,6 @@ class AlpacaFeed(BaseFeed):
             self._subscribed_stocks.add(promote)
             if self._ws_stocks:
                 await self._send_action(self._ws_stocks, "subscribe", [promote])
-
-    # ---- helpers -----------------------------------------------------------
 
     async def _send_action(
         self, ws: ClientConnection, action: str, tickers: list[str]
