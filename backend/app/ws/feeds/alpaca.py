@@ -68,7 +68,22 @@ class AlpacaFeed(BaseFeed):
             asyncio.create_task(self._drain_loop()),
         ]
 
-    # ---- stream state machine ---------------------------------------------
+    async def stop(self) -> None:
+        # Explicitly close the upstream Alpaca WS sockets before cancelling
+        # the run loops. Free-tier accounts only allow one concurrent
+        # connection, so during a redeploy the new container hits a 406
+        # "connection limit exceeded" until the old container's socket
+        # gets reaped. Closing here releases the slot in milliseconds
+        # instead of waiting for TCP timeout.
+        for attr in ("_ws_stocks", "_ws_crypto"):
+            ws = getattr(self, attr, None)
+            if ws is not None:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+        await super().stop()
 
     async def _run_stream(self, stream_name: str) -> None:
         """Alternate between WS streaming and REST polling until stopped."""
@@ -96,8 +111,6 @@ class AlpacaFeed(BaseFeed):
             "_ws_crypto",
             self._subscribed_crypto,
         )
-
-    # ---- WS mode -----------------------------------------------------------
 
     async def _ws_session(
         self,
@@ -127,12 +140,23 @@ class AlpacaFeed(BaseFeed):
                         backoff = BACKOFF_BASE
             except (_StreamError, ConnectionClosed, Exception) as exc:
                 failures += 1
-                self._log_once(
-                    f"ws-err:{stream_name}",
-                    "Alpaca %s stream error: %s",
-                    stream_name,
-                    exc,
-                )
+                # 406 from Alpaca means another session (typically the
+                # previous container during a redeploy) still holds the
+                # single allowed WS slot. It's expected and self-resolves
+                # once that socket closes — log at info, not warning, so
+                # deploy logs stay quiet.
+                if isinstance(exc, _StreamError) and "code=406" in str(exc):
+                    logger.info(
+                        "Alpaca %s stream waiting for previous session to release",
+                        stream_name,
+                    )
+                else:
+                    self._log_once(
+                        f"ws-err:{stream_name}",
+                        "Alpaca %s stream error: %s",
+                        stream_name,
+                        exc,
+                    )
             finally:
                 setattr(self, ws_attr, None)
 
@@ -195,8 +219,6 @@ class AlpacaFeed(BaseFeed):
 
         return authenticated
 
-    # ---- REST fallback -----------------------------------------------------
-
     async def _poll_rest(self, stream_name: str, subscribed: MutableSet[str]) -> None:
         """Poll REST snapshots for subscribed tickers until REST_WINDOW elapses."""
         logger.info(
@@ -251,8 +273,6 @@ class AlpacaFeed(BaseFeed):
         if self._running:
             logger.info("Alpaca %s retrying WS after REST window", stream_name)
 
-    # ---- tick handlers -----------------------------------------------------
-
     async def _handle_trade(self, msg: dict) -> None:
         ticker = msg.get("S", "")
         price = msg.get("p")
@@ -292,8 +312,6 @@ class AlpacaFeed(BaseFeed):
             mapping["ask_price"] = str(ask)
         if mapping:
             await self._cache_fields(ticker, mapping)
-
-    # ---- subscription reconciliation ---------------------------------------
 
     async def _drain_loop(self) -> None:
         while self._running:
@@ -362,8 +380,6 @@ class AlpacaFeed(BaseFeed):
             self._subscribed_stocks.add(promote)
             if self._ws_stocks:
                 await self._send_action(self._ws_stocks, "subscribe", [promote])
-
-    # ---- helpers -----------------------------------------------------------
 
     async def _send_action(
         self, ws: ClientConnection, action: str, tickers: list[str]
