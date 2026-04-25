@@ -1,25 +1,68 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useQuotes } from "@/components/ws-provider";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
+
+const PER_PAGE = 25;
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
+export const WatchlistTable = ({
+  items,
+  qtyByTicker,
+}: {
+  items: WatchlistItem[];
+  qtyByTicker: Record<string, number>;
+}) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const tickers = useMemo(() => items.map((w) => w.ticker), [items]);
+  const liveQuotes = useQuotes(tickers);
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
+  const clampedPage = Math.min(page, totalPages);
+  const pageItems = items.slice(
+    (clampedPage - 1) * PER_PAGE,
+    clampedPage * PER_PAGE,
+  );
+  const hasPrev = clampedPage > 1;
+  const hasNext = clampedPage < totalPages;
+  const pageHref = (p: number) => `/watchlist?page=${p}`;
+
+  const [removingTickers, setRemovingTickers] = useState<Set<string>>(new Set());
 
   const handleRemove = async (ticker: string) => {
-    const res = await removeFromWatchlist(ticker);
-    if (res.ok) {
-      toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
-      router.refresh();
-    } else {
-      toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+    if (removingTickers.has(ticker)) return;
+    setRemovingTickers((prev) => new Set(prev).add(ticker));
+    try {
+      const res = await removeFromWatchlist(ticker);
+      if (res.ok) {
+        toastManager.add({ title: `${ticker} removed from watchlist`, type: "success" });
+        router.refresh();
+      } else {
+        toastManager.add({ title: `Failed to remove ${ticker}`, type: "error" });
+      }
+    } finally {
+      setRemovingTickers((prev) => {
+        const next = new Set(prev);
+        next.delete(ticker);
+        return next;
+      });
     }
   };
 
@@ -44,6 +87,8 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           <thead>
             <tr className="border-b border-border text-xs text-muted-foreground">
               <th className="px-4 py-2.5 text-left font-medium">Symbol</th>
+              <th className="px-4 py-2.5 text-right font-medium">Qty Owned</th>
+              <th className="px-4 py-2.5 text-right font-medium">Value Owned</th>
               <th className="px-4 py-2.5 text-right font-medium">Price</th>
               <th className="px-4 py-2.5 text-right font-medium">Change</th>
               <th className="hidden px-4 py-2.5 text-right font-medium md:table-cell">Bid</th>
@@ -52,19 +97,48 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
             </tr>
           </thead>
           <tbody>
-            {items.map((w) => {
-              const price = w.quote?.price;
-              const change = w.quote?.change_percent;
+            {pageItems.map((w) => {
+              // Prefer live WS ticks; fall back to the server-rendered snapshot.
+              const live = liveQuotes.get(w.ticker);
+              const price = live?.price ?? w.quote?.price;
+              const change = live?.change_percent ?? w.quote?.change_percent;
+              const bid = live?.bid_price ?? w.quote?.bid_price ?? null;
+              const ask = live?.ask_price ?? w.quote?.ask_price ?? null;
+              const qty = qtyByTicker[w.ticker] ?? 0;
+              const valueOwned = qty > 0 && price != null ? qty * price : null;
               return (
                 <tr
                   key={w.ticker}
                   className="group border-b border-border last:border-0 transition-colors hover:bg-muted/30"
                 >
                   <td className="px-4 py-3">
-                    <Link href={`/stocks/${w.ticker}`} className="inline-flex items-center gap-2">
-                      <Star size={14} weight="fill" className="shrink-0 text-amber-400" />
-                      <span className="text-sm font-semibold leading-none">{w.ticker}</span>
-                    </Link>
+                    <div className="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(w.ticker)}
+                        disabled={removingTickers.has(w.ticker)}
+                        aria-label={`Remove ${w.ticker} from watchlist`}
+                        className="rounded-sm text-amber-400 transition-opacity hover:opacity-70 disabled:opacity-50"
+                      >
+                        <Star size={14} weight="fill" className="shrink-0" />
+                      </button>
+                      <Link
+                        href={`/stocks/${w.ticker}`}
+                        className="text-sm font-semibold leading-none hover:underline"
+                      >
+                        {w.ticker}
+                      </Link>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {qty > 0 ? fmt(qty) : "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {valueOwned != null ? `$${fmt(valueOwned)}` : "—"}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="text-sm font-medium tabular-nums">
@@ -91,18 +165,21 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.bid_price != null ? `$${fmt(w.quote.bid_price)}` : "—"}
+                      {bid != null ? `$${fmt(bid)}` : "—"}
                     </span>
                   </td>
                   <td className="hidden px-4 py-3 text-right md:table-cell">
                     <span className="text-sm tabular-nums text-muted-foreground">
-                      {w.quote?.ask_price != null ? `$${fmt(w.quote.ask_price)}` : "—"}
+                      {ask != null ? `$${fmt(ask)}` : "—"}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-center">
                     <button
+                      type="button"
                       onClick={() => handleRemove(w.ticker)}
-                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      disabled={removingTickers.has(w.ticker)}
+                      aria-label={`Remove ${w.ticker} from watchlist`}
+                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
                     >
                       <X size={14} />
                     </button>
@@ -113,6 +190,30 @@ export const WatchlistTable = ({ items }: { items: WatchlistItem[] }) => {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <Pagination className="mt-4">
+          <PaginationContent>
+            {hasPrev && (
+              <PaginationItem>
+                <PaginationPrevious render={<Link href={pageHref(clampedPage - 1)} />} />
+              </PaginationItem>
+            )}
+            <PaginationItem>
+              <PaginationLink isActive render={<Link href={pageHref(clampedPage)} />}>
+                {clampedPage}
+              </PaginationLink>
+            </PaginationItem>
+            <span className="text-xs text-muted-foreground">
+              of {totalPages}
+            </span>
+            {hasNext && (
+              <PaginationItem>
+                <PaginationNext render={<Link href={pageHref(clampedPage + 1)} />} />
+              </PaginationItem>
+            )}
+          </PaginationContent>
+        </Pagination>
+      )}
     </div>
   );
 };

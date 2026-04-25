@@ -2,14 +2,32 @@
 
 Handles order validation, fill execution, holding updates, and balance changes.
 All mutating helpers expect to be called inside an existing DB session/transaction.
+
+Lock ordering convention
+------------------------
+Every code path that takes more than one row lock for a single trading
+account must acquire them in this order:
+
+    1. ``trading_account`` (FOR UPDATE)
+    2. ``order``           (FOR UPDATE) — only paths that re-read the order
+    3. ``holding``         (FOR UPDATE)
+
+Acquiring locks in any other order risks a Postgres deadlock against a
+peer transaction (typical pair: ``cancel_order`` vs ``execute_fill``,
+or ``place_order(sell)`` vs the executor). Helpers in this module assume
+the caller has already locked the account; ``execute_fill`` then locks
+the holding via ``with_for_update()`` itself.
 """
 
+import logging
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from sqlalchemy.orm import Session
 
 from app.db.models import Holding, Order, TradingAccount, Transaction
+
+logger = logging.getLogger(__name__)
 
 VALID_ASSET_CLASSES = {"us_equity", "crypto"}
 VALID_SIDES = {"buy", "sell"}
@@ -22,6 +40,20 @@ STOP_RESERVATION_K = Decimal("1.5")   # 1.5× ATR multiplier
 MARKET_BASE_SLIPPAGE = Decimal("0.0005")  # 0.05% — simulates the bid-ask spread
 MARKET_IMPACT_FACTOR = Decimal("0.05")    # 5% — scales order size vs. daily volume
 MARKET_MAX_SLIPPAGE = Decimal("0.02")     # 2% ceiling — prevents unrealistic fills on illiquid names
+
+# trading_account.balance, trading_account.reserved_balance, and
+# transaction.total are all numeric(14,2). Decimal arithmetic at the prevailing
+# context precision can produce up-to-18-fractional-digit intermediates (price
+# at scale 10 × quantity at scale 8). Postgres silently rounds on UPDATE, but
+# the in-memory value mutated via `+=` keeps the high-precision form, so the
+# next read-back from the DB drifts. Quantize on every write so in-memory and
+# persisted views stay in lockstep.
+_MONEY_QUANT = Decimal("0.01")
+
+
+def to_money(value: Decimal) -> Decimal:
+    """Round a Decimal money value to numeric(14,2), banker's rounding."""
+    return value.quantize(_MONEY_QUANT, rounding=ROUND_HALF_EVEN)
 
 
 class OrderValidationError(Exception):
@@ -45,7 +77,14 @@ def validate_order_request(
     limit_price: Decimal | None,
     stop_price: Decimal | None,
 ) -> None:
-    """Run all pre-trade validation checks. Raises OrderValidationError on failure."""
+    """Run all pre-trade validation checks. Raises OrderValidationError on failure.
+
+    Caller contract: ``account`` must already be locked with
+    ``with_for_update()`` before this is invoked. The sell-side branch
+    acquires the holding row lock; per the module docstring the order
+    must be account → holding, so the account lock has to be held
+    first. ``place_order`` is the only current caller and respects this.
+    """
 
     # reject unknown asset class
     if asset_class not in VALID_ASSET_CLASSES:
@@ -149,12 +188,17 @@ def compute_market_fill_price(
     against the trader, which is correct.
 
     Falls back to base slippage alone when no daily volume data is available.
+
+    Quantized to 10 decimal places to match the numeric(20,10) price columns
+    so the returned value round-trips through the DB without silent rounding.
     """
     impact = (quantity / daily_volume) * MARKET_IMPACT_FACTOR if daily_volume and daily_volume > 0 else Decimal("0")
     slippage = min(MARKET_BASE_SLIPPAGE + impact, MARKET_MAX_SLIPPAGE)
     if side == "buy":
-        return quote_price * (1 + slippage)
-    return quote_price * (1 - slippage)
+        raw = quote_price * (1 + slippage)
+    else:
+        raw = quote_price * (1 - slippage)
+    return raw.quantize(Decimal("0.0000000001"), rounding=ROUND_HALF_EVEN)
 
 
 def validate_buying_power(
@@ -164,6 +208,13 @@ def validate_buying_power(
     price: Decimal,
 ) -> None:
     """Check that the account has enough buying power for a buy order.
+
+    Placement-only: this helper assumes the order's reservation has not yet
+    been added to account.reserved_balance, so it does not subtract the
+    caller's own existing reservation. Re-validating an already-open order
+    with this helper would double-count its reservation. The fill-time
+    safety net inside execute_fill handles the open-order case explicitly
+    (subtracting `remaining * per_share` to compute "other_reserved").
 
     Reads account.reserved_balance directly — no extra DB query needed.
     """
@@ -202,7 +253,10 @@ def execute_fill(
         .first()
     )
 
-    total = fill_quantity * fill_price
+    # `total` lands in transaction.total (numeric(14,2)) and drives the
+    # account.balance update — quantize once here so every downstream consumer
+    # sees the same value Postgres will store.
+    total = to_money(fill_quantity * fill_price)
 
     # pre-fill balance check for buy orders — safety net in case funds were
     # consumed by other orders between placement and execution
@@ -215,9 +269,11 @@ def execute_fill(
         if available < total:
             order.status = "cancelled"
             order.rejection_reason = "Insufficient buying power at fill time"
-            account.reserved_balance = max(
-                Decimal("0"),
-                account.reserved_balance - remaining * per_share,
+            account.reserved_balance = to_money(
+                max(
+                    Decimal("0"),
+                    account.reserved_balance - remaining * per_share,
+                )
             )
             account.updated_at = datetime.now(timezone.utc)
             return None
@@ -245,13 +301,21 @@ def execute_fill(
 
     order.updated_at = datetime.now(timezone.utc)
 
-    # find or create holding for this ticker
+    # find or create holding for this ticker. Take an explicit row lock —
+    # the caller already holds the trading_account lock above (account →
+    # holding ordering, see module docstring), so a concurrent
+    # `place_order(sell)` or `cancel_order(sell)` waiting on this holding
+    # row will queue behind us instead of racing the read-modify-write
+    # below. Without the lock the UPDATE that flushes from this object
+    # graph would still acquire a row lock, but only after we've already
+    # made decisions against the unlocked snapshot.
     holding = (
         db.query(Holding)
         .filter(
             Holding.trading_account_id == account.id,
             Holding.ticker == order.ticker,
         )
+        .with_for_update()
         .first()
     )
 
@@ -275,15 +339,28 @@ def execute_fill(
             holding.quantity = old_qty + fill_quantity
             holding.updated_at = datetime.now(timezone.utc)
 
-        # deduct from balance
-        account.balance -= total
+        # deduct from balance — quantize so the in-memory value matches what
+        # numeric(14,2) will store on flush
+        account.balance = to_money(account.balance - total)
 
         # release the per-share reservation for the filled quantity
         if order.reserved_per_share is not None:
-            account.reserved_balance = max(
-                Decimal("0"),
-                account.reserved_balance - fill_quantity * order.reserved_per_share,
-            )
+            release = fill_quantity * order.reserved_per_share
+            new_reserved = account.reserved_balance - release
+            if new_reserved < 0:
+                # Clamp is defense-in-depth; with explicit money quantize in
+                # place this should not fire under normal operation. If it
+                # does, surface it so we can investigate the underlying
+                # accounting drift.
+                logger.warning(
+                    "Reserved balance underflow on fill: account=%d order=%d "
+                    "release=%s reserved_before=%s — clamping to 0",
+                    account.id,
+                    order.id,
+                    release,
+                    account.reserved_balance,
+                )
+            account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
 
     elif order.side == "sell":
         if holding is None:
@@ -306,8 +383,9 @@ def execute_fill(
         if holding.quantity <= 0:
             db.delete(holding)
 
-        # add proceeds to balance
-        account.balance += total
+        # add proceeds to balance — quantize so the in-memory value matches
+        # what numeric(14,2) will store on flush
+        account.balance = to_money(account.balance + total)
 
     account.updated_at = datetime.now(timezone.utc)
 

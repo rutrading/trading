@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { StockHeader } from "@/components/stocks/stock-header";
-import { StockChart } from "@/components/StockChart";
-import { KeyStatistics } from "@/components/stocks/key-statistics";
-import { OrderForm } from "@/components/stocks/order-form";
-import { RelatedNews } from "@/components/news/related-news";
 import { getAccounts } from "@/app/actions/auth";
-import { getSymbol } from "@/app/actions/symbols";
+import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
+import { getQuote } from "@/app/actions/quotes";
 import { getWatchlist } from "@/app/actions/watchlist";
+import { StockChart } from "@/components/StockChart";
+import { CompanyProfileCard } from "@/components/stocks/company-profile";
+import { KeyStatistics } from "@/components/stocks/key-statistics";
+import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form";
+import { RelatedNews } from "@/components/news/related-news";
+import { StockHeader } from "@/components/stocks/stock-header";
 import { STOCKS } from "@/components/stocks/stock-data";
+import { isUSMarketOpen } from "@/lib/market-hours";
 
 type Props = { params: Promise<{ ticker: string[] }> };
 
@@ -24,19 +27,31 @@ export default async function StockPage({ params }: Props) {
   const { ticker } = await params;
   const symbol = ticker.join("/").toUpperCase();
 
-  const [dbSymbol, watchlistRes, accounts] = await Promise.all([
+  const [dbSymbol, watchlistRes, company, members, quoteRes] = await Promise.all([
     getSymbol(symbol),
     getWatchlist(),
+    getCompanyProfile(symbol),
     getAccounts(),
+    getQuote(symbol),
   ]);
   if (!dbSymbol && !STOCKS[symbol]) notFound();
-
-  const tradingAccountId = accounts[0]?.tradingAccount.id ?? 0;
-  const assetClass = dbSymbol?.assetClass ?? "us_equity";
 
   const watched = watchlistRes.ok
     ? watchlistRes.data.watchlist.some((w) => w.ticker === symbol)
     : false;
+
+  // The trade form needs to know whether this symbol is a stock or crypto so
+  // it can filter the user's accounts down to compatible ones (a crypto
+  // account can't buy AAPL and vice versa). Fall back to "us_equity" for
+  // demo-only `STOCKS` entries that aren't in the symbol table yet.
+  const assetClass: "us_equity" | "crypto" = dbSymbol?.assetClass ?? "us_equity";
+
+  const accounts: OrderFormAccount[] = members.map((m) => ({
+    id: m.tradingAccount.id,
+    name: m.tradingAccount.name,
+    type: m.tradingAccount.type,
+    balance: m.tradingAccount.balance,
+  }));
 
   const stock = STOCKS[symbol] ?? {
     name: dbSymbol?.name ?? symbol,
@@ -58,6 +73,17 @@ export default async function StockPage({ params }: Props) {
     stock.name = dbSymbol.name;
   }
 
+  // Overlay the live quote so the header price reflects reality instead of
+  // the stale hardcoded `STOCKS` snapshot (and so symbols not in `STOCKS`
+  // don't render as $0.00). Backend may omit fields when the upstream
+  // quote is partial — fall back to existing values in that case.
+  if (quoteRes.ok) {
+    const q = quoteRes.data;
+    if (q.price != null) stock.price = q.price;
+    if (q.previous_close != null) stock.prevClose = q.previous_close;
+    if (q.change_percent != null) stock.change = q.change_percent;
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <div className="space-y-6">
@@ -75,9 +101,11 @@ export default async function StockPage({ params }: Props) {
         <OrderForm
           ticker={symbol}
           price={stock.price}
-          tradingAccountId={tradingAccountId}
           assetClass={assetClass}
+          accounts={accounts}
+          marketOpen={isUSMarketOpen()}
         />
+        <CompanyProfileCard ticker={symbol} company={company} />
       </div>
     </div>
   );

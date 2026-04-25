@@ -14,7 +14,11 @@ export default async function AppLayout({
   if (accounts.length === 0) redirect("/onboarding");
 
   return (
-    <AppShell accounts={accounts} userName={session.user.name} userImage={session.user.image}>
+    <AppShell
+      accounts={accounts}
+      userName={session.user.name}
+      userImage={session.user.image}
+    >
       {children}
     </AppShell>
   );
