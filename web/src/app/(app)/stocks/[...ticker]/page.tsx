@@ -7,6 +7,7 @@ import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form
 import { CompanyProfileCard } from "@/components/stocks/company-profile";
 import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
 import { getAccounts } from "@/app/actions/auth";
+import { getQuote } from "@/app/actions/quotes";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
 import { isUSMarketOpen } from "@/lib/market-hours";
@@ -25,11 +26,12 @@ export default async function StockPage({ params }: Props) {
   const { ticker } = await params;
   const symbol = ticker.join("/").toUpperCase();
 
-  const [dbSymbol, watchlistRes, company, members] = await Promise.all([
+  const [dbSymbol, watchlistRes, company, members, quoteRes] = await Promise.all([
     getSymbol(symbol),
     getWatchlist(),
     getCompanyProfile(symbol),
     getAccounts(),
+    getQuote(symbol),
   ]);
   if (!dbSymbol && !STOCKS[symbol]) notFound();
 
@@ -69,6 +71,17 @@ export default async function StockPage({ params }: Props) {
 
   if (dbSymbol && STOCKS[symbol]) {
     stock.name = dbSymbol.name;
+  }
+
+  // Overlay the live quote so the header price reflects reality instead of
+  // the stale hardcoded `STOCKS` snapshot (and so symbols not in `STOCKS`
+  // don't render as $0.00). Backend may omit fields when the upstream
+  // quote is partial — fall back to existing values in that case.
+  if (quoteRes.ok) {
+    const q = quoteRes.data;
+    if (q.price != null) stock.price = q.price;
+    if (q.previous_close != null) stock.prevClose = q.previous_close;
+    if (q.change_percent != null) stock.change = q.change_percent;
   }
 
   return (
