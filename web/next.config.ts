@@ -18,7 +18,8 @@ const nextConfig: NextConfig = {
     root: resolve(__dirname, ".."),
   },
   experimental: {
-    turbopackFileSystemCacheForDev: true,
+    preloadEntriesOnStart: false,
+    optimizePackageImports: ["@tanstack/react-virtual"],
   },
   allowedDevOrigins: ["10.0.0.104"],
 };
