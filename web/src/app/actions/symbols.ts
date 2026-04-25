@@ -16,6 +16,13 @@ type SymbolResult = {
   asset_class: "us_equity" | "crypto";
 };
 
+export type CompanyProfile = {
+  description: string | null;
+  sector: string | null;
+  industry: string | null;
+  logoUrl: string | null;
+};
+
 type SearchResult = {
   ticker: string;
   name: string;
@@ -124,5 +131,46 @@ export const getSymbol = cache(
         where: eq(schema.symbol.ticker, t),
       })) ?? null
     );
+  },
+);
+
+type CompanyApiResult = {
+  description: string | null;
+  sector: string | null;
+  industry: string | null;
+  logo_url: string | null;
+};
+
+export const getCompanyProfile = cache(
+  async (ticker: string): Promise<CompanyProfile | null> => {
+    const session = await getSession();
+    if (!session) return null;
+
+    const t = ticker.toUpperCase().trim();
+    if (!t) return null;
+
+    const existing = await db.query.company.findFirst({
+      where: eq(schema.company.ticker, t),
+    });
+    if (existing) {
+      return {
+        description: existing.description,
+        sector: existing.sector,
+        industry: existing.industry,
+        logoUrl: existing.logoUrl,
+      };
+    }
+
+    const res = await api.get<CompanyApiResult>(
+      "/company/" + encodeURIComponent(t),
+    );
+    if (!res.ok) return null;
+
+    return {
+      description: res.data.description,
+      sector: res.data.sector,
+      industry: res.data.industry,
+      logoUrl: res.data.logo_url,
+    };
   },
 );

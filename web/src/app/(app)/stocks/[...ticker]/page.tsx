@@ -4,7 +4,8 @@ import { StockHeader } from "@/components/stocks/stock-header";
 import { StockChart } from "@/components/StockChart";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form";
-import { getSymbol } from "@/app/actions/symbols";
+import { CompanyProfileCard } from "@/components/stocks/company-profile";
+import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
 import { getAccounts } from "@/app/actions/auth";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
@@ -24,9 +25,10 @@ export default async function StockPage({ params }: Props) {
   const { ticker } = await params;
   const symbol = ticker.join("/").toUpperCase();
 
-  const [dbSymbol, watchlistRes, members] = await Promise.all([
+  const [dbSymbol, watchlistRes, company, members] = await Promise.all([
     getSymbol(symbol),
     getWatchlist(),
+    getCompanyProfile(symbol),
     getAccounts(),
   ]);
   if (!dbSymbol && !STOCKS[symbol]) notFound();
@@ -89,6 +91,7 @@ export default async function StockPage({ params }: Props) {
           accounts={accounts}
           marketOpen={isUSMarketOpen()}
         />
+        <CompanyProfileCard ticker={symbol} company={company} />
       </div>
     </div>
   );

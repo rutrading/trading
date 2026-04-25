@@ -6,6 +6,14 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: resolve(__dirname, ".."),
   devIndicators: false,
   reactCompiler: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "www.google.com",
+      },
+    ],
+  },
   turbopack: {
     root: resolve(__dirname, ".."),
   },
