@@ -339,7 +339,7 @@ class ConnectionManager:
             if added:
                 self._mark_tracked(added)
         if added:
-            logger.info("New tickers tracked: %s", added)
+            logger.debug("New tickers tracked: %s", added)
         return added
 
     async def unsubscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
@@ -360,7 +360,7 @@ class ConnectionManager:
             if removed:
                 self._mark_untracked(removed)
         if removed:
-            logger.info("Tickers untracked: %s", removed)
+            logger.debug("Tickers untracked: %s", removed)
         return removed
 
     async def broadcast(self, ticker: str, data: dict) -> None:
