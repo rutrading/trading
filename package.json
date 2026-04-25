@@ -1,6 +1,9 @@
 {
   "name": "trading",
   "private": true,
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "build": "cd web && bun run build",
