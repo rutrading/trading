@@ -74,9 +74,12 @@ def _payload(**overrides) -> CreateStrategyRequest:
             "fast_period": 9,
             "slow_period": 21,
             "order_quantity": "2",
+        },
+        "risk_json": {
             "max_position_quantity": "20",
             "max_daily_orders": 3,
             "cooldown_minutes": 15,
+            "max_daily_notional": "10000",
         },
     }
     data.update(overrides)
@@ -166,6 +169,31 @@ def test_create_strategy_validates_ema_params(monkeypatch):
         )
 
 
+def test_create_strategy_validates_rsi_thresholds(monkeypatch):
+    db = _make_db(symbol=_make_symbol("AAPL"), existing_strategy=None)
+    monkeypatch.setattr(
+        strategies_router,
+        "get_trading_account",
+        lambda trading_account_id, user, db: _Account(trading_account_id, "investment"),
+    )
+
+    with pytest.raises(HTTPException, match="RSI thresholds"):
+        create_strategy(
+            _payload(
+                strategy_type="rsi_reversion",
+                name="RSI Reversion",
+                params_json={
+                    "rsi_period": 14,
+                    "oversold_threshold": 70,
+                    "overbought_threshold": 30,
+                    "order_quantity": "1",
+                },
+            ),
+            user={"sub": "dev"},
+            db=db,
+        )
+
+
 def test_create_strategy_normalizes_symbols_and_risk(monkeypatch):
     db = _make_db(symbol=None, existing_strategy=None)
     monkeypatch.setattr(
@@ -205,6 +233,9 @@ def test_create_strategy_normalizes_symbols_and_risk(monkeypatch):
         "max_daily_orders": 2,
         "cooldown_minutes": 5,
         "max_daily_notional": "5000",
+        "risk_per_trade": "0",
+        "atr_period": 14,
+        "atr_stop_multiplier": "2",
         "allow_pyramiding": True,
     }
     assert response.symbols_json == ["MSFT", "AAPL"]
@@ -323,20 +354,45 @@ def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch)
         "fast_period": 2,
         "slow_period": 4,
         "order_quantity": "1",
-        "max_position_quantity": "100",
-        "max_daily_orders": 5,
-        "cooldown_minutes": 30,
     }
     assert captured["risk_json"] == {
         "max_position_quantity": "5",
         "max_daily_orders": 2,
         "cooldown_minutes": 0,
         "max_daily_notional": "5000",
+        "risk_per_trade": "0",
+        "atr_period": 14,
+        "atr_stop_multiplier": "2",
         "allow_pyramiding": False,
     }
     assert response.trades[0].ticker == "MSFT"
     assert response.trades[0].profit == "12.34"
     assert response.ending_equity == "10012.34"
+
+
+def test_strategy_catalog_exposes_dynamic_form_fields():
+    response = strategies_router.strategy_catalog(user={"sub": "dev"})
+
+    template_ids = {template.id for template in response.templates}
+    assert template_ids == {
+        "ema_crossover",
+        "sma_crossover",
+        "rsi_reversion",
+        "donchian_breakout",
+    }
+
+    rsi_template = next(template for template in response.templates if template.id == "rsi_reversion")
+    assert {field["key"] for field in rsi_template.params_schema_json} == {
+        "rsi_period",
+        "oversold_threshold",
+        "overbought_threshold",
+        "order_quantity",
+    }
+    assert {field["key"] for field in rsi_template.risk_schema_json} >= {
+        "risk_per_trade",
+        "atr_period",
+        "atr_stop_multiplier",
+    }
 
 
 class _DummySession:

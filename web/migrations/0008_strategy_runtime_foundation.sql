@@ -1,4 +1,7 @@
 DO $$ BEGIN CREATE TYPE "public"."strategy_type" AS ENUM('ema_crossover'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TYPE "public"."strategy_type" ADD VALUE IF NOT EXISTS 'sma_crossover'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TYPE "public"."strategy_type" ADD VALUE IF NOT EXISTS 'rsi_reversion'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TYPE "public"."strategy_type" ADD VALUE IF NOT EXISTS 'donchian_breakout'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
 DO $$ BEGIN CREATE TYPE "public"."strategy_status" AS ENUM('active', 'paused', 'disabled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
 DO $$ BEGIN CREATE TYPE "public"."strategy_signal" AS ENUM('buy', 'sell', 'hold'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
 DO $$ BEGIN CREATE TYPE "public"."strategy_action" AS ENUM('place_buy', 'place_sell', 'none'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint

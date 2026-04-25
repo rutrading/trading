@@ -30,13 +30,19 @@ from app.schemas import (
     StrategyRunResponse,
     StrategyTemplateResponse,
 )
-from app.services.strategy_engine import catalog_payload, run_backtest
+from app.services.strategy_engine import (
+    COMMON_DEFAULT_RISK,
+    STRATEGY_TEMPLATES,
+    catalog_payload,
+    get_strategy_template,
+    run_backtest,
+)
 from app.tasks.strategy_executor import run_strategy_once
 
 router = APIRouter()
 
 ALLOWED_TIMEFRAMES = {"1Day"}
-ALLOWED_TYPES = {"ema_crossover"}
+ALLOWED_TYPES = {template.id for template in STRATEGY_TEMPLATES}
 ALLOWED_STATUS = {"active", "paused", "disabled"}
 MAX_ACTIVE_STRATEGIES_PER_ACCOUNT = 5
 
@@ -112,72 +118,112 @@ class StrategyControlRequest(BaseModel):
     action: str = Field(pattern="^(pause_all|resume_all|disable_all)$")
 
 
-def _normalize_params(params: dict | None) -> dict:
-    raw = dict(params or {})
+def _coerce_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
+
+def _normalize_params(strategy_type: str, params: dict | None) -> dict:
+    template = get_strategy_template(strategy_type)
+    if template is None:
+        raise HTTPException(status_code=400, detail="Unsupported strategy_type")
+
+    raw = {**template.default_params_json, **dict(params or {})}
     try:
-        fast_period = int(raw.get("fast_period", 9))
-        slow_period = int(raw.get("slow_period", 21))
-        order_quantity = str(raw.get("order_quantity", "1"))
-        max_position_quantity = str(raw.get("max_position_quantity", "100"))
-        max_daily_orders = int(raw.get("max_daily_orders", 5))
-        cooldown_minutes = int(raw.get("cooldown_minutes", 30))
-    except (TypeError, ValueError):
+        order_quantity = str(raw.get("order_quantity", template.default_params_json["order_quantity"]))
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid strategy params_json")
 
-    if fast_period <= 0 or slow_period <= 0:
-        raise HTTPException(
-            status_code=400, detail="EMA periods must be greater than 0"
-        )
-    if fast_period >= slow_period:
-        raise HTTPException(
-            status_code=400,
-            detail="fast_period must be less than slow_period",
-        )
-    if max_daily_orders <= 0:
-        raise HTTPException(status_code=400, detail="max_daily_orders must be > 0")
-    if cooldown_minutes < 0:
-        raise HTTPException(
-            status_code=400, detail="cooldown_minutes cannot be negative"
-        )
     try:
         if Decimal(order_quantity) <= 0:
             raise HTTPException(status_code=400, detail="order_quantity must be > 0")
-        if Decimal(max_position_quantity) <= 0:
+    except (InvalidOperation, TypeError):
+        raise HTTPException(status_code=400, detail="order_quantity must be numeric")
+
+    if strategy_type in {"ema_crossover", "sma_crossover"}:
+        try:
+            fast_period = int(raw.get("fast_period", template.default_params_json["fast_period"]))
+            slow_period = int(raw.get("slow_period", template.default_params_json["slow_period"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid strategy params_json")
+
+        label = "EMA" if strategy_type == "ema_crossover" else "SMA"
+        if fast_period <= 0 or slow_period <= 0:
+            raise HTTPException(status_code=400, detail=f"{label} periods must be greater than 0")
+        if fast_period >= slow_period:
+            raise HTTPException(status_code=400, detail="fast_period must be less than slow_period")
+        normalized = {
+            "fast_period": fast_period,
+            "slow_period": slow_period,
+            "order_quantity": order_quantity,
+        }
+    elif strategy_type == "rsi_reversion":
+        try:
+            rsi_period = int(raw.get("rsi_period", template.default_params_json["rsi_period"]))
+            oversold_threshold = int(
+                raw.get("oversold_threshold", template.default_params_json["oversold_threshold"])
+            )
+            overbought_threshold = int(
+                raw.get("overbought_threshold", template.default_params_json["overbought_threshold"])
+            )
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid strategy params_json")
+
+        if rsi_period <= 0:
+            raise HTTPException(status_code=400, detail="rsi_period must be greater than 0")
+        if not 0 < oversold_threshold < overbought_threshold < 100:
             raise HTTPException(
                 status_code=400,
-                detail="max_position_quantity must be > 0",
+                detail="RSI thresholds must satisfy 0 < oversold < overbought < 100",
             )
-    except (InvalidOperation, TypeError):
-        raise HTTPException(
-            status_code=400,
-            detail="order_quantity and max_position_quantity must be numeric",
-        )
+        normalized = {
+            "rsi_period": rsi_period,
+            "oversold_threshold": oversold_threshold,
+            "overbought_threshold": overbought_threshold,
+            "order_quantity": order_quantity,
+        }
+    else:
+        try:
+            breakout_period = int(
+                raw.get("breakout_period", template.default_params_json["breakout_period"])
+            )
+            exit_period = int(raw.get("exit_period", template.default_params_json["exit_period"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid strategy params_json")
 
-    normalized = {
-        "fast_period": fast_period,
-        "slow_period": slow_period,
-        "order_quantity": order_quantity,
-        "max_position_quantity": max_position_quantity,
-        "max_daily_orders": max_daily_orders,
-        "cooldown_minutes": cooldown_minutes,
-    }
+        if breakout_period <= 0 or exit_period <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="breakout_period and exit_period must be greater than 0",
+            )
+        normalized = {
+            "breakout_period": breakout_period,
+            "exit_period": exit_period,
+            "order_quantity": order_quantity,
+        }
 
     state = raw.get("state")
     if isinstance(state, dict):
         normalized["state"] = state
-
     return normalized
 
 
 def _normalize_risk(risk: dict | None) -> dict:
-    raw = dict(risk or {})
+    raw = {**COMMON_DEFAULT_RISK, **dict(risk or {})}
     try:
-        max_position_quantity = str(raw.get("max_position_quantity", "100"))
-        max_daily_orders = int(raw.get("max_daily_orders", 5))
-        cooldown_minutes = int(raw.get("cooldown_minutes", 30))
-        max_daily_notional = str(raw.get("max_daily_notional", "10000"))
-        allow_pyramiding = bool(raw.get("allow_pyramiding", False))
+        max_position_quantity = str(raw.get("max_position_quantity", COMMON_DEFAULT_RISK["max_position_quantity"]))
+        max_daily_orders = int(raw.get("max_daily_orders", COMMON_DEFAULT_RISK["max_daily_orders"]))
+        cooldown_minutes = int(raw.get("cooldown_minutes", COMMON_DEFAULT_RISK["cooldown_minutes"]))
+        max_daily_notional = str(raw.get("max_daily_notional", COMMON_DEFAULT_RISK["max_daily_notional"]))
+        risk_per_trade = str(raw.get("risk_per_trade", COMMON_DEFAULT_RISK["risk_per_trade"]))
+        atr_period = int(raw.get("atr_period", COMMON_DEFAULT_RISK["atr_period"]))
+        atr_stop_multiplier = str(
+            raw.get("atr_stop_multiplier", COMMON_DEFAULT_RISK["atr_stop_multiplier"])
+        )
+        allow_pyramiding = _coerce_bool(raw.get("allow_pyramiding", False))
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid risk_json")
 
@@ -186,22 +232,34 @@ def _normalize_risk(risk: dict | None) -> dict:
             raise HTTPException(status_code=400, detail="max_position_quantity must be > 0")
         if Decimal(max_daily_notional) <= 0:
             raise HTTPException(status_code=400, detail="max_daily_notional must be > 0")
+        if Decimal(risk_per_trade) < 0:
+            raise HTTPException(status_code=400, detail="risk_per_trade cannot be negative")
+        if Decimal(atr_stop_multiplier) <= 0:
+            raise HTTPException(status_code=400, detail="atr_stop_multiplier must be > 0")
     except (InvalidOperation, TypeError):
         raise HTTPException(
             status_code=400,
-            detail="max_position_quantity and max_daily_notional must be numeric",
+            detail=(
+                "max_position_quantity, max_daily_notional, risk_per_trade, and "
+                "atr_stop_multiplier must be numeric"
+            ),
         )
 
     if max_daily_orders <= 0:
         raise HTTPException(status_code=400, detail="max_daily_orders must be > 0")
     if cooldown_minutes < 0:
         raise HTTPException(status_code=400, detail="cooldown_minutes cannot be negative")
+    if atr_period <= 0:
+        raise HTTPException(status_code=400, detail="atr_period must be > 0")
 
     return {
         "max_position_quantity": max_position_quantity,
         "max_daily_orders": max_daily_orders,
         "cooldown_minutes": cooldown_minutes,
         "max_daily_notional": max_daily_notional,
+        "risk_per_trade": risk_per_trade,
+        "atr_period": atr_period,
+        "atr_stop_multiplier": atr_stop_multiplier,
         "allow_pyramiding": allow_pyramiding,
     }
 
@@ -338,7 +396,7 @@ def create_strategy(
         symbols_json=symbols,
         timeframe=payload.timeframe,
         capital_allocation=capital_allocation,
-        params_json=_normalize_params(payload.params_json),
+        params_json=_normalize_params(payload.strategy_type, payload.params_json),
         risk_json=_normalize_risk(payload.risk_json),
         status=payload.status,
     )
@@ -414,7 +472,7 @@ def update_strategy(
                 )
         strategy.status = payload.status
     if payload.params_json is not None:
-        strategy.params_json = _normalize_params(payload.params_json)
+        strategy.params_json = _normalize_params(strategy.strategy_type, payload.params_json)
     if payload.risk_json is not None:
         strategy.risk_json = _normalize_risk(payload.risk_json)
 
@@ -665,7 +723,7 @@ def backtest_strategy(
         strategy_type=payload.strategy_type,
         symbols=symbols,
         timeframe=payload.timeframe,
-        params_json=_normalize_params(payload.params_json),
+        params_json=_normalize_params(payload.strategy_type, payload.params_json),
         risk_json=_normalize_risk(payload.risk_json),
         capital_allocation=capital_allocation,
         start=start,

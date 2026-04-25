@@ -53,7 +53,12 @@ export const transactionKindEnum = pgEnum("transaction_kind", [
   "withdrawal",
 ]);
 
-export const strategyTypeEnum = pgEnum("strategy_type", ["ema_crossover"]);
+export const strategyTypeEnum = pgEnum("strategy_type", [
+  "ema_crossover",
+  "sma_crossover",
+  "rsi_reversion",
+  "donchian_breakout",
+]);
 
 export const strategyStatusEnum = pgEnum("strategy_status", [
   "active",

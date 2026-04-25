@@ -97,6 +97,8 @@ class StrategyTemplateResponse(BaseModel):
     supported_timeframes: list[str]
     default_params_json: dict
     default_risk_json: dict
+    params_schema_json: list[dict]
+    risk_schema_json: list[dict]
     status: str
 
 

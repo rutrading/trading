@@ -3,11 +3,27 @@
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
 
+export type StrategyType =
+  | "ema_crossover"
+  | "sma_crossover"
+  | "rsi_reversion"
+  | "donchian_breakout";
+
+export type StrategyFieldDefinition = {
+  key: string;
+  label: string;
+  kind: "integer" | "decimal" | "boolean";
+  description?: string | null;
+  min?: string | null;
+  max?: string | null;
+  step?: string | null;
+};
+
 export type Strategy = {
   id: number;
   trading_account_id: number;
   name: string;
-  strategy_type: "ema_crossover";
+  strategy_type: StrategyType;
   ticker: string;
   symbols_json: string[];
   timeframe: "1Day";
@@ -45,12 +61,14 @@ type StrategyRunsResponse = {
 };
 
 export type StrategyTemplate = {
-  id: string;
+  id: StrategyType;
   name: string;
   description: string;
   supported_timeframes: string[];
   default_params_json: Record<string, unknown>;
   default_risk_json: Record<string, unknown>;
+  params_schema_json: StrategyFieldDefinition[];
+  risk_schema_json: StrategyFieldDefinition[];
   status: string;
 };
 
@@ -104,21 +122,11 @@ export async function createStrategy(payload: {
   ticker: string;
   symbols_json?: string[];
   timeframe: "1Day";
-  strategy_type?: "ema_crossover";
+  strategy_type?: StrategyType;
   status?: "active" | "paused" | "disabled";
   capital_allocation?: string;
-  params_json: {
-    fast_period: number;
-    slow_period: number;
-    order_quantity: string;
-  };
-  risk_json?: {
-    max_position_quantity: string;
-    max_daily_orders: number;
-    cooldown_minutes: number;
-    max_daily_notional?: string;
-    allow_pyramiding?: boolean;
-  };
+  params_json: Record<string, unknown>;
+  risk_json?: Record<string, unknown>;
 }): Promise<api.ApiResult<Strategy>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
@@ -134,18 +142,8 @@ export async function patchStrategy(
     status?: "active" | "paused" | "disabled";
     timeframe?: "1Day";
     capital_allocation?: string;
-    params_json?: {
-      fast_period: number;
-      slow_period: number;
-      order_quantity: string;
-    };
-    risk_json?: {
-      max_position_quantity: string;
-      max_daily_orders: number;
-      cooldown_minutes: number;
-      max_daily_notional?: string;
-      allow_pyramiding?: boolean;
-    };
+    params_json?: Record<string, unknown>;
+    risk_json?: Record<string, unknown>;
   },
 ): Promise<api.ApiResult<Strategy>> {
   const session = await getSession();
@@ -196,23 +194,13 @@ export async function getStrategySnapshot(
 }
 
 export async function runStrategyBacktest(payload: {
-  strategy_type: "ema_crossover";
+  strategy_type: StrategyType;
   ticker: string;
   symbols_json?: string[];
   timeframe: "1Day";
   capital_allocation: string;
-  params_json: {
-    fast_period: number;
-    slow_period: number;
-    order_quantity: string;
-  };
-  risk_json?: {
-    max_position_quantity: string;
-    max_daily_orders: number;
-    cooldown_minutes: number;
-    max_daily_notional?: string;
-    allow_pyramiding?: boolean;
-  };
+  params_json: Record<string, unknown>;
+  risk_json?: Record<string, unknown>;
   start: string;
   end: string;
 }): Promise<api.ApiResult<StrategyBacktestResult>> {

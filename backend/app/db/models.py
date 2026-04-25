@@ -91,6 +91,9 @@ experience_level_enum = Enum(
 )
 strategy_type_enum = Enum(
     "ema_crossover",
+    "sma_crossover",
+    "rsi_reversion",
+    "donchian_breakout",
     name="strategy_type",
     create_type=False,
 )

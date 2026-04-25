@@ -16,6 +16,7 @@ from sqlalchemy.exc import ProgrammingError
 from app.config import get_config
 from app.db.models import Holding, Quote, Strategy, StrategyRun, Symbol, TradingAccount
 from app.db.session import get_session_factory
+from app.services.atr import compute_atr
 from app.services.order_placement import (
     OrderPlacementError,
     PlaceOrderInput,
@@ -276,7 +277,7 @@ def _process_strategy(
         capital_allocation = capital_allocation / len(symbols)
 
     for ticker in symbols:
-        signal, inputs, bar_date = evaluate_strategy_symbol(strategy, db, ticker)
+        signal, reason, inputs, bar_date = evaluate_strategy_symbol(strategy, db, ticker)
         processed_any = True
         if signal == "hold":
             _log_run(
@@ -284,7 +285,7 @@ def _process_strategy(
                 strategy=strategy,
                 signal="hold",
                 action="none",
-                reason=inputs.get("error", "no_cross"),
+                reason=reason,
                 inputs={"ticker": ticker, **inputs},
                 ticker=ticker,
             )
@@ -329,6 +330,13 @@ def _process_strategy(
         quote = db.query(Quote).filter(Quote.ticker == ticker).first()
         reference_price = Decimal(str(quote.price)) if quote and quote.price else Decimal("0")
         current_quantity = holding.quantity if holding else Decimal("0")
+        atr_value: Decimal | None = None
+        if (
+            signal == "buy"
+            and risk["risk_per_trade"] > 0
+            and risk["atr_stop_multiplier"] > 0
+        ):
+            atr_value = compute_atr(ticker, db, risk["atr_period"])
         quantity, blocked_reason = resolve_signal_order_quantity(
             signal=signal,
             requested_quantity=quantity_default,
@@ -336,7 +344,18 @@ def _process_strategy(
             price=reference_price,
             capital_allocation=capital_allocation,
             risk_json=risk,
+            atr_value=atr_value,
         )
+        quantity_inputs = {
+            "ticker": ticker,
+            "quantity": str(quantity),
+            "reference_price": str(reference_price),
+            **inputs,
+        }
+        if atr_value is not None:
+            quantity_inputs["atr_value"] = str(atr_value)
+            quantity_inputs["risk_per_trade"] = str(risk["risk_per_trade"])
+            quantity_inputs["atr_stop_multiplier"] = str(risk["atr_stop_multiplier"])
 
         if blocked_reason is not None:
             _log_run(
@@ -345,12 +364,7 @@ def _process_strategy(
                 signal=signal,
                 action="none",
                 reason=blocked_reason,
-                inputs={
-                    "ticker": ticker,
-                    "quantity": str(quantity),
-                    "reference_price": str(reference_price),
-                    **inputs,
-                },
+                inputs=quantity_inputs,
                 ticker=ticker,
             )
             continue
@@ -377,12 +391,7 @@ def _process_strategy(
                 signal=signal,
                 action="none",
                 reason="order_rejected",
-                inputs={
-                    "ticker": ticker,
-                    "quantity": str(quantity),
-                    "reference_price": str(reference_price),
-                    **inputs,
-                },
+                inputs=quantity_inputs,
                 ticker=ticker,
                 error=exc.detail,
             )
@@ -397,13 +406,8 @@ def _process_strategy(
             strategy=strategy,
             signal=signal,
             action="place_buy" if signal == "buy" else "place_sell",
-            reason=inputs.get("error", "ema_cross"),
-            inputs={
-                "ticker": ticker,
-                "quantity": str(quantity),
-                "reference_price": str(reference_price),
-                **inputs,
-            },
+            reason=reason,
+            inputs=quantity_inputs,
             ticker=ticker,
             order_id=order.id,
         )

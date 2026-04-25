@@ -9,7 +9,21 @@ from decimal import Decimal, ROUND_FLOOR
 from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Strategy
-from app.services.strategy_signals import evaluate_ema_signal_from_closes
+from app.services.strategy_signals import (
+    bars_required_for_signal,
+    evaluate_signal_from_bars,
+)
+
+
+@dataclass(frozen=True)
+class StrategyField:
+    key: str
+    label: str
+    kind: str
+    description: str | None = None
+    min: str | None = None
+    max: str | None = None
+    step: str | None = None
 
 
 @dataclass(frozen=True)
@@ -20,7 +34,80 @@ class StrategyTemplate:
     supported_timeframes: tuple[str, ...]
     default_params_json: dict
     default_risk_json: dict
+    params_schema_json: tuple[StrategyField, ...]
+    risk_schema_json: tuple[StrategyField, ...]
     status: str = "ready"
+
+
+COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
+    StrategyField(
+        key="max_position_quantity",
+        label="Max Position Qty",
+        kind="decimal",
+        min="0.00000001",
+        step="0.00000001",
+    ),
+    StrategyField(
+        key="max_daily_orders",
+        label="Max Daily Orders",
+        kind="integer",
+        min="1",
+        step="1",
+    ),
+    StrategyField(
+        key="cooldown_minutes",
+        label="Cooldown (min)",
+        kind="integer",
+        min="0",
+        step="1",
+    ),
+    StrategyField(
+        key="max_daily_notional",
+        label="Max Daily Notional",
+        kind="decimal",
+        min="0.01",
+        step="0.01",
+    ),
+    StrategyField(
+        key="risk_per_trade",
+        label="Risk / Trade",
+        kind="decimal",
+        description="Optional ATR-based sizing cap. Set 0 to disable.",
+        min="0",
+        step="0.01",
+    ),
+    StrategyField(
+        key="atr_period",
+        label="ATR Period",
+        kind="integer",
+        min="1",
+        step="1",
+    ),
+    StrategyField(
+        key="atr_stop_multiplier",
+        label="ATR Multiplier",
+        kind="decimal",
+        min="0.1",
+        step="0.1",
+    ),
+    StrategyField(
+        key="allow_pyramiding",
+        label="Allow pyramiding",
+        kind="boolean",
+        description="Let the strategy add to an existing position when risk allows.",
+    ),
+)
+
+COMMON_DEFAULT_RISK = {
+    "max_position_quantity": "100",
+    "max_daily_orders": 5,
+    "cooldown_minutes": 30,
+    "max_daily_notional": "10000",
+    "risk_per_trade": "0",
+    "atr_period": 14,
+    "atr_stop_multiplier": "2",
+    "allow_pyramiding": False,
+}
 
 
 STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
@@ -34,14 +121,153 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
             "slow_period": 21,
             "order_quantity": "1",
         },
-        default_risk_json={
-            "max_position_quantity": "100",
-            "max_daily_orders": 5,
-            "cooldown_minutes": 30,
-            "max_daily_notional": "10000",
+        default_risk_json=COMMON_DEFAULT_RISK,
+        params_schema_json=(
+            StrategyField(
+                key="fast_period",
+                label="Fast EMA",
+                kind="integer",
+                min="1",
+                step="1",
+            ),
+            StrategyField(
+                key="slow_period",
+                label="Slow EMA",
+                kind="integer",
+                min="2",
+                step="1",
+            ),
+            StrategyField(
+                key="order_quantity",
+                label="Order Qty",
+                kind="decimal",
+                min="0.00000001",
+                step="0.00000001",
+            ),
+        ),
+        risk_schema_json=COMMON_RISK_FIELDS,
+    ),
+    StrategyTemplate(
+        id="sma_crossover",
+        name="SMA Crossover",
+        description="Simple moving-average trend following for slower, easier-to-debug signals.",
+        supported_timeframes=("1Day",),
+        default_params_json={
+            "fast_period": 20,
+            "slow_period": 50,
+            "order_quantity": "1",
         },
+        default_risk_json=COMMON_DEFAULT_RISK,
+        params_schema_json=(
+            StrategyField(
+                key="fast_period",
+                label="Fast SMA",
+                kind="integer",
+                min="1",
+                step="1",
+            ),
+            StrategyField(
+                key="slow_period",
+                label="Slow SMA",
+                kind="integer",
+                min="2",
+                step="1",
+            ),
+            StrategyField(
+                key="order_quantity",
+                label="Order Qty",
+                kind="decimal",
+                min="0.00000001",
+                step="0.00000001",
+            ),
+        ),
+        risk_schema_json=COMMON_RISK_FIELDS,
+    ),
+    StrategyTemplate(
+        id="rsi_reversion",
+        name="RSI Mean Reversion",
+        description="Buy oversold readings and exit into overbought moves on range-bound names.",
+        supported_timeframes=("1Day",),
+        default_params_json={
+            "rsi_period": 14,
+            "oversold_threshold": 30,
+            "overbought_threshold": 70,
+            "order_quantity": "1",
+        },
+        default_risk_json=COMMON_DEFAULT_RISK,
+        params_schema_json=(
+            StrategyField(
+                key="rsi_period",
+                label="RSI Period",
+                kind="integer",
+                min="1",
+                step="1",
+            ),
+            StrategyField(
+                key="oversold_threshold",
+                label="Oversold",
+                kind="integer",
+                min="1",
+                max="99",
+                step="1",
+            ),
+            StrategyField(
+                key="overbought_threshold",
+                label="Overbought",
+                kind="integer",
+                min="1",
+                max="99",
+                step="1",
+            ),
+            StrategyField(
+                key="order_quantity",
+                label="Order Qty",
+                kind="decimal",
+                min="0.00000001",
+                step="0.00000001",
+            ),
+        ),
+        risk_schema_json=COMMON_RISK_FIELDS,
+    ),
+    StrategyTemplate(
+        id="donchian_breakout",
+        name="Donchian Breakout",
+        description="Enter fresh highs and exit on channel breakdowns for trend capture.",
+        supported_timeframes=("1Day",),
+        default_params_json={
+            "breakout_period": 20,
+            "exit_period": 10,
+            "order_quantity": "1",
+        },
+        default_risk_json=COMMON_DEFAULT_RISK,
+        params_schema_json=(
+            StrategyField(
+                key="breakout_period",
+                label="Breakout Lookback",
+                kind="integer",
+                min="1",
+                step="1",
+            ),
+            StrategyField(
+                key="exit_period",
+                label="Exit Lookback",
+                kind="integer",
+                min="1",
+                step="1",
+            ),
+            StrategyField(
+                key="order_quantity",
+                label="Order Qty",
+                kind="decimal",
+                min="0.00000001",
+                step="0.00000001",
+            ),
+        ),
+        risk_schema_json=COMMON_RISK_FIELDS,
     ),
 )
+
+STRATEGY_TEMPLATE_MAP = {template.id: template for template in STRATEGY_TEMPLATES}
 
 
 def catalog_payload() -> list[dict]:
@@ -51,12 +277,18 @@ def catalog_payload() -> list[dict]:
             "name": template.name,
             "description": template.description,
             "supported_timeframes": list(template.supported_timeframes),
-            "default_params_json": template.default_params_json,
-            "default_risk_json": template.default_risk_json,
+            "default_params_json": dict(template.default_params_json),
+            "default_risk_json": dict(template.default_risk_json),
+            "params_schema_json": [field.__dict__ for field in template.params_schema_json],
+            "risk_schema_json": [field.__dict__ for field in template.risk_schema_json],
             "status": template.status,
         }
         for template in STRATEGY_TEMPLATES
     ]
+
+
+def get_strategy_template(strategy_type: str) -> StrategyTemplate | None:
+    return STRATEGY_TEMPLATE_MAP.get(strategy_type)
 
 
 def normalize_symbols(strategy: Strategy) -> list[str]:
@@ -88,6 +320,9 @@ def normalized_risk_config(risk_json: dict | None) -> dict:
         "max_daily_orders": _safe_int(raw.get("max_daily_orders", 5), 5),
         "cooldown_minutes": _safe_int(raw.get("cooldown_minutes", 30), 30),
         "max_daily_notional": _safe_decimal(raw.get("max_daily_notional", "10000"), "10000"),
+        "risk_per_trade": _safe_decimal(raw.get("risk_per_trade", "0"), "0"),
+        "atr_period": _safe_int(raw.get("atr_period", 14), 14),
+        "atr_stop_multiplier": _safe_decimal(raw.get("atr_stop_multiplier", "2"), "2"),
         "allow_pyramiding": bool(raw.get("allow_pyramiding", False)),
     }
 
@@ -106,33 +341,32 @@ def _safe_int(value: object, default: int) -> int:
         return default
 
 
-def evaluate_strategy_symbol(strategy: Strategy, db: Session, ticker: str) -> tuple[str, dict, str | None]:
-    if strategy.strategy_type != "ema_crossover":
-        return "hold", {"strategy_type": strategy.strategy_type}, None
+def evaluate_strategy_symbol(
+    strategy: Strategy,
+    db: Session,
+    ticker: str,
+) -> tuple[str, str, dict, str | None]:
+    if strategy.strategy_type not in STRATEGY_TEMPLATE_MAP:
+        return "hold", "unsupported_strategy_type", {"strategy_type": strategy.strategy_type}, None
     if strategy.timeframe != "1Day":
-        return "hold", {"timeframe": strategy.timeframe}, None
+        return "hold", "unsupported_timeframe", {"timeframe": strategy.timeframe}, None
 
     params = strategy_params(strategy)
-    fast_period = _safe_int(params.get("fast_period"), 9)
-    slow_period = _safe_int(params.get("slow_period"), 21)
+    required_bars = max(2, bars_required_for_signal(strategy.strategy_type, params))
 
     bars = (
         db.query(DailyBar)
         .filter(DailyBar.ticker == ticker)
         .order_by(DailyBar.date.desc())
-        .limit(slow_period + 30)
+        .limit(required_bars)
         .all()
     )
-    bars = list(reversed(bars))
-    closes = [float(bar.close) for bar in bars]
-    signal, details = evaluate_ema_signal_from_closes(closes, fast_period, slow_period)
-    bar_date = bars[-1].date.isoformat() if bars else None
-    return signal, {
-        "fast_period": fast_period,
-        "slow_period": slow_period,
-        "bar_count": len(closes),
-        **details,
-    }, bar_date
+    decision = evaluate_signal_from_bars(
+        strategy.strategy_type,
+        list(reversed(bars)),
+        params,
+    )
+    return decision.signal, decision.reason, decision.inputs, decision.bar_date
 
 
 def _round_down_qty(value: Decimal) -> Decimal:
@@ -147,6 +381,7 @@ def resolve_signal_order_quantity(
     price: Decimal,
     capital_allocation: Decimal,
     risk_json: dict | None,
+    atr_value: Decimal | None = None,
 ) -> tuple[Decimal, str | None]:
     risk = normalized_risk_config(risk_json)
     max_position_quantity: Decimal = risk["max_position_quantity"]
@@ -171,6 +406,20 @@ def resolve_signal_order_quantity(
     quantity = min(requested_quantity, remaining_position_qty, capital_limited_qty)
     if quantity <= 0:
         return Decimal("0"), "insufficient_allocation"
+
+    atr_stop_multiplier: Decimal = risk["atr_stop_multiplier"]
+    risk_per_trade: Decimal = risk["risk_per_trade"]
+    if (
+        atr_value is not None
+        and atr_value > 0
+        and atr_stop_multiplier > 0
+        and risk_per_trade > 0
+    ):
+        atr_risk_per_share = atr_value * atr_stop_multiplier
+        atr_limited_qty = _round_down_qty(risk_per_trade / atr_risk_per_share)
+        quantity = min(quantity, atr_limited_qty)
+    if quantity <= 0:
+        return Decimal("0"), "atr_risk_too_small"
     return quantity, None
 
 
@@ -196,7 +445,7 @@ def run_backtest(
     start: datetime,
     end: datetime,
 ) -> dict:
-    if strategy_type != "ema_crossover" or timeframe != "1Day":
+    if strategy_type not in STRATEGY_TEMPLATE_MAP or timeframe != "1Day":
         return {
             "equity_curve": [],
             "drawdown_curve": [],
@@ -207,8 +456,6 @@ def run_backtest(
             "ending_equity": str(capital_allocation),
         }
 
-    fast_period = _safe_int(params_json.get("fast_period"), 9)
-    slow_period = _safe_int(params_json.get("slow_period"), 21)
     order_quantity = _safe_decimal(params_json.get("order_quantity", "1"), "1")
     risk = normalized_risk_config(risk_json)
 
@@ -243,7 +490,7 @@ def run_backtest(
     drawdown_curve: list[dict] = []
     peak_equity = capital_allocation
 
-    history_by_symbol: dict[str, list[float]] = {symbol: [] for symbol in symbols}
+    history_by_symbol: dict[str, list[DailyBar]] = {symbol: [] for symbol in symbols}
 
     for date_value in dates:
         day_order_count = 0
@@ -252,16 +499,21 @@ def run_backtest(
             row = next((r for r in rows if r.date == date_value), None)
             if row is None:
                 continue
-            history_by_symbol[symbol].append(float(row.close))
-            signal, details = evaluate_ema_signal_from_closes(
-                history_by_symbol[symbol], fast_period, slow_period
+            history_by_symbol[symbol].append(row)
+            decision = evaluate_signal_from_bars(
+                strategy_type,
+                history_by_symbol[symbol],
+                params_json,
             )
+            signal = decision.signal
             if signal == "hold":
                 continue
 
             price = Decimal(str(row.close))
             if day_order_count >= risk["max_daily_orders"]:
                 continue
+
+            atr_value = _atr_from_rows(history_by_symbol[symbol], risk["atr_period"])
 
             if signal == "buy":
                 available_qty, reason = resolve_signal_order_quantity(
@@ -271,6 +523,7 @@ def run_backtest(
                     price=price,
                     capital_allocation=min(capital_allocation, cash),
                     risk_json=risk,
+                    atr_value=atr_value,
                 )
                 if available_qty <= 0 or reason is not None:
                     continue
@@ -307,6 +560,7 @@ def run_backtest(
                     price=price,
                     capital_allocation=capital_allocation,
                     risk_json=risk,
+                    atr_value=atr_value,
                 )
                 if qty <= 0 or reason is not None:
                     continue
@@ -367,3 +621,15 @@ def run_backtest(
         "max_drawdown": float(min((p["drawdown"] for p in drawdown_curve), default=Decimal("0"))),
         "ending_equity": str(equity_curve[-1]["equity"] if equity_curve else capital_allocation),
     }
+
+
+def _atr_from_rows(rows: list[DailyBar], period: int) -> Decimal:
+    if period <= 0 or len(rows) < period + 1:
+        return Decimal("0")
+    true_ranges: list[Decimal] = []
+    for previous, current in zip(rows[:-1], rows[1:]):
+        prev_close = Decimal(str(previous.close))
+        high = Decimal(str(current.high))
+        low = Decimal(str(current.low))
+        true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+    return sum(true_ranges[-period:], Decimal("0")) / Decimal(period)

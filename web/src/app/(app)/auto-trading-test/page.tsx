@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getAccounts, getSession } from "@/app/actions/auth";
-import { getStrategies, getStrategyRuns } from "@/app/actions/strategies";
+import { getStrategies, getStrategyCatalog, getStrategyRuns } from "@/app/actions/strategies";
 import { AutoTradingTestClient } from "./test-client";
 
 export const metadata: Metadata = {
@@ -20,13 +20,15 @@ export default async function AutoTradingTestPage() {
     .filter((a) => a.type === "investment");
 
   const selectedAccountId = investmentAccounts[0]?.id;
-  const strategiesRes = selectedAccountId
-    ? await getStrategies(selectedAccountId)
-    : { ok: true as const, data: { strategies: [] } };
-
-  const runsRes = selectedAccountId
-    ? await getStrategyRuns(selectedAccountId)
-    : { ok: true as const, data: { runs: [], total: 0, page: 1, per_page: 50 } };
+  const [catalogRes, strategiesRes, runsRes] = await Promise.all([
+    getStrategyCatalog(),
+    selectedAccountId
+      ? getStrategies(selectedAccountId)
+      : Promise.resolve({ ok: true as const, data: { strategies: [] } }),
+    selectedAccountId
+      ? getStrategyRuns(selectedAccountId)
+      : Promise.resolve({ ok: true as const, data: { runs: [], total: 0, page: 1, per_page: 50 } }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -40,6 +42,7 @@ export default async function AutoTradingTestPage() {
       <AutoTradingTestClient
         accounts={investmentAccounts.map((a) => ({ id: a.id, name: a.name }))}
         initialAccountId={selectedAccountId ?? null}
+        initialCatalog={catalogRes.ok ? catalogRes.data.templates : []}
         initialStrategies={strategiesRes.ok ? strategiesRes.data.strategies : []}
         initialRuns={runsRes.ok ? runsRes.data.runs : []}
       />

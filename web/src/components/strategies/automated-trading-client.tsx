@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Pause, Play, ShieldWarning, TrendUp, Wrench } from "@phosphor-icons/react";
+import { Pause, Play, ShieldWarning, TrendUp } from "@phosphor-icons/react";
 import {
   controlStrategies,
   createStrategy,
@@ -25,10 +25,15 @@ import { Card, CardHeader, CardTitle, CardDescription, CardPanel } from "@/compo
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
 import { PortfolioChart } from "@/components/dashboard/portfolio-chart";
 import { StrategyBacktestChart } from "@/components/strategies/strategy-backtest-chart";
+import {
+  buildTemplatePayload,
+  StrategyFieldGrid,
+  type StrategyFieldValues,
+  valuesForFields,
+} from "@/components/strategies/strategy-template-fields";
 import { useStrategyStream } from "@/hooks/use-strategy-stream";
 import { toast } from "@/lib/toasts";
 
@@ -49,23 +54,6 @@ type Props = {
   };
   defaultSection?: "overview" | "monitor" | "backtest";
 };
-
-const defaultParams = {
-  fast_period: "9",
-  slow_period: "21",
-  order_quantity: "1",
-};
-
-const defaultRisk = {
-  max_position_quantity: "100",
-  max_daily_orders: "5",
-  cooldown_minutes: "30",
-  max_daily_notional: "10000",
-};
-
-function templateValue(value: unknown, fallback: string) {
-  return value == null ? fallback : String(value);
-}
 
 function splitSymbols(value: string): string[] {
   return value
@@ -110,29 +98,23 @@ export function AutomatedTradingClient({
   const [selectedTemplate, setSelectedTemplate] = useState(initialTemplate?.id ?? "ema_crossover");
   const [name, setName] = useState("EMA Basket");
   const [symbolsText, setSymbolsText] = useState("AAPL");
-  const [fastPeriod, setFastPeriod] = useState(
-    templateValue(initialTemplate?.default_params_json.fast_period, defaultParams.fast_period),
-  );
-  const [slowPeriod, setSlowPeriod] = useState(
-    templateValue(initialTemplate?.default_params_json.slow_period, defaultParams.slow_period),
-  );
-  const [orderQuantity, setOrderQuantity] = useState(
-    templateValue(initialTemplate?.default_params_json.order_quantity, defaultParams.order_quantity),
+  const [paramValues, setParamValues] = useState<StrategyFieldValues>(() =>
+    initialTemplate
+      ? valuesForFields(
+          initialTemplate.params_schema_json,
+          initialTemplate.default_params_json,
+        )
+      : {},
   );
   const [capitalAllocation, setCapitalAllocation] = useState("10000");
-  const [maxPositionQuantity, setMaxPositionQuantity] = useState(
-    templateValue(initialTemplate?.default_risk_json.max_position_quantity, defaultRisk.max_position_quantity),
+  const [riskValues, setRiskValues] = useState<StrategyFieldValues>(() =>
+    initialTemplate
+      ? valuesForFields(
+          initialTemplate.risk_schema_json,
+          initialTemplate.default_risk_json,
+        )
+      : {},
   );
-  const [maxDailyOrders, setMaxDailyOrders] = useState(
-    templateValue(initialTemplate?.default_risk_json.max_daily_orders, defaultRisk.max_daily_orders),
-  );
-  const [cooldownMinutes, setCooldownMinutes] = useState(
-    templateValue(initialTemplate?.default_risk_json.cooldown_minutes, defaultRisk.cooldown_minutes),
-  );
-  const [maxDailyNotional, setMaxDailyNotional] = useState(
-    templateValue(initialTemplate?.default_risk_json.max_daily_notional, defaultRisk.max_daily_notional),
-  );
-  const [allowPyramiding, setAllowPyramiding] = useState(false);
   const [backtestStart, setBacktestStart] = useState(() => {
     return new Date(Date.now() - 60 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   });
@@ -154,31 +136,18 @@ export function AutomatedTradingClient({
 
   function applyTemplate(nextTemplate: StrategyTemplate) {
     setSelectedTemplate(nextTemplate.id);
-    setFastPeriod(
-      templateValue(nextTemplate.default_params_json.fast_period, defaultParams.fast_period),
-    );
-    setSlowPeriod(
-      templateValue(nextTemplate.default_params_json.slow_period, defaultParams.slow_period),
-    );
-    setOrderQuantity(
-      templateValue(nextTemplate.default_params_json.order_quantity, defaultParams.order_quantity),
-    );
-    setMaxPositionQuantity(
-      templateValue(
-        nextTemplate.default_risk_json.max_position_quantity,
-        defaultRisk.max_position_quantity,
+    setParamValues((current) =>
+      valuesForFields(
+        nextTemplate.params_schema_json,
+        nextTemplate.default_params_json,
+        current,
       ),
     );
-    setMaxDailyOrders(
-      templateValue(nextTemplate.default_risk_json.max_daily_orders, defaultRisk.max_daily_orders),
-    );
-    setCooldownMinutes(
-      templateValue(nextTemplate.default_risk_json.cooldown_minutes, defaultRisk.cooldown_minutes),
-    );
-    setMaxDailyNotional(
-      templateValue(
-        nextTemplate.default_risk_json.max_daily_notional,
-        defaultRisk.max_daily_notional,
+    setRiskValues((current) =>
+      valuesForFields(
+        nextTemplate.risk_schema_json,
+        nextTemplate.default_risk_json,
+        current,
       ),
     );
   }
@@ -250,12 +219,14 @@ export function AutomatedTradingClient({
   }, [accountId]);
 
   function handleCreate() {
-    if (!accountId) return;
+    if (!accountId || !template) return;
     const symbols = splitSymbols(symbolsText);
     if (symbols.length === 0) {
       toast.error("Missing symbols", "Enter at least one ticker.");
       return;
     }
+
+    const payload = buildTemplatePayload(template, paramValues, riskValues);
 
     startTransition(async () => {
       const res = await createStrategy({
@@ -264,21 +235,11 @@ export function AutomatedTradingClient({
         ticker: symbols[0],
         symbols_json: symbols,
         timeframe: "1Day",
-        strategy_type: "ema_crossover",
+        strategy_type: template.id,
         status: "active",
         capital_allocation: capitalAllocation,
-        params_json: {
-          fast_period: Number(fastPeriod),
-          slow_period: Number(slowPeriod),
-          order_quantity: orderQuantity,
-        },
-        risk_json: {
-          max_position_quantity: maxPositionQuantity,
-          max_daily_orders: Number(maxDailyOrders),
-          cooldown_minutes: Number(cooldownMinutes),
-          max_daily_notional: maxDailyNotional,
-          allow_pyramiding: allowPyramiding,
-        },
+        params_json: payload.params_json,
+        risk_json: payload.risk_json,
       });
 
       if (!res.ok) {
@@ -338,32 +299,24 @@ export function AutomatedTradingClient({
   }
 
   function handleBacktest() {
-    if (!accountId) return;
+    if (!accountId || !template) return;
     const symbols = splitSymbols(symbolsText);
     if (symbols.length === 0) {
       toast.error("Missing symbols", "Enter at least one ticker.");
       return;
     }
 
+    const payload = buildTemplatePayload(template, paramValues, riskValues);
+
     startTransition(async () => {
       const res = await runStrategyBacktest({
-        strategy_type: "ema_crossover",
+        strategy_type: template.id,
         ticker: symbols[0],
         symbols_json: symbols,
         timeframe: "1Day",
         capital_allocation: capitalAllocation,
-        params_json: {
-          fast_period: Number(fastPeriod),
-          slow_period: Number(slowPeriod),
-          order_quantity: orderQuantity,
-        },
-        risk_json: {
-          max_position_quantity: maxPositionQuantity,
-          max_daily_orders: Number(maxDailyOrders),
-          cooldown_minutes: Number(cooldownMinutes),
-          max_daily_notional: maxDailyNotional,
-          allow_pyramiding: allowPyramiding,
-        },
+        params_json: payload.params_json,
+        risk_json: payload.risk_json,
         start: backtestStart,
         end: backtestEnd,
       });
@@ -448,7 +401,7 @@ export function AutomatedTradingClient({
           <Card>
             <CardHeader>
               <CardTitle>Create Strategy Instance</CardTitle>
-              <CardDescription>Define symbols, capital allocation, and risk controls before enabling automation.</CardDescription>
+              <CardDescription>Define symbols, capital allocation, and strategy-specific controls before enabling automation.</CardDescription>
             </CardHeader>
             <CardPanel className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -464,48 +417,39 @@ export function AutomatedTradingClient({
                   <Label htmlFor="capital">Capital Allocation</Label>
                   <Input id="capital" value={capitalAllocation} onChange={(e) => setCapitalAllocation(e.target.value)} />
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="fast">Fast EMA</Label>
-                  <Input id="fast" value={fastPeriod} onChange={(e) => setFastPeriod(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="slow">Slow EMA</Label>
-                  <Input id="slow" value={slowPeriod} onChange={(e) => setSlowPeriod(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="qty">Order Qty</Label>
-                  <Input id="qty" value={orderQuantity} onChange={(e) => setOrderQuantity(e.target.value)} />
-                </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <div className="space-y-1">
-                  <Label htmlFor="max-pos">Max Position Qty</Label>
-                  <Input id="max-pos" value={maxPositionQuantity} onChange={(e) => setMaxPositionQuantity(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="max-orders">Max Daily Orders</Label>
-                  <Input id="max-orders" value={maxDailyOrders} onChange={(e) => setMaxDailyOrders(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="cooldown">Cooldown (min)</Label>
-                  <Input id="cooldown" value={cooldownMinutes} onChange={(e) => setCooldownMinutes(e.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="max-notional">Max Daily Notional</Label>
-                  <Input id="max-notional" value={maxDailyNotional} onChange={(e) => setMaxDailyNotional(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 rounded-xl border bg-muted/30 px-4 py-3">
-                <Switch checked={allowPyramiding} onCheckedChange={setAllowPyramiding} />
+              <div className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium">Allow pyramiding</p>
-                  <p className="text-xs text-muted-foreground">Let the strategy add to an existing position when risk allows.</p>
+                  <p className="text-sm font-medium">Strategy Parameters</p>
+                  <p className="text-xs text-muted-foreground">
+                    Only fields for the selected strategy are shown here.
+                  </p>
                 </div>
+                <StrategyFieldGrid
+                  fields={template?.params_schema_json ?? []}
+                  values={paramValues}
+                  onChange={(key, value) => setParamValues((current) => ({ ...current, [key]: value }))}
+                  idPrefix="create-param"
+                />
               </div>
 
-              <Button onClick={handleCreate} disabled={pending || !accountId}>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Risk Controls</p>
+                  <p className="text-xs text-muted-foreground">
+                    Shared controls include ATR-based sizing, order caps, and pyramiding.
+                  </p>
+                </div>
+                <StrategyFieldGrid
+                  fields={template?.risk_schema_json ?? []}
+                  values={riskValues}
+                  onChange={(key, value) => setRiskValues((current) => ({ ...current, [key]: value }))}
+                  idPrefix="create-risk"
+                />
+              </div>
+
+              <Button onClick={handleCreate} disabled={pending || !accountId || !template}>
                 Create Strategy
               </Button>
             </CardPanel>
@@ -661,9 +605,9 @@ export function AutomatedTradingClient({
           <Card>
             <CardHeader>
               <CardTitle>Backtest</CardTitle>
-              <CardDescription>Run the same strategy logic against historical bars before enabling paper trading.</CardDescription>
+              <CardDescription>Run the selected strategy with the same parameters and ATR risk controls used for automation.</CardDescription>
             </CardHeader>
-            <CardPanel className="space-y-4">
+            <CardPanel className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="space-y-1">
                   <Label htmlFor="bt-start">Start</Label>
@@ -682,12 +626,40 @@ export function AutomatedTradingClient({
                   <Input value={symbolsText} onChange={(e) => setSymbolsText(e.target.value)} />
                 </div>
               </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Strategy Parameters</p>
+                  <p className="text-xs text-muted-foreground">
+                    Backtests use the same strategy-specific inputs as live automation.
+                  </p>
+                </div>
+                <StrategyFieldGrid
+                  fields={template?.params_schema_json ?? []}
+                  values={paramValues}
+                  onChange={(key, value) => setParamValues((current) => ({ ...current, [key]: value }))}
+                  idPrefix="backtest-param"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Risk Controls</p>
+                  <p className="text-xs text-muted-foreground">
+                    ATR sizing, cooldowns, and daily guardrails are applied during backtests too.
+                  </p>
+                </div>
+                <StrategyFieldGrid
+                  fields={template?.risk_schema_json ?? []}
+                  values={riskValues}
+                  onChange={(key, value) => setRiskValues((current) => ({ ...current, [key]: value }))}
+                  idPrefix="backtest-risk"
+                />
+              </div>
+
               <div className="flex flex-wrap gap-3">
-                <Button onClick={() => void handleBacktest()} disabled={pending || !accountId}>
+                <Button onClick={() => void handleBacktest()} disabled={pending || !accountId || !template}>
                   <TrendUp className="mr-2 size-4" /> Run Backtest
-                </Button>
-                <Button variant="outline" onClick={() => setSection("overview")}>
-                  <Wrench className="mr-2 size-4" /> Edit Setup
                 </Button>
               </div>
             </CardPanel>
