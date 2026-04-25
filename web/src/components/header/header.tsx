@@ -15,6 +15,7 @@ import {
   Binoculars,
   GearSix,
   Receipt,
+  Robot,
   SignOut,
   Moon,
   List,
@@ -52,6 +53,7 @@ const NAV_ITEMS = [
   { label: "Activity", href: "/activity", icon: ClockCounterClockwise },
   { label: "Trade", href: "/trade", icon: CurrencyCircleDollar },
   { label: "Orders", href: "/orders", icon: Receipt },
+  { label: "Strategies", href: "/automated-trading", icon: Robot },
   { label: "News", href: "/news", icon: Newspaper },
   { label: "Watchlist", href: "/watchlist", icon: Binoculars },
 ] as const;

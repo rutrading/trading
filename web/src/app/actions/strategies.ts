@@ -9,8 +9,11 @@ export type Strategy = {
   name: string;
   strategy_type: "ema_crossover";
   ticker: string;
+  symbols_json: string[];
   timeframe: "1Day";
+  capital_allocation: string;
   params_json: Record<string, unknown>;
+  risk_json: Record<string, unknown>;
   status: "active" | "paused" | "disabled";
   last_run_at: string | null;
   last_signal_at: string | null;
@@ -41,6 +44,50 @@ type StrategyRunsResponse = {
   per_page: number;
 };
 
+export type StrategyTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  supported_timeframes: string[];
+  default_params_json: Record<string, unknown>;
+  default_risk_json: Record<string, unknown>;
+  status: string;
+};
+
+export type StrategyBacktestTrade = {
+  ticker: string;
+  side: string;
+  quantity: string;
+  price: string;
+  timestamp: string;
+  profit: string | null;
+};
+
+export type StrategyBacktestPoint = {
+  time: number;
+  equity: string;
+  drawdown: string;
+};
+
+export type StrategyBacktestResult = {
+  equity_curve: StrategyBacktestPoint[];
+  drawdown_curve: StrategyBacktestPoint[];
+  trades: StrategyBacktestTrade[];
+  win_rate: number;
+  avg_return_per_trade: number;
+  max_drawdown: number;
+  ending_equity: string;
+};
+
+export type StrategySnapshot = {
+  trading_account_id: number;
+  strategies: Strategy[];
+  runs: StrategyRun[];
+  open_orders: Array<Record<string, unknown>>;
+  open_positions: Array<Record<string, unknown>>;
+  strategy_executor_enabled: boolean;
+};
+
 export async function getStrategies(
   tradingAccountId: number,
 ): Promise<api.ApiResult<StrategyListResponse>> {
@@ -55,16 +102,22 @@ export async function createStrategy(payload: {
   trading_account_id: number;
   name: string;
   ticker: string;
+  symbols_json?: string[];
   timeframe: "1Day";
   strategy_type?: "ema_crossover";
   status?: "active" | "paused" | "disabled";
+  capital_allocation?: string;
   params_json: {
     fast_period: number;
     slow_period: number;
     order_quantity: string;
+  };
+  risk_json?: {
     max_position_quantity: string;
     max_daily_orders: number;
     cooldown_minutes: number;
+    max_daily_notional?: string;
+    allow_pyramiding?: boolean;
   };
 }): Promise<api.ApiResult<Strategy>> {
   const session = await getSession();
@@ -76,15 +129,22 @@ export async function patchStrategy(
   strategyId: number,
   payload: {
     name?: string;
+    ticker?: string;
+    symbols_json?: string[];
     status?: "active" | "paused" | "disabled";
     timeframe?: "1Day";
+    capital_allocation?: string;
     params_json?: {
       fast_period: number;
       slow_period: number;
       order_quantity: string;
+    };
+    risk_json?: {
       max_position_quantity: string;
       max_daily_orders: number;
       cooldown_minutes: number;
+      max_daily_notional?: string;
+      allow_pyramiding?: boolean;
     };
   },
 ): Promise<api.ApiResult<Strategy>> {
@@ -117,4 +177,55 @@ export async function getStrategyRuns(
     page: "1",
     per_page: "50",
   });
+}
+
+export async function getStrategyCatalog(): Promise<api.ApiResult<{ templates: StrategyTemplate[] }>> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Not authenticated" };
+  return api.get<{ templates: StrategyTemplate[] }>("/strategy-catalog");
+}
+
+export async function getStrategySnapshot(
+  tradingAccountId: number,
+): Promise<api.ApiResult<StrategySnapshot>> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Not authenticated" };
+  return api.get<StrategySnapshot>("/strategy-snapshot", {
+    trading_account_id: tradingAccountId.toString(),
+  });
+}
+
+export async function runStrategyBacktest(payload: {
+  strategy_type: "ema_crossover";
+  ticker: string;
+  symbols_json?: string[];
+  timeframe: "1Day";
+  capital_allocation: string;
+  params_json: {
+    fast_period: number;
+    slow_period: number;
+    order_quantity: string;
+  };
+  risk_json?: {
+    max_position_quantity: string;
+    max_daily_orders: number;
+    cooldown_minutes: number;
+    max_daily_notional?: string;
+    allow_pyramiding?: boolean;
+  };
+  start: string;
+  end: string;
+}): Promise<api.ApiResult<StrategyBacktestResult>> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Not authenticated" };
+  return api.postJson<StrategyBacktestResult>("/strategies/backtest", payload);
+}
+
+export async function controlStrategies(payload: {
+  trading_account_id: number;
+  action: "pause_all" | "resume_all" | "disable_all";
+}): Promise<api.ApiResult<{ updated: number; status: string }>> {
+  const session = await getSession();
+  if (!session) return { ok: false, error: "Not authenticated" };
+  return api.postJson<{ updated: number; status: string }>("/strategy-controls", payload);
 }

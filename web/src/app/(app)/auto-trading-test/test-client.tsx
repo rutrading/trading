@@ -75,13 +75,17 @@ export function AutoTradingTestClient({
         timeframe: "1Day",
         strategy_type: "ema_crossover",
         status: "active",
+        capital_allocation: "10000",
         params_json: {
           fast_period: Number(fastPeriod),
           slow_period: Number(slowPeriod),
           order_quantity: orderQuantity,
+        },
+        risk_json: {
           max_position_quantity: maxPositionQuantity,
           max_daily_orders: Number(maxDailyOrders),
           cooldown_minutes: Number(cooldownMinutes),
+          max_daily_notional: "10000",
         },
       });
 

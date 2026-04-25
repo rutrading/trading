@@ -9,9 +9,11 @@ import {
   Newspaper,
   Binoculars,
   GearSix,
+  Robot,
   SignOut,
   MagnifyingGlass,
   Star,
+  TrendUp,
 } from "@phosphor-icons/react";
 import {
   CommandDialog,
@@ -67,6 +69,8 @@ const PAGES: PageItem[] = [
   { kind: "page", value: "portfolio chart performance allocation", label: "Portfolio", href: "/portfolio", icon: ChartLine },
   { kind: "page", value: "holdings positions stocks", label: "Holdings", href: "/holdings", icon: Briefcase },
   { kind: "page", value: "activity transactions history", label: "Activity", href: "/activity", icon: ClockCounterClockwise },
+  { kind: "page", value: "strategies automated trading bots runtime", label: "Automated Trading", href: "/automated-trading", icon: Robot },
+  { kind: "page", value: "backtest strategy lab equity drawdown", label: "Backtest Lab", href: "/automated-trading/backtest", icon: TrendUp },
   { kind: "page", value: "news articles headlines market", label: "News", href: "/news", icon: Newspaper },
   { kind: "page", value: "watchlist tracked favorites saved", label: "Watchlist", href: "/watchlist", icon: Binoculars },
   { kind: "page", value: "settings account profile preferences", label: "Settings", href: "/settings", icon: GearSix },
@@ -177,8 +181,9 @@ export function CommandMenu() {
     }
   }, [hasMore, loadPage, stocks.length]);
 
-  // Keep a ref to the latest loadMore so the scroll handler always sees it.
-  loadMoreRef.current = loadMore;
+  useEffect(() => {
+    loadMoreRef.current = loadMore;
+  }, [loadMore]);
 
   const attachViewport = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
