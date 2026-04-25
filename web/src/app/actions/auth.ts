@@ -6,7 +6,7 @@ import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
-import { del, put } from "@/lib/api";
+import { del, post, put, type ApiResult } from "@/lib/api";
 import { BALANCE_MAP, type Experience } from "@/lib/experience";
 
 type ActionResult = { success: true } | { success: false; error: string };
@@ -70,43 +70,42 @@ export async function createAccount(
     partnerId = partner.id;
   }
 
+  // Account starts at balance 0; the deposits endpoint below seeds the
+  // starting balance so deposit-transaction shape lives in one place.
+  let newAccountId: number | undefined;
   try {
-    // All three writes (account row + members + seed deposit) must succeed
-    // together. A partial failure (e.g. the deposit insert errors) would
-    // leave an account without its seed deposit, permanently breaking the
-    // running-cash walk in getAllTransactions for that account.
     await db.transaction(async (tx) => {
       const [tradingAccount] = await tx
         .insert(schema.tradingAccount)
-        .values({ name, type, balance, isJoint, experienceLevel: experience })
+        .values({ name, type, balance: "0", isJoint, experienceLevel: experience })
         .returning();
+      newAccountId = tradingAccount.id;
 
       const members: (typeof schema.accountMember.$inferInsert)[] = [
         { accountId: tradingAccount.id, userId: session.user.id },
       ];
-
       if (partnerId) {
         members.push({ accountId: tradingAccount.id, userId: partnerId });
       }
-
       await tx.insert(schema.accountMember).values(members);
-
-      // Seed the transaction history with the starting deposit so the ledger
-      // balances back to zero instead of the implicit $100k floor.
-      await tx.insert(schema.transaction).values({
-        kind: "deposit",
-        tradingAccountId: tradingAccount.id,
-        total: balance,
-      });
     });
-
-    return { success: true };
   } catch {
     return { success: false, error: "Failed to create account" };
   }
+
+  const seed = await post<{ id: number }>(`/accounts/${newAccountId}/deposits`, {
+    body: { amount: balance },
+  });
+  if (!seed.ok) {
+    // Compensate so the running-cash walk's deposit anchor isn't missing.
+    await del<{ id: number }>(`/accounts/${newAccountId}`);
+    return { success: false, error: "Failed to create account" };
+  }
+
+  return { success: true };
 }
 
-async function assertAccountMember(accountId: number, userId: string) {
+async function isAccountMember(accountId: number, userId: string) {
   const member = await db.query.accountMember.findFirst({
     where: and(
       eq(schema.accountMember.accountId, accountId),
@@ -116,53 +115,55 @@ async function assertAccountMember(accountId: number, userId: string) {
   return !!member;
 }
 
-export async function resetAccountBalance(
+async function withMemberAuth<T>(
   accountId: number,
-  experience: Experience,
+  fn: () => Promise<ApiResult<T>>,
 ): Promise<ActionResult> {
   const session = await getSession();
   if (!session) return { success: false, error: "Not authenticated" };
-
-  const authorized = await assertAccountMember(accountId, session.user.id);
-  if (!authorized) return { success: false, error: "Not authorized" };
-
-  const result = await put<{ id: number }>(`/accounts/${accountId}`, {
-    experience_level: experience,
-  });
+  if (!(await isAccountMember(accountId, session.user.id))) {
+    return { success: false, error: "Not authorized" };
+  }
+  const result = await fn();
   if (!result.ok) return { success: false, error: result.error };
   return { success: true };
+}
+
+export async function depositCash(
+  accountId: number,
+  amount: string,
+): Promise<ActionResult> {
+  return withMemberAuth(accountId, () =>
+    post<{ id: number }>(`/accounts/${accountId}/deposits`, { body: { amount } }),
+  );
+}
+
+export async function resetAccount(
+  accountId: number,
+  experience: Experience,
+): Promise<ActionResult> {
+  return withMemberAuth(accountId, () =>
+    post<{ id: number }>(`/accounts/${accountId}/reset`, {
+      body: { experience_level: experience },
+    }),
+  );
 }
 
 export async function renameAccount(
   accountId: number,
   name: string,
 ): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session) return { success: false, error: "Not authenticated" };
-
   const trimmed = name.trim();
   if (trimmed.length === 0) {
     return { success: false, error: "Name cannot be empty" };
   }
-
-  const authorized = await assertAccountMember(accountId, session.user.id);
-  if (!authorized) return { success: false, error: "Not authorized" };
-
-  const result = await put<{ id: number }>(`/accounts/${accountId}`, {
-    name: trimmed,
-  });
-  if (!result.ok) return { success: false, error: result.error };
-  return { success: true };
+  return withMemberAuth(accountId, () =>
+    put<{ id: number }>(`/accounts/${accountId}`, { name: trimmed }),
+  );
 }
 
 export async function deleteAccount(accountId: number): Promise<ActionResult> {
-  const session = await getSession();
-  if (!session) return { success: false, error: "Not authenticated" };
-
-  const authorized = await assertAccountMember(accountId, session.user.id);
-  if (!authorized) return { success: false, error: "Not authorized" };
-
-  const result = await del<{ id: number }>(`/accounts/${accountId}`);
-  if (!result.ok) return { success: false, error: result.error };
-  return { success: true };
+  return withMemberAuth(accountId, () =>
+    del<{ id: number }>(`/accounts/${accountId}`),
+  );
 }

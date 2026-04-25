@@ -59,7 +59,7 @@ export const EditAccountName = ({ accountId, currentName }: Props) => {
         }}
       >
         <PencilSimple size={14} />
-        Edit name
+        Edit Name
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>

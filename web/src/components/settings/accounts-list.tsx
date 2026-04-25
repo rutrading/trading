@@ -8,7 +8,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { EditAccountName } from "@/components/settings/edit-account-name";
-import { ResetBalance } from "@/components/settings/reset-balance";
+import { ResetAccount } from "@/components/settings/reset-account";
+import { DepositCash } from "@/components/settings/deposit-cash";
 import { DeleteAccount } from "@/components/settings/delete-account";
 import { cn } from "@/lib/utils";
 
@@ -95,15 +96,19 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
 
               <Separator className="my-3" />
               <div className="flex items-center justify-between gap-2">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-nowrap items-center gap-2">
                   <EditAccountName
                     accountId={acct.id}
                     currentName={acct.name}
                   />
-                  <ResetBalance
+                  <ResetAccount
                     accountId={acct.id}
                     accountName={acct.name}
                     currentLevel={acct.experienceLevel}
+                  />
+                  <DepositCash
+                    accountId={acct.id}
+                    accountName={acct.name}
                   />
                 </div>
                 <DeleteAccount
