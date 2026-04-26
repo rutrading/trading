@@ -448,7 +448,7 @@ class News_Article_Source_Bridge(Base):
     
     __table_args__ = (
         Index("article_source_bridge_articleId_idx", "article_id"),
-        Index("news_source_news_sourcetId_idx", "news_source_id")
+        Index("article_source_bridge_news_source_id_idx", "news_source_id")
     )
 
 class Author(Base):
