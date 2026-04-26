@@ -21,7 +21,6 @@ from app.routers import (
     symbols,
     transactions,
     watchlist,
-    test #TODO: Remove after testing
 )
 from app.tasks.order_executor import run_order_executor
 from app.tasks.get_news import get_news
@@ -162,4 +161,3 @@ app.include_router(transactions.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(company.router, prefix="/api")
-app.include_router(test.router, prefix="/api") #TODO: remove after testing

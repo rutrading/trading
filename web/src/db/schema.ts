@@ -478,6 +478,7 @@ export const watchlistItemRelations = relations(watchlistItem, ({ one }) => ({
 
 export const newsArticle  = pgTable("news_article", {
   article_id: serial("article_id").primaryKey(),
+  title: text("title").notNull(),
   url: text("url").notNull(),
   summary: text("summary"),
   thumbnail: text("thumbnail"),
@@ -524,6 +525,7 @@ export const articleSummaryView = pgView("article_summary_view", {
 }).as(sql`
   SELECT 
     ${newsArticle.article_id} as article_id, 
+    ${newsArticle.title} as title,
     ${newsArticle.url} as url,
     ${newsArticle.summary} as summary,
     ${newsArticle.thumbnail} as thumbnail,

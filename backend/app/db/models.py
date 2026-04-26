@@ -350,6 +350,7 @@ class News_Article(Base):
     __tablename__ = "news_article"
 
     article_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(nullable=False)
     url: Mapped[str] = mapped_column(nullable=False)
     summary: Mapped[str] = mapped_column(default=None)
     thumbnail: Mapped[str | None] = mapped_column(default=None)
@@ -421,6 +422,7 @@ class ArticleSummaryView(Base):
     __tablename__ = "article_summary_view"
     
     article_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(nullable=False)
     url: Mapped[str] = mapped_column(nullable=False)
     summary: Mapped[str] = mapped_column(nullable=False)
     thumbnail: Mapped[str | None] = mapped_column(nullable=True)

@@ -24,6 +24,7 @@ async def get_news() -> None:
                     date_published = f"{df.iloc[i]['pub_year']}-{df.iloc[i]['pub_month']}-{df.iloc[i]['pub_day']}"
                     
                     new_article = News_Article(
+                        title=df.iloc[i]['title'],
                         url=df.iloc[i]['link'],
                         summary=f"{article_body[:197]}..." if len(article_body) > 200 else article_body,
                         thumbnail=None,
