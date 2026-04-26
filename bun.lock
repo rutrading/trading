@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "trading",
+      "dependencies": {
+        "next-themes": "^0.4.6",
+      },
       "devDependencies": {
         "concurrently": "^9.2.1",
       },
