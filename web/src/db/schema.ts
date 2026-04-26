@@ -17,7 +17,6 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import { article } from "motion/react-client";
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
