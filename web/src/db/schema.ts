@@ -8,16 +8,13 @@ import {
   integer,
   numeric,
   pgEnum,
-  PgInteger,
   pgView,
   pgTable,
-  QueryBuilder,
   serial,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { article } from "motion/react-client";
 
 export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
 
@@ -562,15 +559,16 @@ export const newsArticleTickerBridge  = pgTable("news_article_ticker_bridge", {
   ticker_id: integer("ticker_id").notNull().references(() => articleStockTicker.ticker_id, { onDelete: "cascade" }),
 });
 
-const qb = new QueryBuilder();
-
 export const articleSummaryView = pgView("article_summary_view", {
   article_id: integer("article_id"),
+  title: text("title"),
   url: text("url"),
   summary: text("summary"),
   thumbnail: text("thumbnail"),
   date_published: timestamp("date_published", { withTimezone: true }),
   source_name: text("source_name"),
+  authors: text("authors"),
+  tickers: text("tickers"),
 }).as(sql`
   SELECT 
     ${newsArticle.article_id} as article_id, 
