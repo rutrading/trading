@@ -12,14 +12,18 @@ export const NewsCard = ({ item }: { item: NewsArticle }) => {
         </div>
       </div>
       <div className="flex flex-1 flex-col p-4">
-        <div className="mb-2 flex items-center gap-2">
-          {item.symbol && (
-            <Link href={`/news/${item.symbol}`}>
-              <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-foreground transition-colors hover:bg-foreground/20">
-                {item.symbol}
-              </span>
-            </Link>
-          )}
+        <div className="mb-1 flex flex-wrap items-center gap-1">
+          {item.symbols?.length ? (
+            item.symbols.map((symbol, index) => (
+              <Link key={`${symbol}-${index}`} href={`/news/${symbol}`}>
+                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-foreground transition-colors hover:bg-foreground/20">
+                  {symbol}
+                </span>
+              </Link>
+            ))
+          ) : null}
+        </div>
+        <div className="mb-1 flex items-center gap-2">
           {item.source && (
             <span className="text-xs text-muted-foreground">{item.source}</span>
           )}
