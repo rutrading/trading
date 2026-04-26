@@ -22,6 +22,11 @@ export default async function AuthLayout({
       <div className="flex flex-1 items-center justify-center px-6 py-4">
         <div className="w-full max-w-sm">{children}</div>
       </div>
+      <footer className="px-6 py-4 text-center text-xs text-muted-foreground">
+        <a href="https://logo.dev" title="Logo API" className="underline-offset-2 hover:underline">
+          Logos provided by Logo.dev
+        </a>
+      </footer>
     </div>
   );
 }

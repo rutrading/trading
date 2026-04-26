@@ -180,7 +180,6 @@ class Company(Base):
     description: Mapped[str | None] = mapped_column(String, default=None)
     sector: Mapped[str | None] = mapped_column(String, default=None)
     industry: Mapped[str | None] = mapped_column(String, default=None)
-    logo_url: Mapped[str | None] = mapped_column(String, default=None)
 
     symbol: Mapped["Symbol"] = relationship(back_populates="company")
 

@@ -241,7 +241,6 @@ export const company = pgTable("company", {
   description: text("description"),
   sector: text("sector"),
   industry: text("industry"),
-  logoUrl: text("logo_url"),
 });
 
 export const dailyBar = pgTable(

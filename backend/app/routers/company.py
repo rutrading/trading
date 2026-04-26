@@ -1,7 +1,5 @@
 """Company endpoint for symbol metadata and description."""
 
-from urllib.parse import quote
-
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -31,12 +29,14 @@ def _extract_text(payload: object, key: str) -> str | None:
     return None
 
 
-def _build_logo_url(website: str | None) -> str | None:
-    if not website:
-        return None
-    return (
-        "https://www.google.com/s2/favicons?sz=128&domain_url="
-        f"{quote(website, safe=':/')}"
+def _has_company_data(
+    description: str | None,
+    sector: str | None,
+    industry: str | None,
+) -> bool:
+    return any(
+        isinstance(value, str) and bool(value.strip())
+        for value in (description, sector, industry)
     )
 
 
@@ -52,12 +52,15 @@ async def get_company(
         if not symbol:
             raise HTTPException(status_code=404, detail=f"Ticker {ticker} not found")
         existing_company = db.query(Company).filter(Company.ticker == ticker).first()
-        if existing_company:
+        if existing_company and _has_company_data(
+            existing_company.description,
+            existing_company.sector,
+            existing_company.industry,
+        ):
             return {
                 "description": existing_company.description,
                 "sector": existing_company.sector,
                 "industry": existing_company.industry,
-                "logo_url": existing_company.logo_url,
             }
 
     config = get_config()
@@ -78,7 +81,6 @@ async def get_company(
     description = None
     sector = None
     industry = None
-    logo_url = None
     if company_res.status_code < 400:
         payload = company_res.json()
         if isinstance(payload, dict) and "Note" in payload:
@@ -90,7 +92,6 @@ async def get_company(
         description = _extract_description(payload)
         sector = _extract_text(payload, "Sector")
         industry = _extract_text(payload, "Industry")
-        logo_url = _build_logo_url(_extract_text(payload, "OfficialSite"))
     elif company_res.status_code not in {401, 403, 404, 422, 429}:
         raise HTTPException(
             status_code=503,
@@ -99,21 +100,24 @@ async def get_company(
 
     with db_session() as db:
         row = db.query(Company).filter(Company.ticker == ticker).first()
-        if not row:
-            db.add(
-                Company(
-                    ticker=ticker,
-                    description=description,
-                    sector=sector,
-                    industry=industry,
-                    logo_url=logo_url,
+        if _has_company_data(description, sector, industry):
+            if row:
+                row.description = description
+                row.sector = sector
+                row.industry = industry
+            else:
+                db.add(
+                    Company(
+                        ticker=ticker,
+                        description=description,
+                        sector=sector,
+                        industry=industry,
+                    )
                 )
-            )
             db.commit()
 
     return {
         "description": description,
         "sector": sector,
         "industry": industry,
-        "logo_url": logo_url,
     }
