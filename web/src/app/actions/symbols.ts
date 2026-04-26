@@ -20,7 +20,6 @@ export type CompanyProfile = {
   description: string | null;
   sector: string | null;
   industry: string | null;
-  logoUrl: string | null;
 };
 
 type SearchResult = {
@@ -138,8 +137,15 @@ type CompanyApiResult = {
   description: string | null;
   sector: string | null;
   industry: string | null;
-  logo_url: string | null;
 };
+
+function hasCompanyProfileData(company: CompanyProfile): boolean {
+  return Boolean(
+    company.description?.trim() ||
+      company.sector?.trim() ||
+      company.industry?.trim(),
+  );
+}
 
 export const getCompanyProfile = cache(
   async (ticker: string): Promise<CompanyProfile | null> => {
@@ -152,12 +158,11 @@ export const getCompanyProfile = cache(
     const existing = await db.query.company.findFirst({
       where: eq(schema.company.ticker, t),
     });
-    if (existing) {
+    if (existing && hasCompanyProfileData(existing)) {
       return {
         description: existing.description,
         sector: existing.sector,
         industry: existing.industry,
-        logoUrl: existing.logoUrl,
       };
     }
 
@@ -166,11 +171,12 @@ export const getCompanyProfile = cache(
     );
     if (!res.ok) return null;
 
-    return {
+    const profile = {
       description: res.data.description,
       sector: res.data.sector,
       industry: res.data.industry,
-      logoUrl: res.data.logo_url,
     };
+
+    return hasCompanyProfileData(profile) ? profile : null;
   },
 );
