@@ -8,7 +8,7 @@ const toTitleCase = (value: string) =>
     .toLowerCase()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const buildLogoDevUrl = (ticker: string) => {
+const buildLogoDevUrl = (ticker: string, theme: "light" | "dark") => {
   if (!logoDevPublicKey) return null;
 
   const [cryptoSymbol] = ticker.split("/");
@@ -16,7 +16,7 @@ const buildLogoDevUrl = (ticker: string) => {
     ? `crypto/${encodeURIComponent(cryptoSymbol)}`
     : `ticker/${encodeURIComponent(ticker)}`;
 
-  return `https://img.logo.dev/${lookupPath}?token=${logoDevPublicKey}&size=128&format=png&fallback=404`;
+  return `https://img.logo.dev/${lookupPath}?token=${logoDevPublicKey}&size=128&format=png&fallback=404&theme=${theme}`;
 };
 
 export const CompanyProfileCard = ({
@@ -28,21 +28,30 @@ export const CompanyProfileCard = ({
 }) => {
   const hasData =
     !!company?.description || !!company?.sector || !!company?.industry;
-  const logoUrl = buildLogoDevUrl(ticker);
+  const lightLogoUrl = buildLogoDevUrl(ticker, "light");
+  const darkLogoUrl = buildLogoDevUrl(ticker, "dark");
 
   return (
     <div className="rounded-2xl bg-accent p-6">
       <h2 className="mb-4 text-sm font-bold text-muted-foreground">Company</h2>
 
       <div className="space-y-4 rounded-xl bg-card p-4">
-        {logoUrl && (
+        {lightLogoUrl && darkLogoUrl && (
           <div className="flex items-center gap-3">
             <Image
-              src={logoUrl}
+              src={lightLogoUrl}
               alt={`${ticker} logo`}
               width={48}
               height={48}
-              className="size-12 rounded-md object-cover"
+              className="size-12 rounded-md object-cover dark:hidden"
+              unoptimized
+            />
+            <Image
+              src={darkLogoUrl}
+              alt={`${ticker} logo`}
+              width={48}
+              height={48}
+              className="hidden size-12 rounded-md object-cover dark:block"
               unoptimized
             />
             <a
