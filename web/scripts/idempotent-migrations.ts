@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const MIGRATIONS_DIR = join(import.meta.dir, "..", "migrations");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(__dirname, "..", "migrations");
 
 const rewrite = (sql: string): string => {
   let out = sql;
@@ -14,14 +16,16 @@ const rewrite = (sql: string): string => {
   out = out.replace(/DROP TABLE (?!IF EXISTS)"/g, 'DROP TABLE IF EXISTS "');
   out = out.replace(/DROP TYPE (?!IF EXISTS)"/g, 'DROP TYPE IF EXISTS "');
 
+  // NOTE: `$$` in a String.replace replacement string is the escape for a literal
+  // `$`. To emit the SQL DO-block dollar-quote `$$`, write `$$$$` here.
   out = out.replace(
     /^(CREATE TYPE [^;]+;)/gm,
-    "DO $$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    "DO $$$$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$$$;",
   );
 
   out = out.replace(
     /^(ALTER TABLE "[^"]+" ADD CONSTRAINT [^;]+;)/gm,
-    "DO $$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    "DO $$$$ BEGIN $1 EXCEPTION WHEN duplicate_object THEN NULL; END $$$$;",
   );
 
   return out;

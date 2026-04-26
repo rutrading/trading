@@ -219,10 +219,13 @@ function AutocompleteValue({ ...props }: AutocompletePrimitive.Value.Props) {
 
 function AutocompleteList({
   className,
+  viewportRef,
   ...props
-}: AutocompletePrimitive.List.Props) {
+}: AutocompletePrimitive.List.Props & {
+  viewportRef?: React.Ref<HTMLDivElement>;
+}) {
   return (
-    <ScrollArea scrollbarGutter scrollFade>
+    <ScrollArea scrollbarGutter scrollFade viewportRef={viewportRef}>
       <AutocompletePrimitive.List
         className={cn(
           "not-empty:scroll-py-1 not-empty:p-1 in-data-has-overflow-y:pe-3",
@@ -297,6 +300,7 @@ function AutocompleteTrigger({
 }
 
 const useAutocompleteFilter = AutocompletePrimitive.useFilter;
+const useAutocompleteFilteredItems = AutocompletePrimitive.useFilteredItems;
 
 export {
   Autocomplete,
@@ -315,4 +319,5 @@ export {
   AutocompleteRow,
   AutocompleteCollection,
   useAutocompleteFilter,
+  useAutocompleteFilteredItems,
 };

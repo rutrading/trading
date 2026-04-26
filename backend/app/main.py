@@ -1,16 +1,20 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import AUTH_SERVER_URL, SKIP_AUTH
 from app.config import get_config
 from app.db.redis import close_redis, get_redis
 from app.routers import (
+    accounts,
     company,
     health,
     historical_bars,
@@ -34,13 +38,73 @@ from app.ws.router import set_manager
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 config = get_config()
+
+# Restore the structured log format that earlier commits removed — order
+# placement, fills, and ticker-churn logs are noisy enough that triage needs
+# a timestamp + level + module prefix on every line.
 logging.basicConfig(
     level=config.log_level,
-    format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
+    format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-
 logger = logging.getLogger(__name__)
+
+
+_LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _is_localhost_url(url: str | None) -> bool:
+    """Return True iff the URL's host resolves to a loopback address.
+
+    Used to gate the SKIP_AUTH bypass so it cannot be deployed alongside a
+    real database or auth server. Postgres URLs are also accepted in their
+    unix-socket-less ``postgresql://user:pass@host/db`` shape.
+    """
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in _LOCALHOST_HOSTS
+
+
+def _enforce_skip_auth_safety() -> None:
+    """Refuse to start when SKIP_AUTH=true is combined with non-localhost
+    DATABASE_URL or AUTH_SERVER_URL. SKIP_AUTH disables every membership
+    check and short-circuits the trading-account authorization layer; it
+    must never run pointed at a non-local datastore.
+
+    Set SKIP_AUTH_ALLOW_NON_LOCALHOST=1 to bypass this check (e.g. for an
+    internal dev environment running against a remote test DB). The bypass
+    logs at CRITICAL so the choice shows up in any operational log review.
+    """
+    if not SKIP_AUTH:
+        return
+
+    db_local = _is_localhost_url(config.database_url)
+    auth_local = _is_localhost_url(AUTH_SERVER_URL)
+    if db_local and auth_local:
+        return
+
+    bypass = os.environ.get("SKIP_AUTH_ALLOW_NON_LOCALHOST", "").lower() in ("1", "true")
+    message = (
+        "Refusing to start: SKIP_AUTH=true is set but DATABASE_URL or "
+        f"AUTH_SERVER_URL is not on localhost (database_url_host_local={db_local}, "
+        f"auth_server_url_host_local={auth_local}). "
+        "SKIP_AUTH disables all authentication and account-membership checks; "
+        "running it against a real datastore exposes every account to anonymous "
+        "callers. Either unset SKIP_AUTH or set SKIP_AUTH_ALLOW_NON_LOCALHOST=1 "
+        "to confirm this was intentional."
+    )
+    if bypass:
+        logger.critical("%s SKIP_AUTH_ALLOW_NON_LOCALHOST=1 — proceeding anyway.", message)
+        return
+    raise RuntimeError(message)
+
+
+_enforce_skip_auth_safety()
 
 
 def _has_alpaca_credentials() -> bool:
@@ -112,6 +176,9 @@ async def lifespan(app: FastAPI):
 
     await feed.start()
 
+    symbol_sync_task = asyncio.create_task(symbols.run_symbol_sync_loop())
+    logger.info("Symbol sync task started")
+
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
@@ -121,9 +188,14 @@ async def lifespan(app: FastAPI):
     yield
 
     await feed.stop()
+    symbol_sync_task.cancel()
     flush_task.cancel()
     executor_task.cancel()
     news_task.cancel()
+    try:
+        await symbol_sync_task
+    except asyncio.CancelledError:
+        pass
     try:
         await flush_task
     except asyncio.CancelledError:
@@ -161,3 +233,4 @@ app.include_router(transactions.router, prefix="/api")
 app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(company.router, prefix="/api")
+app.include_router(accounts.router, prefix="/api")

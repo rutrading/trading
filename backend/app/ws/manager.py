@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from collections import defaultdict
 
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 # how long to hold a disconnected user's subscriptions
 GRACE_SECONDS = 30
+
+# Per-message and per-connection caps on how many tickers a single client may
+# request. An authenticated client without these caps can otherwise flood
+# `_subs[ws]`, `_ticker_clients`, and `_pending_adds`/`_pending_removes` with
+# thousands of entries — and (per `feeds/alpaca.py`) trigger churn on the
+# upstream subscription set via the eviction path.
+MAX_TICKERS_PER_MESSAGE = 50
+MAX_TICKERS_PER_CONNECTION = 200
 
 
 class ConnectionManager:
@@ -45,6 +54,21 @@ class ConnectionManager:
         self._pending_adds: set[str] = set()
         self._pending_removes: set[str] = set()
 
+        # tickers the backend subscribes to regardless of client sessions — e.g.
+        # symbols with open orders. The executor calls sync_system_tickers()
+        # every poll cycle to keep this in sync. Tickers in this set are never
+        # untracked on client disconnect or unsubscribe.
+        self._system_tickers: set[str] = set()
+
+        # Event loop reference + thread id used by sync_system_tickers to
+        # marshal cross-thread calls back onto the loop (so async-locked
+        # state stays single-writer). register_loop() is called by
+        # run_order_executor at startup; until then sync_system_tickers
+        # falls back to the legacy in-thread mutation (used by tests that
+        # call it directly from the asyncio loop).
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread_id: int | None = None
+
     def _mark_tracked(self, tickers: list[str]) -> None:
         for ticker in tickers:
             self._pending_removes.discard(ticker)
@@ -55,8 +79,14 @@ class ConnectionManager:
             self._pending_adds.discard(ticker)
             self._pending_removes.add(ticker)
 
-    async def connect(self, ws: WebSocket, user_id: str) -> None:
-        await ws.accept()
+    async def connect(
+        self, ws: WebSocket, user_id: str, *, already_accepted: bool = False
+    ) -> None:
+        # Accept here unless the caller already did (the new auth-on-first-frame
+        # path in `ws/router.py` accepts before reading the auth token, then
+        # passes `already_accepted=True` so we don't double-accept).
+        if not already_accepted:
+            await ws.accept()
         restored: set[str] = set()
 
         async with self._lock:
@@ -134,7 +164,9 @@ class ConnectionManager:
                 for ticker in tickers:
                     if not self._ticker_clients[ticker]:
                         del self._ticker_clients[ticker]
-                        removed.append(ticker)
+                        # backend may still need this ticker for open orders
+                        if ticker not in self._system_tickers:
+                            removed.append(ticker)
                 if removed:
                     self._mark_untracked(removed)
 
@@ -166,8 +198,12 @@ class ConnectionManager:
 
             removed: list[str] = []
             for ticker in saved:
-                # only untrack if no other clients are watching
-                if not self._ticker_clients.get(ticker):
+                # only untrack if no other clients are watching AND the backend
+                # isn't holding this ticker open for order execution
+                if (
+                    not self._ticker_clients.get(ticker)
+                    and ticker not in self._system_tickers
+                ):
                     self._ticker_clients.pop(ticker, None)
                     removed.append(ticker)
             if removed:
@@ -179,14 +215,121 @@ class ConnectionManager:
             removed or "none",
         )
 
-    async def subscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
-        """Subscribe a client to tickers. Returns newly tracked tickers."""
+    def register_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Record the loop that owns the asyncio-locked manager state.
+
+        Called from the asyncio task that runs the order executor so
+        cross-thread `sync_system_tickers` calls can be marshalled back
+        onto the loop via `run_coroutine_threadsafe`. Without this the
+        executor (running in `asyncio.to_thread`) would race against
+        `subscribe`/`unsubscribe`/`disconnect`/`broadcast` for the
+        `_pending_adds` / `_pending_removes` / `_ticker_clients` /
+        `_ticker_last_active` / `_system_tickers` collections.
+        """
+        self._loop = loop
+        self._loop_thread_id = threading.get_ident()
+
+    def _apply_system_tickers(self, normalized: set[str]) -> tuple[list[str], list[str]]:
+        """Inner sync mutator. Caller must guarantee single-writer access.
+
+        Either runs on the loop thread (legacy direct call from tests
+        or pre-`register_loop` startup) or under the asyncio lock via
+        `_apply_system_tickers_locked` when scheduled from a worker
+        thread. Splitting this out lets us share the diff/mutation
+        logic between the two entry points without duplicating it.
+        """
         added: list[str] = []
+        removed: list[str] = []
+
+        # New system tickers
+        for t in normalized - self._system_tickers:
+            # Only mark a pending_add if no client is already subscribed
+            if not self._ticker_clients.get(t):
+                added.append(t)
+                self._ticker_last_active[t] = time.monotonic()
+
+        # Released system tickers
+        for t in self._system_tickers - normalized:
+            # Only mark a pending_remove if no client is subscribed either
+            if not self._ticker_clients.get(t):
+                removed.append(t)
+
+        self._system_tickers = normalized
+        if added:
+            self._mark_tracked(added)
+        if removed:
+            self._mark_untracked(removed)
+        return added, removed
+
+    async def _apply_system_tickers_locked(
+        self, normalized: set[str]
+    ) -> tuple[list[str], list[str]]:
+        """Async wrapper around `_apply_system_tickers` that takes the
+        connection-manager lock. Used by `sync_system_tickers` when it
+        is invoked from a worker thread."""
+        async with self._lock:
+            return self._apply_system_tickers(normalized)
+
+    def sync_system_tickers(self, tickers: set[str]) -> tuple[list[str], list[str]]:
+        """Set the backend-owned subscription set. Marks pending_adds for new
+        tickers and pending_removes for tickers no longer in the set (but only
+        if no client is currently subscribed to them). Returns (added, removed)
+        for logging. Intended to be called by the order executor each cycle.
+
+        Safe to call from a worker thread once `register_loop` has run —
+        the mutation is marshalled onto the loop under `_lock` so it
+        cannot race with `subscribe` / `unsubscribe` / `broadcast` /
+        `disconnect`. Direct calls from the loop thread (the legacy
+        path, exercised by tests) execute inline with no extra hop."""
+        normalized = {t.upper() for t in tickers}
+
+        loop = self._loop
+        if loop is not None and threading.get_ident() != self._loop_thread_id:
+            # Called from a worker thread (e.g. asyncio.to_thread inside
+            # run_order_executor). Schedule the mutation on the loop and
+            # block this thread until it completes — concurrent_futures
+            # handles cross-thread propagation of the result/exception.
+            future = asyncio.run_coroutine_threadsafe(
+                self._apply_system_tickers_locked(normalized), loop
+            )
+            return future.result()
+
+        return self._apply_system_tickers(normalized)
+
+    async def subscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
+        """Subscribe a client to tickers. Returns newly tracked tickers.
+
+        Enforces MAX_TICKERS_PER_MESSAGE (drops the overflow in the incoming
+        list) and MAX_TICKERS_PER_CONNECTION (stops adding once the per-ws
+        total reaches the cap). Overflows are logged but not errored so the
+        connection stays alive — the router can surface an explicit error
+        for the batch-too-large case.
+        """
+        added: list[str] = []
+        if len(tickers) > MAX_TICKERS_PER_MESSAGE:
+            logger.warning(
+                "Capping subscribe: message had %d tickers, cap is %d",
+                len(tickers),
+                MAX_TICKERS_PER_MESSAGE,
+            )
+            tickers = tickers[:MAX_TICKERS_PER_MESSAGE]
+
         async with self._lock:
             if ws not in self._subs:
                 return []
             for t in tickers:
                 ticker = t.upper()
+                # Already-subscribed tickers cost nothing to "re-add" against
+                # the cap; only count this ticker if it's a genuine new entry.
+                if (
+                    ticker not in self._subs[ws]
+                    and len(self._subs[ws]) >= MAX_TICKERS_PER_CONNECTION
+                ):
+                    logger.warning(
+                        "Dropping subscribe: per-connection cap %d reached",
+                        MAX_TICKERS_PER_CONNECTION,
+                    )
+                    break
                 self._subs[ws].add(ticker)
                 was_empty = len(self._ticker_clients[ticker]) == 0
                 self._ticker_clients[ticker].add(ws)
@@ -196,7 +339,7 @@ class ConnectionManager:
             if added:
                 self._mark_tracked(added)
         if added:
-            logger.info("New tickers tracked: %s", added)
+            logger.debug("New tickers tracked: %s", added)
         return added
 
     async def unsubscribe(self, ws: WebSocket, tickers: list[str]) -> list[str]:
@@ -211,11 +354,13 @@ class ConnectionManager:
                 self._ticker_clients[ticker].discard(ws)
                 if not self._ticker_clients[ticker]:
                     del self._ticker_clients[ticker]
-                    removed.append(ticker)
+                    # keep system-tracked tickers alive even with no clients
+                    if ticker not in self._system_tickers:
+                        removed.append(ticker)
             if removed:
                 self._mark_untracked(removed)
         if removed:
-            logger.info("Tickers untracked: %s", removed)
+            logger.debug("Tickers untracked: %s", removed)
         return removed
 
     async def broadcast(self, ticker: str, data: dict) -> None:
