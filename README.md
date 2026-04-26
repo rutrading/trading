@@ -8,45 +8,19 @@ Senior project for Rowan University, advised by Professor McKee.
 
 ## Overview
 
-- Authentication with account registration and session management
-- Real-time quotes from Alpaca with three-tier caching (Redis, Postgres, REST fallback)
-- Historical candlestick charts with intraday, daily, and aggregated timeframes
-- Symbol search backed by Alpaca asset data synced to Postgres
-- Order placement and portfolio management with holdings and transaction history
-- Shared sliding-window rate limiter across all Alpaca API calls
-- WebSocket-based live quote streaming with per-user tracking and reconnection grace period (mock data, Alpaca feed pending)
-- Watchlist for tracking saved stocks with current prices and daily changes
-- Settings page for profile management and account actions
-
-**Planned:**
-
-- Dashboard with portfolio value, holdings breakdown, and daily movers
-- Financial news integration filtered by symbol
-- Stock detail page with live price, charts, and trade execution
-- Real-time Alpaca feed to replace mock WebSocket price data
+- Account registration and sessions powered by [Better Auth](https://www.better-auth.com/)
+- Portfolio dashboard with positions, holdings, orders, and activity history
+- Stock detail pages with live price, candlestick charts, and trade execution
+- Order placement with buying-power reservations and a full transaction ledger
+- Watchlists, symbol search with trending tickers, and per-symbol financial news
+- Quotes from [Alpaca](https://alpaca.markets/) backed by three-tier caching across Redis, Postgres, and REST, plus a live WebSocket stream with per-user subscriptions
+- Company profiles from Alpha Vantage with logos from [Logo.dev](https://logo.dev), themed to the user's preference
 
 ## Architecture
 
-![System Architecture Diagram](.github/system_architecture_diagram.png)
+![System Architecture](.github/system-architecture.png)
 
-*Last updated: March 11, 2026*
-
-The Next.js frontend communicates with a FastAPI backend over REST. The backend fetches market data from [Alpaca](https://alpaca.markets/), caches quotes in Redis (hot) and Postgres (warm), and falls back to Alpaca REST on cache miss. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server.
-
-### Quote Flow
-
-1. API receives `/api/quote?ticker=...`
-2. Checks Redis hash (`quote:<ticker>`) for a fresh cached quote
-3. Falls back to Postgres `quote` table if Redis misses
-4. Fetches from Alpaca snapshot endpoint on full cache miss
-5. Writes back to Redis and upserts into Postgres
-
-### Historical Bars Flow
-
-1. API receives `/api/historical-bars?ticker=...&timeframe=...&start=...`
-2. Intraday timeframes (1Min through 1Hour) fetch directly from Alpaca REST, never stored
-3. Daily bars read from the `daily_bar` table, backfilling gaps from Alpaca on demand
-4. Aggregated timeframes (1Week through 1Year) use SQL aggregation over daily bars
+A Next.js frontend talks to a FastAPI backend over REST, with a WebSocket channel for live quotes. Market data comes from [Alpaca](https://alpaca.markets/) and is cached in Redis (hot) and Postgres (warm) before falling back to Alpaca REST. All outbound Alpaca calls go through a shared sliding-window rate limiter.
 
 ### Database
 
@@ -102,14 +76,6 @@ For local services only:
 ```bash
 docker compose up -d
 ```
-
-## Contributing
-
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and guidelines.
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
 
 ## AI Use Statement
 
