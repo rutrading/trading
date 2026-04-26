@@ -1,10 +1,30 @@
 # R U Trading
 
+<p align="center">
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js"></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React"></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+  <a href="https://tailwindcss.com/"><img src="https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres"></a>
+  <a href="https://redis.io/"><img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis"></a>
+  <a href="https://bun.sh/"><img src="https://img.shields.io/badge/Bun-000000?style=for-the-badge&logo=bun&logoColor=white" alt="Bun"></a>
+</p>
+
 Paper trading web application that simulates stock market trading using real-time data, allowing users to practice investing strategies without financial risk.
 
 Senior project for Rowan University, advised by Professor McKee.
 
 **Team:** Kyle Graham Matzen (Scrum/Lead), Nitin Sobti (Scrum/Lead), Josh Odom, Lucas Souder, Sean Twomey
+
+## Architecture
+
+![System Architecture](.github/system-architecture.png)
+
+A Next.js frontend talks to a FastAPI backend over REST, with a WebSocket channel for live quotes. Market data comes from [Alpaca](https://alpaca.markets/) and is cached in Redis (hot) and Postgres (warm) before falling back to Alpaca REST. All outbound Alpaca calls go through a shared sliding-window rate limiter.
+
+The schema lives in `web/src/db/schema.ts` as the single source of truth via [Drizzle ORM](https://orm.drizzle.team/), with the Python backend reading and writing through SQLAlchemy models against the same tables. Migrations are handled exclusively by Drizzle (`bun db:push`).
 
 ## Overview
 
@@ -15,16 +35,6 @@ Senior project for Rowan University, advised by Professor McKee.
 - Watchlists, symbol search with trending tickers, and per-symbol financial news
 - Quotes from [Alpaca](https://alpaca.markets/) backed by three-tier caching across Redis, Postgres, and REST, plus a live WebSocket stream with per-user subscriptions
 - Company profiles from Alpha Vantage with logos from [Logo.dev](https://logo.dev), themed to the user's preference
-
-## Architecture
-
-![System Architecture](.github/system-architecture.png)
-
-A Next.js frontend talks to a FastAPI backend over REST, with a WebSocket channel for live quotes. Market data comes from [Alpaca](https://alpaca.markets/) and is cached in Redis (hot) and Postgres (warm) before falling back to Alpaca REST. All outbound Alpaca calls go through a shared sliding-window rate limiter.
-
-### Database
-
-Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python backend uses SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun db:push`).
 
 ## Getting Started
 
