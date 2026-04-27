@@ -120,12 +120,17 @@ async def _send_snapshot(
     can be a quote-only (bid/ask) tick that carries no `price`, leaving the
     UI stuck on whatever the page-load REST snapshot returned. Sending the
     cached state immediately collapses that window to a single round trip.
+
+    Reads run in parallel via `asyncio.gather` so a 30-ticker watchlist
+    subscribe doesn't serialize 30 Redis round-trips on the WS path.
     """
     accepted = manager.get_ws_tickers(ws)
-    for ticker in tickers:
-        if ticker not in accepted:
-            continue
-        cached = await read_redis(ticker)
+    fetch = [t for t in tickers if t in accepted]
+    if not fetch:
+        return
+
+    cached_quotes = await asyncio.gather(*(read_redis(t) for t in fetch))
+    for ticker, cached in zip(fetch, cached_quotes):
         if cached is None:
             continue
         data = {k: v for k, v in cached.model_dump().items() if v is not None}

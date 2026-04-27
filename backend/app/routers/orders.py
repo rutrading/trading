@@ -12,6 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.config import get_config
 from app.db import Order, get_db
 from app.db.models import DailyBar, Holding, TradingAccount, Transaction
 from app.dependencies import get_trading_account
@@ -39,7 +40,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _ET = ZoneInfo("America/New_York")
-_QUOTE_STALENESS_LIMIT_SEC = 60
 
 
 class PlaceOrderRequest(BaseModel):
@@ -284,8 +284,12 @@ async def place_order(
             or is_stock_market_open(datetime.now(timezone.utc).astimezone(_ET))
         )
         if is_live_market and quote.timestamp is not None:
+            # Defence-in-depth: `resolve_quote` already enforces this on
+            # Redis/Postgres hits; this guard only fires when an Alpaca
+            # REST fall-through returns a `timestamp` that's itself older
+            # than the threshold (genuine upstream stale data).
             staleness = int(time.time()) - quote.timestamp
-            if staleness > _QUOTE_STALENESS_LIMIT_SEC:
+            if staleness > get_config().quote_staleness_seconds:
                 raise HTTPException(
                     status_code=400,
                     detail=(

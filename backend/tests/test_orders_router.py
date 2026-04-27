@@ -200,40 +200,19 @@ class TestTransactionsIDOR:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
-def _isolate_redis_from_dev_cache(monkeypatch):
-    """Force `read_redis` to miss in every test.
-
-    The dev `.env` points at a real Redis with cached quotes from prior
-    `bun dev` sessions. Without this, tests that seed Postgres at one
-    price find a stale Redis hit at a different price (or with `price=None`)
-    and resolve_quote returns the wrong layer. The order-placement suite
-    is about Postgres + the staleness gate; Redis behaviour is covered by
-    `test_quotes_router.py`."""
-
-    async def _miss(_ticker):
-        return None
-
-    monkeypatch.setattr("app.services.quote_cache.read_redis", _miss)
-
-
 @pytest.fixture
 def _alpaca_returns_no_quote(monkeypatch):
-    """Stub upstream layers so resolve_quote treats every fall-through as a
-    miss. Tests for the no-quote / null-price rejection paths need this:
-    the dev `.env` ships real Alpaca credentials AND a real Redis with
-    cached quotes from prior dev runs, so without the stubs `read_redis`
-    or `_fetch_from_alpaca` returns live data and the rejection never fires."""
+    """Stub `_fetch_from_alpaca` to raise so resolve_quote falls through
+    every layer as a miss. The dev `.env` ships real Alpaca credentials,
+    so without this `fetch_snapshot` returns a live quote and the no-quote
+    rejection paths never fire. Redis is already isolated globally by the
+    `_isolate_redis_from_dev_cache` autouse fixture in `conftest.py`."""
     from fastapi import HTTPException
 
     async def _raise_alpaca(_ticker):
         raise HTTPException(404, "Ticker not found")
 
-    async def _redis_miss(_ticker):
-        return None
-
     monkeypatch.setattr("app.services.quote_cache._fetch_from_alpaca", _raise_alpaca)
-    monkeypatch.setattr("app.services.quote_cache.read_redis", _redis_miss)
 
 
 class TestPlaceMarketOrder:

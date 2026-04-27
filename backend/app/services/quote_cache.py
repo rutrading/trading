@@ -75,19 +75,33 @@ def _read_from_postgres(ticker: str, db: Session | None = None) -> QuoteData | N
         return None
 
 
-def _persist_quote(quote_data: QuoteData) -> None:
-    """Upsert a quote into Postgres (warm cache layer)."""
-    payload = quote_data.to_db_payload()
-    with db_session() as db:
-        existing = db.query(Quote).filter(Quote.ticker == quote_data.ticker).first()
-        if existing:
-            for field in QUOTE_FIELDS:
-                if field != "ticker":
-                    setattr(existing, field, payload.get(field))
-            existing.updated_at = datetime.now(timezone.utc)
-        else:
-            db.add(Quote(**payload))
+def persist_quote(quote_data: QuoteData, db: Session | None = None) -> None:
+    """Upsert a quote into Postgres (warm cache layer).
+
+    `db` lets the caller share a request-scoped session; when omitted,
+    opens and commits its own short transaction. Both shapes write the
+    full `QuoteData` field set so a partial Alpaca snapshot does not
+    overwrite OHLCV columns the warm cache may have from a prior persist.
+    """
+    if db is not None:
+        _persist_in(db, quote_data)
         db.commit()
+        return
+    with db_session() as session:
+        _persist_in(session, quote_data)
+        session.commit()
+
+
+def _persist_in(db: Session, quote_data: QuoteData) -> None:
+    payload = quote_data.to_db_payload()
+    existing = db.query(Quote).filter(Quote.ticker == quote_data.ticker).first()
+    if existing:
+        for field in QUOTE_FIELDS:
+            if field != "ticker":
+                setattr(existing, field, payload.get(field))
+        existing.updated_at = datetime.now(timezone.utc)
+    else:
+        db.add(Quote(**payload))
 
 
 async def _fetch_from_alpaca(ticker: str) -> QuoteData:
@@ -147,7 +161,7 @@ async def resolve_quote(ticker: str, db: Session | None = None) -> QuoteResponse
     quote_data = await _fetch_from_alpaca(ticker)
     await write_redis(quote_data)
     try:
-        _persist_quote(quote_data)
+        persist_quote(quote_data)
     except Exception as exc:
         logger.warning("Postgres persist skipped for %s: %s", ticker, exc)
 
