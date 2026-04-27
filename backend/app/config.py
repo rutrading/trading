@@ -26,6 +26,24 @@ class Config:
     symbol_seed_on_startup: bool = True
     symbol_seed_refresh_interval_seconds: int = 86400
     news_refresh_interval_seconds: int = 900
+    kalshi_api_key_id: str = ""
+    kalshi_private_key_pem: str = ""
+    kalshi_api_origin: str = "https://demo-api.kalshi.co"
+    kalshi_api_prefix: str = "/trade-api/v2"
+    kalshi_btc_series_ticker: str = "KXBTCD"
+    kalshi_rate_limit: int = 60
+    kalshi_poll_interval_seconds: int = 30
+    kalshi_default_strategy: str = "threshold_drift"
+    kalshi_max_orders_per_cycle: int = 1
+    kalshi_max_open_contracts: int = 5
+    kalshi_order_time_in_force: str = "immediate_or_cancel"
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def get_config() -> Config:
