@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth import verify_token
+from app.services.quote_cache import read_redis
 
 if TYPE_CHECKING:
     from app.ws.manager import ConnectionManager
@@ -103,10 +104,33 @@ async def _handle_message(manager: ConnectionManager, ws: WebSocket, msg: dict) 
     if msg_type == "subscribe":
         await manager.subscribe(ws, tickers)
         await _send(ws, {"type": "subscribed", "tickers": tickers})
+        await _send_snapshot(ws, manager, tickers)
         return
 
     await manager.unsubscribe(ws, tickers)
     await _send(ws, {"type": "unsubscribed", "tickers": tickers})
+
+
+async def _send_snapshot(
+    ws: WebSocket, manager: ConnectionManager, tickers: list[str]
+) -> None:
+    """Push the current Redis state for each just-subscribed ticker to `ws`.
+
+    Without this, the browser has to wait for the next upstream tick — which
+    can be a quote-only (bid/ask) tick that carries no `price`, leaving the
+    UI stuck on whatever the page-load REST snapshot returned. Sending the
+    cached state immediately collapses that window to a single round trip.
+    """
+    accepted = manager.get_ws_tickers(ws)
+    for ticker in tickers:
+        if ticker not in accepted:
+            continue
+        cached = await read_redis(ticker)
+        if cached is None:
+            continue
+        data = {k: v for k, v in cached.model_dump().items() if v is not None}
+        if data:
+            await _send(ws, {"type": "quote", "ticker": ticker, "data": data})
 
 
 async def _await_auth_token(ws: WebSocket) -> str | None:

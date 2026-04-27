@@ -43,6 +43,7 @@ def fake_manager(monkeypatch):
     fake.disconnect = AsyncMock()
     fake.subscribe = AsyncMock(return_value=[])
     fake.unsubscribe = AsyncMock(return_value=[])
+    fake.get_ws_tickers = MagicMock(return_value=set())
     monkeypatch.setattr(ws_router, "_manager", fake)
     return fake
 
@@ -140,3 +141,113 @@ class TestWebSocketAuth:
             ws.send_text(json.dumps({"type": "auth", "token": "anything"}))
         fake_manager.connect.assert_awaited_once()
         assert fake_manager.connect.await_args.args[1] == "unknown"
+
+
+class TestSnapshotOnSubscribe:
+    """Verify the router pushes Redis state to a client right after subscribe.
+
+    Without this, a fresh subscriber would have to wait for the next upstream
+    tick — which can be a quote-only (bid/ask) tick that carries no `price`,
+    leaving the chart and order form stuck on whatever the page-load REST
+    snapshot returned.
+    """
+
+    def _read_n(self, ws, n: int) -> list[dict]:
+        return [json.loads(ws.receive_text()) for _ in range(n)]
+
+    def _auth(self, monkeypatch, fake_manager, accepted: set[str]):
+        monkeypatch.setattr(auth_module, "SKIP_AUTH", False)
+        monkeypatch.setattr(ws_router, "verify_token", lambda t: {"sub": "u1"})
+        fake_manager.get_ws_tickers.return_value = accepted
+
+    def test_sends_snapshot_after_subscribe_ack(self, fake_manager, monkeypatch):
+        from app.schemas import QuoteData
+
+        async def fake_read(ticker):
+            return QuoteData(
+                ticker=ticker,
+                price=100.5,
+                bid_price=100.4,
+                ask_price=100.6,
+                timestamp=1700000000,
+                source="alpaca_ws",
+            )
+
+        monkeypatch.setattr(ws_router, "read_redis", fake_read)
+        self._auth(monkeypatch, fake_manager, {"AAPL"})
+
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "good"}))
+            ws.send_text(json.dumps({"type": "subscribe", "tickers": ["AAPL"]}))
+            ack, snapshot = self._read_n(ws, 2)
+
+        assert ack["type"] == "subscribed"
+        assert ack["tickers"] == ["AAPL"]
+        assert snapshot["type"] == "quote"
+        assert snapshot["ticker"] == "AAPL"
+        assert snapshot["data"]["price"] == 100.5
+        assert snapshot["data"]["bid_price"] == 100.4
+
+    def test_skips_snapshot_when_redis_miss(self, fake_manager, monkeypatch):
+        async def fake_read(ticker):
+            return None
+
+        monkeypatch.setattr(ws_router, "read_redis", fake_read)
+        self._auth(monkeypatch, fake_manager, {"XYZ"})
+
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "good"}))
+            ws.send_text(json.dumps({"type": "subscribe", "tickers": ["XYZ"]}))
+            # Expect only the ack; no quote frame follows when Redis missed.
+            (ack,) = self._read_n(ws, 1)
+
+        assert ack["type"] == "subscribed"
+
+    def test_snapshot_omits_none_fields(self, fake_manager, monkeypatch):
+        from app.schemas import QuoteData
+
+        async def fake_read(ticker):
+            return QuoteData(
+                ticker=ticker,
+                bid_price=100.4,
+                ask_price=100.6,
+                timestamp=1700000000,
+                source="alpaca_ws",
+            )
+
+        monkeypatch.setattr(ws_router, "read_redis", fake_read)
+        self._auth(monkeypatch, fake_manager, {"BTC/USD"})
+
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "good"}))
+            ws.send_text(
+                json.dumps({"type": "subscribe", "tickers": ["BTC/USD"]})
+            )
+            _ack, snapshot = self._read_n(ws, 2)
+
+        data = snapshot["data"]
+        # None fields are stripped so a snapshot can't overwrite a
+        # populated field already merged in the browser's quote map.
+        assert "price" not in data
+        assert data["bid_price"] == 100.4
+        assert data["ask_price"] == 100.6
+
+    def test_snapshot_only_for_accepted_tickers(self, fake_manager, monkeypatch):
+        from app.schemas import QuoteData
+
+        async def fake_read(ticker):
+            return QuoteData(ticker=ticker, price=1.0, timestamp=1700000000)
+
+        monkeypatch.setattr(ws_router, "read_redis", fake_read)
+        # Manager accepted AAPL but dropped MSFT (e.g. per-connection cap).
+        self._auth(monkeypatch, fake_manager, {"AAPL"})
+
+        with client.websocket_connect("/api/ws") as ws:
+            ws.send_text(json.dumps({"type": "auth", "token": "good"}))
+            ws.send_text(
+                json.dumps({"type": "subscribe", "tickers": ["AAPL", "MSFT"]})
+            )
+            _ack, snapshot = self._read_n(ws, 2)
+
+        assert snapshot["type"] == "quote"
+        assert snapshot["ticker"] == "AAPL"

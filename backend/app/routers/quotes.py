@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from app.auth import get_current_user
 from app.config import get_config
 from app.db import Quote, db_session
-from app.db.redis import get_redis
 from app.schemas import QuoteData, QuoteResponse
 from app.services.alpaca_rest import (
     AlpacaMissingCredentials,
@@ -19,13 +18,12 @@ from app.services.alpaca_rest import (
     AlpacaTickerNotFound,
     fetch_snapshot,
 )
+from app.services.quote_cache import read_redis, write_redis
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 QUOTE_FIELDS = tuple(QuoteData.model_fields.keys())
-
-REDIS_QUOTE_PREFIX = "quote:"
 
 
 def _persist_quote(quote_data: QuoteData) -> None:
@@ -41,31 +39,6 @@ def _persist_quote(quote_data: QuoteData) -> None:
         else:
             db.add(Quote(**payload))
         db.commit()
-
-
-async def _cache_to_redis(quote_data: QuoteData) -> None:
-    """Write a quote into the Redis hot-cache as a hash."""
-    try:
-        r = await get_redis()
-        key = f"{REDIS_QUOTE_PREFIX}{quote_data.ticker}"
-        flat = quote_data.to_redis_mapping()
-        if flat:
-            await r.hset(key, mapping=flat)
-    except Exception as exc:
-        logger.warning("Redis cache write failed for %s: %s", quote_data.ticker, exc)
-
-
-async def _read_from_redis(ticker: str) -> QuoteData | None:
-    """Try to read a quote from the Redis hot-cache."""
-    try:
-        r = await get_redis()
-        data = await r.hgetall(f"{REDIS_QUOTE_PREFIX}{ticker}")
-        if not data:
-            return None
-        return QuoteData.from_redis_hash(ticker, data)
-    except Exception as exc:
-        logger.warning("Redis cache read failed for %s: %s", ticker, exc)
-        return None
 
 
 def _read_from_postgres(ticker: str) -> QuoteData | None:
@@ -104,7 +77,7 @@ async def _resolve_quote(ticker: str) -> QuoteResponse:
     """
     config = get_config()
 
-    cached = await _read_from_redis(ticker)
+    cached = await read_redis(ticker)
     if cached and cached.timestamp:
         cache_age = int(datetime.now(timezone.utc).timestamp()) - cached.timestamp
         if cache_age < config.quote_staleness_seconds:
@@ -119,7 +92,7 @@ async def _resolve_quote(ticker: str) -> QuoteResponse:
     if pg_data and pg_data.timestamp:
         cache_age = int(datetime.now(timezone.utc).timestamp()) - pg_data.timestamp
         if cache_age < config.quote_staleness_seconds:
-            await _cache_to_redis(pg_data)
+            await write_redis(pg_data)
             return QuoteResponse(
                 **pg_data.model_dump(),
                 cached=True,
@@ -128,7 +101,7 @@ async def _resolve_quote(ticker: str) -> QuoteResponse:
             )
 
     quote_data = await _fetch_from_alpaca(ticker)
-    await _cache_to_redis(quote_data)
+    await write_redis(quote_data)
     try:
         _persist_quote(quote_data)
     except Exception as exc:
