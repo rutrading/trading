@@ -21,6 +21,16 @@ class Config:
     fmp_base_url: str = "https://financialmodelingprep.com/api/v3"
     quote_staleness_seconds: int = 60
     quote_flush_interval: int = 30
+    # TTL applied to `quote:<ticker>` hashes after every write. Reads still
+    # gate freshness on `quote_staleness_seconds`; the TTL is purely an
+    # eviction floor so cold tickers stop pinning Redis memory after the
+    # last write went silent. Must be longer than `quote_staleness_seconds`
+    # or hot reads will keep falling through to Postgres.
+    quote_redis_ttl_seconds: int = 3600
+    # Trending zset rotation horizon. The /symbols/track endpoint writes
+    # into a per-ISO-week key with this expire applied each tick, so the
+    # set self-prunes once a key stops being written to.
+    trending_key_ttl_seconds: int = 14 * 86400
     log_level: str = "INFO"
     allow_symbol_seed_endpoint: bool = False
     symbol_seed_on_startup: bool = True

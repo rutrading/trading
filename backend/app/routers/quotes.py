@@ -51,6 +51,11 @@ async def _cache_to_redis(quote_data: QuoteData) -> None:
         flat = quote_data.to_redis_mapping()
         if flat:
             await r.hset(key, mapping=flat)
+            # Refresh the TTL on every write so hot tickers stay cached
+            # indefinitely while cold tickers age out and stop pinning
+            # Redis memory after the last writer (quotes router or
+            # streaming feed) goes silent.
+            await r.expire(key, get_config().quote_redis_ttl_seconds)
     except Exception as exc:
         logger.warning("Redis cache write failed for %s: %s", quote_data.ticker, exc)
 

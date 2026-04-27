@@ -3,7 +3,8 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -153,8 +154,31 @@ async def search_symbols(q: str = Query(..., min_length=1)):
     return data
 
 
-TRENDING_KEY = "symbol_trending"
+TRENDING_KEY_PREFIX = "symbol_trending"
 TRENDING_LIMIT = 5
+# How deep we read into each weekly bucket before merging — large enough that
+# the union across two weeks comfortably covers TRENDING_LIMIT even after the
+# asset_class filter knocks some entries out, small enough that the read stays
+# cheap.
+TRENDING_BUCKET_READ = 20
+
+
+def _trending_key(d: datetime) -> str:
+    """Return the per-ISO-week key the trending zset lives under.
+
+    Rotating weekly keeps the leaderboard recency-weighted (last quarter's
+    surge can't dominate this week) and lets per-key TTLs auto-prune the
+    history without a manual sweep.
+    """
+    year, week, _ = d.isocalendar()
+    return f"{TRENDING_KEY_PREFIX}:{year}-W{week:02d}"
+
+
+def _trending_keys_for_read() -> list[str]:
+    """Current week + previous week. We read both so a Monday morning lookup
+    isn't empty just because the new bucket has barely been written to yet."""
+    now = datetime.now(timezone.utc)
+    return [_trending_key(now), _trending_key(now - timedelta(days=7))]
 
 
 @router.post("/symbols/track")
@@ -164,8 +188,12 @@ async def track_symbol(
     """Increment the trending score for a ticker when a user selects it."""
     ticker = ticker.strip().upper()
     redis: RedisClient = await get_redis()
-    new_score = await redis.zincrby(TRENDING_KEY, 1, ticker)
-    logger.info("Symbol tracked: %s (score=%.0f)", ticker, new_score)
+    key = _trending_key(datetime.now(timezone.utc))
+    new_score = await redis.zincrby(key, 1, ticker)
+    # Refresh the bucket TTL on every write so the current week stays alive
+    # while quiescent older buckets age out automatically.
+    await redis.expire(key, get_config().trending_key_ttl_seconds)
+    logger.info("Symbol tracked: %s (score=%.0f, bucket=%s)", ticker, new_score, key)
     return {"ok": True}
 
 
@@ -180,7 +208,17 @@ async def trending_symbols(asset_class: str | None = Query(default=None)):
         raise HTTPException(status_code=400, detail="Invalid asset_class")
 
     redis: RedisClient = await get_redis()
-    top_tickers = await redis.zrevrange(TRENDING_KEY, 0, TRENDING_LIMIT - 1)
+    merged_scores: dict[str, float] = {}
+    for key in _trending_keys_for_read():
+        items = cast(
+            list[tuple[str, float]],
+            await redis.zrevrange(key, 0, TRENDING_BUCKET_READ - 1, withscores=True),
+        )
+        for ticker, score in items:
+            merged_scores[ticker] = merged_scores.get(ticker, 0.0) + float(score)
+    top_tickers = sorted(
+        merged_scores, key=lambda t: merged_scores[t], reverse=True
+    )[:TRENDING_LIMIT]
 
     with db_session() as db:
         results: list[dict] = []

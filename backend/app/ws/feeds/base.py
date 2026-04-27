@@ -4,6 +4,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
+from app.config import get_config
 from app.db.redis import RedisClient, get_redis
 from app.ws.manager import ConnectionManager
 
@@ -47,7 +48,12 @@ class BaseFeed(ABC):
         if not fields:
             return
         redis = await self._redis()
-        await redis.hset(f"quote:{ticker}", mapping=fields)
+        key = f"quote:{ticker}"
+        await redis.hset(key, mapping=fields)
+        # Bump the TTL on every tick so actively streamed tickers stay
+        # warm and quiescent ones age out instead of pinning Redis
+        # memory forever.
+        await redis.expire(key, get_config().quote_redis_ttl_seconds)
 
     async def _publish_quote(self, ticker: str, quote: dict) -> None:
         fields = {k: str(v) for k, v in quote.items() if v is not None}
