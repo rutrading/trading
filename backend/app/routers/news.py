@@ -34,7 +34,7 @@ async def get_news_dict(page_token: int = 0, limit: int = 25, ticker: str | None
                     Article_Stock_Ticker.ticker_id == News_Article_Ticker_Bridge.ticker_id,
                 )
                 .filter(Article_Stock_Ticker.ticker == ticker.upper())
-                .subquery()
+                .scalar_subquery()
             )
             query = query.filter(ArticleSummaryView.article_id.in_(article_ids))
         articles = (
