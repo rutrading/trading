@@ -547,7 +547,7 @@ export function AutomatedTradingClient({
           <Card>
             <CardHeader>
               <CardTitle>Controls</CardTitle>
-              <CardDescription>Per-strategy and per-account guardrails. Global executor state is read from the backend.</CardDescription>
+              <CardDescription>Per-strategy and per-account guardrails.</CardDescription>
             </CardHeader>
             <CardPanel className="flex flex-wrap gap-3">
               <Button variant="outline" onClick={() => void handleControl("pause_all")}>Pause All</Button>
@@ -558,12 +558,6 @@ export function AutomatedTradingClient({
                 </Button>
                 <InfoTooltip content="Emergency Stop disables every strategy so they stay off until you explicitly re-enable them. Pause All only pauses execution temporarily, and Resume All can turn those paused strategies back on." />
               </div>
-              <Badge variant={snapshot?.strategy_executor_enabled ? "success" : "error"}>
-                Executor {snapshot?.strategy_executor_enabled ? "enabled" : "disabled"}
-              </Badge>
-              <Badge variant={streamStatus === "live" ? "success" : streamStatus === "connecting" ? "warning" : "outline"}>
-                Stream {streamStatus}
-              </Badge>
             </CardPanel>
           </Card>
 
@@ -707,7 +701,7 @@ export function AutomatedTradingClient({
           <Card>
             <CardHeader>
               <CardTitle>Backtest</CardTitle>
-              <CardDescription>Run the selected strategy with the same parameters and ATR risk controls used for automation.</CardDescription>
+              <CardDescription>Run the selected strategy using historical data and evaluate its performance.</CardDescription>
             </CardHeader>
             <CardPanel className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -740,9 +734,6 @@ export function AutomatedTradingClient({
               <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
                 <div>
                   <p className="text-sm font-medium">Symbol Search</p>
-                  <p className="text-xs text-muted-foreground">
-                    Search and add symbols without leaving the backtest tab.
-                  </p>
                 </div>
                 <div className="max-w-md">
                   <SymbolSearch
@@ -772,9 +763,6 @@ export function AutomatedTradingClient({
               <div className="space-y-3">
                 <div>
                   <p className="text-sm font-medium">Strategy Parameters</p>
-                  <p className="text-xs text-muted-foreground">
-                    Backtests use the same strategy-specific inputs as live automation.
-                  </p>
                 </div>
                 <StrategyFieldGrid
                   fields={template?.params_schema_json ?? []}
@@ -788,7 +776,7 @@ export function AutomatedTradingClient({
                 <div>
                   <p className="text-sm font-medium">Risk Controls</p>
                   <p className="text-xs text-muted-foreground">
-                    ATR sizing, cooldowns, and daily guardrails are applied during backtests too.
+                    ATR sizing, cooldowns, and daily guardrails.
                   </p>
                 </div>
                 <StrategyFieldGrid
