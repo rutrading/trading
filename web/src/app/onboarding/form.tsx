@@ -28,8 +28,9 @@ import {
   getExperienceOption,
   type Experience,
 } from "@/lib/experience";
+import type { BrokerageAccountType } from "@/lib/accounts";
 
-type AccountType = "investment" | "crypto";
+type OnboardingAccountType = BrokerageAccountType;
 type Ownership = "solo" | "joint";
 
 const STEPS: Step[] = [
@@ -140,7 +141,7 @@ export function OnboardingForm() {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [experience, setExperience] = useState<Experience>("beginner");
-  const [accountType, setAccountType] = useState<AccountType>("investment");
+  const [accountType, setAccountType] = useState<OnboardingAccountType>("investment");
   const [ownership, setOwnership] = useState<Ownership>("solo");
   const [partnerEmail, setPartnerEmail] = useState("");
   const [error, setError] = useState("");
