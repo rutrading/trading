@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,17 @@ from app.experience import BALANCE_MAP, EXPERIENCE_OPTIONS, ExperienceLevel
 from app.services.transactions import create_deposit
 
 router = APIRouter()
+
+
+def _reject_kalshi_cash_mutation(account: TradingAccount) -> None:
+    if account.type == "kalshi":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Kalshi accounts cannot be reset or funded through stock/crypto "
+                "cash endpoints. Use the Kalshi management page instead."
+            ),
+        )
 
 
 class ExperienceLevelResponse(BaseModel):
@@ -95,6 +106,7 @@ def reset_account(
     account = get_trading_account(
         trading_account_id=account_id, user=user, db=db
     )
+    _reject_kalshi_cash_mutation(account)
     db.refresh(account, with_for_update=True)
 
     db.query(Transaction).filter(Transaction.trading_account_id == account.id).delete(
@@ -139,6 +151,7 @@ def create_account_deposit(
     account = get_trading_account(
         trading_account_id=account_id, user=user, db=db
     )
+    _reject_kalshi_cash_mutation(account)
     db.refresh(account, with_for_update=True)
     create_deposit(db, account, body.amount)
     db.commit()
