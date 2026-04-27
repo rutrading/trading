@@ -77,8 +77,14 @@ async def _resolve_quote(ticker: str) -> QuoteResponse:
     """
     config = get_config()
 
+    # `_handle_quote_tick` writes only bid/ask to Redis (no `price`), so a
+    # quote-only state can land in Redis with a fresh timestamp but no last
+    # trade. Treat that as a miss and fall through, otherwise the endpoint
+    # would return `price=None` to the browser even when Postgres or
+    # Alpaca could fill it in. The next layer's write merges into Redis
+    # so bid/ask survive the fallthrough.
     cached = await read_redis(ticker)
-    if cached and cached.timestamp:
+    if cached and cached.timestamp and cached.price is not None:
         cache_age = int(datetime.now(timezone.utc).timestamp()) - cached.timestamp
         if cache_age < config.quote_staleness_seconds:
             return QuoteResponse(
@@ -89,7 +95,7 @@ async def _resolve_quote(ticker: str) -> QuoteResponse:
             )
 
     pg_data = _read_from_postgres(ticker)
-    if pg_data and pg_data.timestamp:
+    if pg_data and pg_data.timestamp and pg_data.price is not None:
         cache_age = int(datetime.now(timezone.utc).timestamp()) - pg_data.timestamp
         if cache_age < config.quote_staleness_seconds:
             await write_redis(pg_data)
