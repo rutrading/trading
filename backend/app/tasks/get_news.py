@@ -1,24 +1,42 @@
 import app.services.news.news_sources as ns
+from app.config import get_config
 from app.db import db_session
 from app.db.models import News_Article, News_Source, News_Article_Source_Bridge, Author, Article_Stock_Ticker, News_Article_Ticker_Bridge
 
 import asyncio
+import logging
 
-news_feeds = [
-    ns.News_Source_NBC("https://feeds.nbcnews.com/nbcnews/public/business"), #NBC business news
-    ns.News_Source_ABC("https://abcnews.com/abcnews/usheadlines"), #ABC news US headlines
-    ns.News_Source_invescom("https://www.investing.com/rss/news.rss") #Investing.com news
+logger = logging.getLogger(__name__)
+
+# (source class, feed url) — instantiated fresh on every tick so each cycle
+# re-parses the RSS feed instead of replaying the dataframe captured at import.
+news_feed_specs = [
+    (ns.News_Source_NBC, "https://feeds.nbcnews.com/nbcnews/public/business"),
+    (ns.News_Source_ABC, "https://abcnews.com/abcnews/usheadlines"),
+    (ns.News_Source_invescom, "https://www.investing.com/rss/news.rss"),
 ]
 
+
 async def get_news() -> None:
-    for feed in news_feeds:
+    for feed_cls, feed_url in news_feed_specs:
+        try:
+            feed = feed_cls(feed_url)
+        except Exception:
+            logger.exception("Failed to fetch RSS feed %s", feed_url)
+            continue
+
         df = feed.df
         leng = len(df)
+        inserted = 0
         with db_session() as db:
             for i in range(leng):
                 existing_article = (db.query(News_Article).filter(News_Article.url == df.iloc[i]["link"]).first())
                 # If the article doesn't already exist in the database, add it along with its associated source, authors, and tickers
                 if not existing_article:
+                    inserted += 1
+                    logger.info(
+                        "New article from %s: %s", feed.source_name, df.iloc[i]["title"]
+                    )
                     article_body = await feed.get_article_body_link(df.iloc[i]['link'])
                     tickers = await feed.nlp_get_stock_tickers(article_body)
                     date_published = f"{df.iloc[i]['pub_year']}-{df.iloc[i]['pub_month']}-{df.iloc[i]['pub_day']}"
@@ -94,3 +112,25 @@ async def get_news() -> None:
                             ))
 
             db.commit()
+        logger.info(
+            "News feed %s scanned: %d total, %d new", feed.source_name, leng, inserted
+        )
+
+
+async def run_news_loop() -> None:
+    config = get_config()
+    interval = config.news_refresh_interval_seconds
+    if interval <= 0:
+        logger.info("Periodic news refresh disabled; running once at startup")
+        try:
+            await get_news()
+        except Exception:
+            logger.exception("News fetch failed")
+        return
+
+    while True:
+        try:
+            await get_news()
+        except Exception:
+            logger.exception("News fetch cycle failed")
+        await asyncio.sleep(interval)
