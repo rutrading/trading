@@ -257,6 +257,9 @@ export function StockChart({ ticker }: { ticker: string }) {
 
   useEffect(() => {
     if (!quote || !seriesRef.current) return;
+    // Quote ticks (bid/ask updates) don't carry a last-trade price, so they
+    // shouldn't move the candle. Skip until a trade tick lands.
+    if (quote.price == null) return;
 
     // match selected timeframe
     const rawMs =

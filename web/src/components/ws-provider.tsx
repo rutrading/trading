@@ -10,12 +10,15 @@ import {
 } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
+// Partials: trade ticks carry price/change, quote ticks carry bid/ask. The
+// provider merges incoming partials onto any prior snapshot, so consumers
+// must null-check each field.
 export type QuoteData = {
-  price: number;
-  change: number;
-  change_percent: number;
-  bid_price: number;
-  ask_price: number;
+  price?: number;
+  change?: number;
+  change_percent?: number;
+  bid_price?: number;
+  ask_price?: number;
   timestamp: number;
   source: string;
 };

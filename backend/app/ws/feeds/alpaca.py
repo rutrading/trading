@@ -305,13 +305,18 @@ class AlpacaFeed(BaseFeed):
         if not ticker:
             return
 
-        mapping: dict[str, str] = {}
+        payload: dict = {}
         if (bid := msg.get("bp")) is not None:
-            mapping["bid_price"] = str(bid)
+            payload["bid_price"] = bid
         if (ask := msg.get("ap")) is not None:
-            mapping["ask_price"] = str(ask)
-        if mapping:
-            await self._cache_fields(ticker, mapping)
+            payload["ask_price"] = ask
+        if not payload:
+            return
+        payload["timestamp"] = int(time.time())
+        payload["source"] = "alpaca_ws"
+
+        # Publish (not just cache) so browsers see live bid/ask between trades.
+        await self._publish_quote(ticker, payload)
 
     async def _drain_loop(self) -> None:
         while self._running:
