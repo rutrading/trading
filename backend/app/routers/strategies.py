@@ -393,6 +393,12 @@ async def _ensure_backtest_symbols_and_history(
     return symbol_rows
 
 
+def _coerce_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @router.get("/strategies", response_model=StrategyListResponse)
 def list_strategies(
     trading_account_id: int,
@@ -805,6 +811,9 @@ async def backtest_strategy(
         end = datetime.fromisoformat(payload.end.replace("Z", "+00:00"))
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid start or end")
+
+    start = _coerce_utc_datetime(start)
+    end = _coerce_utc_datetime(end)
 
     normalized_params = _normalize_params(payload.strategy_type, payload.params_json)
     normalized_risk = _normalize_risk(payload.risk_json)

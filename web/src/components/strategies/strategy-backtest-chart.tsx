@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import {
   ColorType,
   createChart,
@@ -26,10 +26,27 @@ function useChart(
 ) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const frameRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    const syncChart = (dataPoints: Array<{ time: number; value: number }>) => {
+      const chart = chartRef.current;
+      const series = seriesRef.current;
+      if (!chart || !series) return;
+
+      const width = Math.max(el.getBoundingClientRect().width, el.clientWidth, 320);
+      chart.applyOptions({ width });
+      series.setData(
+        dataPoints.map((point) => ({
+          time: point.time as UTCTimestamp,
+          value: point.value,
+        })),
+      );
+      chart.timeScale().fitContent();
+    };
 
     const chart = createChart(el, {
       width: Math.max(el.clientWidth, 1),
@@ -59,29 +76,54 @@ function useChart(
     seriesRef.current = series;
 
     const resizeObserver = new ResizeObserver(() => {
-      chart.applyOptions({ width: Math.max(el.clientWidth, 1) });
-      chart.timeScale().fitContent();
+      if (frameRef.current != null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+      frameRef.current = window.requestAnimationFrame(() => {
+        syncChart(data);
+      });
     });
     resizeObserver.observe(el);
 
+    frameRef.current = window.requestAnimationFrame(() => {
+      syncChart(data);
+    });
+
     return () => {
+      if (frameRef.current != null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
       resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [containerRef, color, precision]);
+  }, [containerRef, color, data, precision]);
 
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current) return;
-    seriesRef.current.setData(
-      data.map((point) => ({
-        time: point.time as UTCTimestamp,
-        value: point.value,
-      })),
-    );
-    chartRef.current.applyOptions({ width: Math.max(containerRef.current?.clientWidth ?? 1, 1) });
-    chartRef.current.timeScale().fitContent();
+    const syncChart = () => {
+      const chart = chartRef.current;
+      const series = seriesRef.current;
+      const el = containerRef.current;
+      if (!chart || !series || !el) return;
+
+      const width = Math.max(el.getBoundingClientRect().width, el.clientWidth, 320);
+      chart.applyOptions({ width });
+      series.setData(
+        data.map((point) => ({
+          time: point.time as UTCTimestamp,
+          value: point.value,
+        })),
+      );
+      chart.timeScale().fitContent();
+    };
+    if (frameRef.current != null) {
+      window.cancelAnimationFrame(frameRef.current);
+    }
+    frameRef.current = window.requestAnimationFrame(() => {
+      syncChart();
+    });
   }, [containerRef, data]);
 }
 
