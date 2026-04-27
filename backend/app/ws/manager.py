@@ -31,6 +31,18 @@ MAX_TICKERS_PER_MESSAGE = 50
 MAX_TICKERS_PER_CONNECTION = 200
 
 
+def _first_name(name: str | None) -> str:
+    """Return the first whitespace-delimited token of a display name.
+
+    Better-auth stores the full name as a single string ("Kyle Matzen") on
+    the user row and ships it back in the JWT as `name`. We only want the
+    first token in logs so triage doesn't have to read past a last name.
+    """
+    if not name:
+        return ""
+    return name.strip().split()[0] if name.strip() else ""
+
+
 class ConnectionManager:
     def __init__(self) -> None:
         # ws -> set of tickers that ws is subscribed to
@@ -39,6 +51,8 @@ class ConnectionManager:
         self._ticker_clients: dict[str, set[WebSocket]] = defaultdict(set)
         # ws -> user_id for per-user tracking
         self._ws_user: dict[WebSocket, str] = {}
+        # user_id -> first name pulled from the JWT (best-effort, may be empty)
+        self._user_first_name: dict[str, str] = {}
         # user_id -> set of ws connections (a user can have multiple tabs)
         self._user_connections: dict[str, set[WebSocket]] = defaultdict(set)
         # user_id -> saved tickers from grace period (waiting for reconnect)
@@ -79,8 +93,21 @@ class ConnectionManager:
             self._pending_adds.discard(ticker)
             self._pending_removes.add(ticker)
 
+    def _user_label(self, user_id: str) -> str:
+        """Format a `Kyle, user=t2f21q...` label for logs, falling back to
+        just `user=...` when we have no display name on file. The
+        comma-then-`user=` shape avoids stacked parens when the surrounding
+        log line already wraps a count in parentheses."""
+        first = self._user_first_name.get(user_id, "")
+        return f"{first}, user={user_id}" if first else f"user={user_id}"
+
     async def connect(
-        self, ws: WebSocket, user_id: str, *, already_accepted: bool = False
+        self,
+        ws: WebSocket,
+        user_id: str,
+        *,
+        name: str | None = None,
+        already_accepted: bool = False,
     ) -> None:
         # Accept here unless the caller already did (the new auth-on-first-frame
         # path in `ws/router.py` accepts before reading the auth token, then
@@ -93,6 +120,9 @@ class ConnectionManager:
             self._subs[ws] = set()
             self._ws_user[ws] = user_id
             self._user_connections[user_id].add(ws)
+            first = _first_name(name)
+            if first:
+                self._user_first_name[user_id] = first
 
             # user reconnected within grace period — restore their subs
             if user_id in self._grace_tasks:
@@ -105,9 +135,9 @@ class ConnectionManager:
                     for ticker in saved:
                         self._ticker_clients[ticker].add(ws)
                     logger.info(
-                        "Restored %d tickers for user=%s: %s",
+                        "Restored %d tickers for %s: %s",
                         len(saved),
-                        user_id,
+                        self._user_label(user_id),
                         saved,
                     )
 
@@ -123,8 +153,8 @@ class ConnectionManager:
             )
 
         logger.info(
-            "Client connected: user=%s (%d total connections)",
-            user_id,
+            "Client connected: %s (%d total connections)",
+            self._user_label(user_id),
             len(self._subs),
         )
 
@@ -153,8 +183,8 @@ class ConnectionManager:
                 task = asyncio.create_task(self._grace_expire(user_id, set(tickers)))
                 self._grace_tasks[user_id] = task
                 logger.info(
-                    "Grace period started for user=%s (%ds), holding %d tickers",
-                    user_id,
+                    "Grace period started for %s (%ds), holding %d tickers",
+                    self._user_label(user_id),
                     GRACE_SECONDS,
                     len(tickers),
                 )
@@ -174,9 +204,10 @@ class ConnectionManager:
             if user_id and not self._user_connections.get(user_id):
                 self._user_connections.pop(user_id, None)
 
+        label = self._user_label(user_id) if user_id else "user=unknown"
         logger.info(
-            "Client disconnected: user=%s (%d remaining)",
-            user_id or "unknown",
+            "Client disconnected: %s (%d remaining)",
+            label,
             len(self._subs),
         )
 
@@ -208,10 +239,18 @@ class ConnectionManager:
                     removed.append(ticker)
             if removed:
                 self._mark_untracked(removed)
+            # Capture the label before forgetting the cached display name —
+            # otherwise the log line below would print without the first name.
+            label = self._user_label(user_id)
+            # Forget the cached display name once we've confirmed the user is
+            # fully gone — otherwise the dict grows for every distinct user
+            # that ever connects.
+            if not self._user_connections.get(user_id):
+                self._user_first_name.pop(user_id, None)
 
         logger.info(
-            "Grace expired for user=%s, untracked: %s",
-            user_id,
+            "Grace expired for %s, untracked: %s",
+            label,
             removed or "none",
         )
 

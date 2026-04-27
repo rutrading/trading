@@ -158,7 +158,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         return
 
     user_id = payload.get("sub", "unknown")
-    await manager.connect(ws, user_id, already_accepted=True)
+    name = payload.get("name") if isinstance(payload.get("name"), str) else None
+    await manager.connect(ws, user_id, name=name, already_accepted=True)
 
     try:
         while True:
