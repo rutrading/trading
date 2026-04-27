@@ -34,11 +34,16 @@ async def get_news() -> None:
                 # If the article doesn't already exist in the database, add it along with its associated source, authors, and tickers
                 if not existing_article:
                     inserted += 1
-                    logger.info(
-                        "New article from %s: %s", feed.source_name, df.iloc[i]["title"]
-                    )
                     article_body = await feed.get_article_body_link(df.iloc[i]['link'])
                     tickers = await feed.nlp_get_stock_tickers(article_body)
+                    unique_tickers = sorted(set(tickers))
+                    logger.info(
+                        "New article from %s: %s [%s] tickers=%s",
+                        feed.source_name,
+                        df.iloc[i]["title"],
+                        df.iloc[i]["link"],
+                        ", ".join(unique_tickers) if unique_tickers else "none",
+                    )
                     date_published = f"{df.iloc[i]['pub_year']}-{df.iloc[i]['pub_month']}-{df.iloc[i]['pub_day']}"
                     
                     new_article = News_Article(
@@ -93,7 +98,7 @@ async def get_news() -> None:
                         db.add(new_author)
                     
                     # Adding tickers(s) for the article to the authors table
-                    for ticker in set(tickers):
+                    for ticker in unique_tickers:
                         existing_ticker = db.query(Article_Stock_Ticker).filter(Article_Stock_Ticker.ticker == ticker).first()
                         if not existing_ticker:
                             new_ticker = Article_Stock_Ticker(
