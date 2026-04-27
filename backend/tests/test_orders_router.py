@@ -1045,6 +1045,160 @@ class TestStockMarketHoursGuard:
             assert account.reserved_balance > Decimal("0")
 
 
+class TestPlaceOrderAccountTypeGuards:
+    """Account-type / asset-class guard runs after membership verification but
+    before the order row lock or any heavy math. Membership (403) wins over
+    type (400) so a non-member can't probe a Kalshi account's existence."""
+
+    @pytest.fixture(autouse=True)
+    def _force_market_open(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.routers.orders.is_stock_market_open", lambda _now_et: True
+        )
+
+    def _seed_kalshi_account(self, factory, user_id: str = "user-a") -> int:
+        with factory() as db:
+            seed_user(db, user_id)
+            account = seed_account(
+                db, user_id, name="Kalshi", balance="0", type_="kalshi",
+            )
+            return account.id
+
+    def test_place_order_rejects_kalshi_account(self, session_factory):
+        account_id = self._seed_kalshi_account(session_factory)
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "AAPL",
+                    "asset_class": "us_equity",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "1",
+                },
+            )
+        assert response.status_code == 400
+        assert "/api/kalshi" in response.json()["detail"]
+        with session_factory() as db:
+            assert db.query(Order).count() == 0
+
+    def test_place_order_rejects_investment_with_crypto_asset_class(self, session_factory):
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "BTC/USD", asset_class="crypto")
+            account = seed_account(db, "user-a", balance="10000", type_="investment")
+            account_id = account.id
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "BTC/USD",
+                    "asset_class": "crypto",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "0.01",
+                },
+            )
+        assert response.status_code == 400
+        assert "us_equity" in response.json()["detail"]
+
+    def test_place_order_rejects_crypto_with_us_equity_asset_class(self, session_factory):
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(db, "user-a", balance="10000", type_="crypto")
+            account_id = account.id
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "AAPL",
+                    "asset_class": "us_equity",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "1",
+                },
+            )
+        assert response.status_code == 400
+        assert "crypto" in response.json()["detail"].lower()
+
+    def test_place_order_accepts_investment_with_us_equity(self, session_factory):
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=150.0)
+            seed_daily_bar(db, "AAPL", volume=10_000_000)
+            account = seed_account(db, "user-a", balance="10000", type_="investment")
+            account_id = account.id
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "AAPL",
+                    "asset_class": "us_equity",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "1",
+                },
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "filled"
+
+    def test_place_order_accepts_crypto_with_crypto(self, session_factory):
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "BTC/USD", asset_class="crypto")
+            seed_quote(db, "BTC/USD", price=50_000.0)
+            seed_daily_bar(db, "BTC/USD", volume=1_000)
+            account = seed_account(db, "user-a", balance="100000", type_="crypto")
+            account_id = account.id
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "BTC/USD",
+                    "asset_class": "crypto",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "0.01",
+                },
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "filled"
+
+    def test_place_order_403_wins_over_400_for_non_member(self, session_factory):
+        # A non-member of a Kalshi account must hit the 403 from the membership
+        # check before the 400 from the type guard. Otherwise a Kalshi account's
+        # existence leaks across users.
+        account_id = self._seed_kalshi_account(session_factory, user_id="user-a")
+        with session_factory() as db:
+            seed_user(db, "user-b")
+        with db_override(session_factory), auth_as("user-b"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "AAPL",
+                    "asset_class": "us_equity",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "1",
+                },
+            )
+        assert response.status_code == 403
+
+
 class TestMockOrderResponseParity:
     def test_mock_order_response_round_trips_through_order_response(self):
         """If a future field is added to OrderResponse but forgotten in
