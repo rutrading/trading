@@ -50,6 +50,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class _HealthcheckAccessFilter(logging.Filter):
+    """Drop uvicorn access lines for the health endpoint.
+
+    The platform pings /api/health every couple of seconds, which buries every
+    other request under a wall of 200 OK lines. We still want access logs for
+    everything else, so filter at the record level instead of disabling the
+    access logger entirely.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+        return "/api/health" not in message
+
+
+logging.getLogger("uvicorn.access").addFilter(_HealthcheckAccessFilter())
+
+
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
