@@ -61,12 +61,7 @@ export default async function StockPage({ params }: Props) {
     high: 0,
     low: 0,
     prevClose: 0,
-    volume: "—",
-    marketCap: "—",
-    pe: 0,
-    week52High: 0,
-    week52Low: 0,
-    avgVolume: "—",
+    volume: 0,
   };
 
   if (dbSymbol && STOCKS[symbol]) {
@@ -82,6 +77,10 @@ export default async function StockPage({ params }: Props) {
     if (q.price != null) stock.price = q.price;
     if (q.previous_close != null) stock.prevClose = q.previous_close;
     if (q.change_percent != null) stock.change = q.change_percent;
+    if (q.open != null) stock.open = q.open;
+    if (q.high != null) stock.high = q.high;
+    if (q.low != null) stock.low = q.low;
+    if (q.volume != null) stock.volume = q.volume;
   }
 
   return (
@@ -94,7 +93,7 @@ export default async function StockPage({ params }: Props) {
             <StockChart ticker={symbol} />
           </div>
         </div>
-        <KeyStatistics stock={stock} />
+        <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
       </div>
       <div className="space-y-6">
         <OrderForm

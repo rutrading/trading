@@ -1,24 +1,34 @@
 import type { StockInfo } from "./stock-data";
+import { fmtPrice } from "@/lib/format";
 
-const fmt = (n: number) =>
-  n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtVolume = (n: number): string => {
+  if (n <= 0) return "—";
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
+  return n.toLocaleString("en-US");
+};
 
-export const KeyStatistics = ({ stock }: { stock: StockInfo }) => {
+export const KeyStatistics = ({
+  stock,
+  ticker,
+  assetClass,
+}: {
+  stock: StockInfo;
+  ticker: string;
+  assetClass: "us_equity" | "crypto";
+}) => {
+  // Crypto daily-bar volume is in base-coin units (e.g. 1.5 BTC), not shares.
+  const volumeLabel =
+    assetClass === "crypto" ? `Volume (${ticker.split("/")[0]})` : "Volume";
+
   const stats = [
-    { label: "Open", value: `$${fmt(stock.open)}` },
-    { label: "High", value: `$${fmt(stock.high)}` },
-    { label: "Low", value: `$${fmt(stock.low)}` },
-    { label: "Prev Close", value: `$${fmt(stock.prevClose)}` },
-    { label: "Volume", value: stock.volume },
-    { label: "Avg Volume", value: stock.avgVolume },
-    { label: "Market Cap", value: `$${stock.marketCap}` },
-    { label: "P/E Ratio", value: stock.pe.toFixed(1) },
-    { label: "52W High", value: `$${fmt(stock.week52High)}` },
-    { label: "52W Low", value: `$${fmt(stock.week52Low)}` },
+    { label: "Open", value: `$${fmtPrice(stock.open)}` },
+    { label: "High", value: `$${fmtPrice(stock.high)}` },
+    { label: "Low", value: `$${fmtPrice(stock.low)}` },
+    { label: "Prev Close", value: `$${fmtPrice(stock.prevClose)}` },
+    { label: volumeLabel, value: fmtVolume(stock.volume) },
   ];
-
-  // 10 stats in a 4-col grid: last row has 2 items, each should span 2 cols
-  const lastRowStart = 8;
 
   return (
     <div className="rounded-2xl bg-accent p-6">
@@ -27,7 +37,7 @@ export const KeyStatistics = ({ stock }: { stock: StockInfo }) => {
         {stats.map((stat, i) => (
           <div
             key={stat.label}
-            className={`bg-card px-4 py-3 ${i >= lastRowStart ? "md:col-span-2" : ""}`}
+            className={`bg-card px-4 py-3 ${i === 4 ? "col-span-2 md:col-span-4" : ""}`}
           >
             <p className="text-xs text-muted-foreground">{stat.label}</p>
             <p className="text-sm font-medium tabular-nums">{stat.value}</p>

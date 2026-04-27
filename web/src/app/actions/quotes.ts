@@ -11,6 +11,10 @@ export type QuoteSnapshot = {
   change: number | null;
   change_percent: number | null;
   previous_close: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
   timestamp: number;
 };
 
