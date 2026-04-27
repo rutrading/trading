@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ChartLineUp,
   CurrencyBtc,
+  Robot,
   Users,
   Plus,
 } from "@phosphor-icons/react/ssr";
@@ -12,6 +13,7 @@ import { ResetAccount } from "@/components/settings/reset-account";
 import { DepositCash } from "@/components/settings/deposit-cash";
 import { DeleteAccount } from "@/components/settings/delete-account";
 import { cn } from "@/lib/utils";
+import type { AccountType } from "@/lib/accounts";
 
 type Experience = "beginner" | "intermediate" | "advanced" | "expert";
 
@@ -20,13 +22,25 @@ type Account = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
     balance: string;
     reservedBalance: string;
     isJoint: boolean;
     experienceLevel: Experience;
   };
 };
+
+const TYPE_ICON_CLASSES: Record<AccountType, string> = {
+  investment: "bg-emerald-500/10 text-emerald-500",
+  crypto: "bg-amber-500/10 text-amber-500",
+  kalshi: "bg-violet-500/10 text-violet-500",
+};
+
+function AccountTypeIcon({ type }: { type: AccountType }) {
+  if (type === "investment") return <ChartLineUp />;
+  if (type === "crypto") return <CurrencyBtc />;
+  return <Robot />;
+}
 
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -55,12 +69,10 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                 <div
                   className={cn(
                     "flex size-10 shrink-0 items-center justify-center rounded-lg sm:size-9 [&_svg]:size-5 sm:[&_svg]:size-[18px]",
-                    acct.type === "investment"
-                      ? "bg-emerald-500/10 text-emerald-500"
-                      : "bg-amber-500/10 text-amber-500",
+                    TYPE_ICON_CLASSES[acct.type],
                   )}
                 >
-                  {acct.type === "investment" ? <ChartLineUp /> : <CurrencyBtc />}
+                  <AccountTypeIcon type={acct.type} />
                 </div>
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="truncate text-base font-semibold leading-none sm:text-sm">
@@ -70,9 +82,11 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                     <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                       {acct.type}
                     </span>
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                      {acct.experienceLevel}
-                    </span>
+                    {acct.type !== "kalshi" && (
+                      <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        {acct.experienceLevel}
+                      </span>
+                    )}
                     {acct.isJoint && (
                       <span className="flex items-center gap-0.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
                         <Users size={10} />
