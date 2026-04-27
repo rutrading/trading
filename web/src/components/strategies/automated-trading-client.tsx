@@ -23,9 +23,12 @@ import { getHoldings, getPortfolioTimeSeries, type PortfolioPoint } from "@/app/
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardPanel } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTab, TabsPanel } from "@/components/ui/tabs";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { PortfolioChart } from "@/components/dashboard/portfolio-chart";
 import { StrategyBacktestChart } from "@/components/strategies/strategy-backtest-chart";
 import {
@@ -34,6 +37,7 @@ import {
   type StrategyFieldValues,
   valuesForFields,
 } from "@/components/strategies/strategy-template-fields";
+import { SymbolSearch } from "@/components/symbol-search";
 import { useStrategyStream } from "@/hooks/use-strategy-stream";
 import { toast } from "@/lib/toasts";
 
@@ -74,6 +78,62 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm font-medium tabular-nums">{value}</p>
     </div>
+  );
+}
+
+function formatRelativeSignalTime(value: string, now: number) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return value;
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 1440) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function formatExactTimestamp(value: string) {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(timestamp);
+}
+
+function updateSymbolsText(nextSymbols: string[]) {
+  return nextSymbols.join(", ");
+}
+
+function TemplateSelect({
+  catalog,
+  selectedTemplate,
+  onChange,
+  id,
+}: {
+  catalog: StrategyTemplate[];
+  selectedTemplate: string;
+  onChange: (value: string) => void;
+  id?: string;
+}) {
+  return (
+    <Select
+      value={selectedTemplate}
+      onValueChange={(value) => {
+        if (value != null) onChange(value);
+      }}
+    >
+      <SelectTrigger id={id}>
+        <SelectValue placeholder="Select a strategy template" />
+      </SelectTrigger>
+      <SelectPopup>
+        {catalog.map((item) => (
+          <SelectItem key={item.id} value={item.id}>
+            {item.name}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
 }
 
@@ -122,6 +182,7 @@ export function AutomatedTradingClient({
     return new Date().toISOString().slice(0, 10);
   });
   const [backtestResult, setBacktestResult] = useState<StrategyBacktestResult | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [pending, startTransition] = useTransition();
 
   const accountLabel = useMemo(() => {
@@ -167,6 +228,11 @@ export function AutomatedTradingClient({
       if (res.data.templates[0]) applyTemplate(res.data.templates[0]);
     });
   }, [catalog.length]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function refreshAccount(nextAccountId: number | null) {
     if (!nextAccountId) return;
@@ -330,6 +396,23 @@ export function AutomatedTradingClient({
     });
   }
 
+  const selectedSymbols = useMemo(() => splitSymbols(symbolsText), [symbolsText]);
+
+  function setSelectedSymbols(nextSymbols: string[]) {
+    setSymbolsText(updateSymbolsText(nextSymbols));
+  }
+
+  function addSelectedSymbol(symbol: string) {
+    const ticker = symbol.trim().toUpperCase();
+    if (!ticker) return;
+    if (selectedSymbols.includes(ticker)) return;
+    setSelectedSymbols([...selectedSymbols, ticker]);
+  }
+
+  function removeSelectedSymbol(symbol: string) {
+    setSelectedSymbols(selectedSymbols.filter((item) => item !== symbol));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -373,28 +456,33 @@ export function AutomatedTradingClient({
               <CardTitle>Strategy Catalog</CardTitle>
               <CardDescription>Choose a template and inspect the supported runtime controls.</CardDescription>
             </CardHeader>
-            <CardPanel className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {catalog.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => applyTemplate(item)}
-                  className="rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/50"
-                >
+            <CardPanel className="space-y-4">
+              <div className="max-w-sm space-y-1">
+                <Label htmlFor="strategy-template-select">Template</Label>
+                <TemplateSelect
+                  id="strategy-template-select"
+                  catalog={catalog}
+                  selectedTemplate={template?.id ?? selectedTemplate}
+                  onChange={(value) => {
+                    const nextTemplate = catalog.find((item) => item.id === value);
+                    if (nextTemplate) applyTemplate(nextTemplate);
+                  }}
+                />
+              </div>
+              {template ? (
+                <div className="rounded-xl border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{item.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                      <p className="font-medium">{template.name}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{template.description}</p>
                     </div>
-                    <Badge variant={item.id === selectedTemplate ? "default" : "outline"}>
-                      {item.status}
-                    </Badge>
+                    <Badge variant="outline">{template.status}</Badge>
                   </div>
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Timeframes: {item.supported_timeframes.join(", ")}
+                    Timeframes: {template.supported_timeframes.join(", ")}
                   </p>
-                </button>
-              ))}
+                </div>
+              ) : null}
             </CardPanel>
           </Card>
 
@@ -465,9 +553,12 @@ export function AutomatedTradingClient({
             <CardPanel className="flex flex-wrap gap-3">
               <Button variant="outline" onClick={() => void handleControl("pause_all")}>Pause All</Button>
               <Button variant="outline" onClick={() => void handleControl("resume_all")}>Resume All</Button>
-              <Button variant="destructive" onClick={() => void handleControl("disable_all")}>
-                <ShieldWarning className="mr-2 size-4" /> Emergency Stop
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="destructive" onClick={() => void handleControl("disable_all")}>
+                  <ShieldWarning className="mr-2 size-4" /> Emergency Stop
+                </Button>
+                <InfoTooltip content="Emergency Stop disables every strategy so they stay off until you explicitly re-enable them. Pause All only pauses execution temporarily, and Resume All can turn those paused strategies back on." />
+              </div>
               <Badge variant={snapshot?.strategy_executor_enabled ? "success" : "error"}>
                 Executor {snapshot?.strategy_executor_enabled ? "enabled" : "disabled"}
               </Badge>
@@ -517,7 +608,19 @@ export function AutomatedTradingClient({
                       <div className="font-medium">{run.ticker} · {run.signal}</div>
                       <Badge variant={run.action === "none" ? "outline" : "default"}>{run.action}</Badge>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{run.run_at} · {run.reason}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className="cursor-help underline decoration-dotted underline-offset-2">
+                              {formatRelativeSignalTime(run.run_at, clockNow)}
+                            </span>
+                          }
+                        />
+                        <TooltipPopup className="p-2">{formatExactTimestamp(run.run_at)}</TooltipPopup>
+                      </Tooltip>{" "}
+                      · {run.reason}
+                    </p>
                   </div>
                 ))}
                 {runs.length === 0 && <p className="text-sm text-muted-foreground">No strategy runs yet.</p>}
@@ -618,12 +721,52 @@ export function AutomatedTradingClient({
                   <Input id="bt-end" type="date" value={backtestEnd} onChange={(e) => setBacktestEnd(e.target.value)} />
                 </div>
                 <div className="space-y-1">
-                  <Label>Template</Label>
-                  <Input value={template?.name ?? "EMA Crossover"} readOnly />
+                  <Label htmlFor="backtest-template-select">Template</Label>
+                  <TemplateSelect
+                    id="backtest-template-select"
+                    catalog={catalog}
+                    selectedTemplate={template?.id ?? selectedTemplate}
+                    onChange={(value) => {
+                      const nextTemplate = catalog.find((item) => item.id === value);
+                      if (nextTemplate) applyTemplate(nextTemplate);
+                    }}
+                  />
                 </div>
                 <div className="space-y-1">
-                  <Label>Symbols</Label>
-                  <Input value={symbolsText} onChange={(e) => setSymbolsText(e.target.value)} />
+                  <Label htmlFor="backtest-symbols">Symbols</Label>
+                  <Input id="backtest-symbols" value={symbolsText} onChange={(e) => setSymbolsText(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+                <div>
+                  <p className="text-sm font-medium">Symbol Search</p>
+                  <p className="text-xs text-muted-foreground">
+                    Search and add symbols without leaving the backtest tab.
+                  </p>
+                </div>
+                <div className="max-w-md">
+                  <SymbolSearch
+                    assetClass="us_equity"
+                    placeholder="Search symbols to add..."
+                    onSelect={(item) => addSelectedSymbol(item.ticker)}
+                    filter={(item) => !selectedSymbols.includes(item.ticker)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedSymbols.map((symbol) => (
+                    <button
+                      key={symbol}
+                      type="button"
+                      onClick={() => removeSelectedSymbol(symbol)}
+                      className="rounded-full border bg-card px-3 py-1 text-sm transition-colors hover:border-primary/50"
+                    >
+                      {symbol} ×
+                    </button>
+                  ))}
+                  {selectedSymbols.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Add at least one symbol to run the backtest.</p>
+                  ) : null}
                 </div>
               </div>
 

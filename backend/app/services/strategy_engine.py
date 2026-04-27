@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_FLOOR
 
 from sqlalchemy.orm import Session
@@ -44,6 +44,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="max_position_quantity",
         label="Max Position Qty",
         kind="decimal",
+        description="Hard cap on total shares the strategy can hold. Example: 25 means it cannot build beyond 25 shares even if more buy signals fire.",
         min="0.00000001",
         step="0.00000001",
     ),
@@ -51,6 +52,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="max_daily_orders",
         label="Max Daily Orders",
         kind="integer",
+        description="Stops overtrading by limiting fills per day. Example: 2 allows one buy and one sell, then blocks the rest of that day.",
         min="1",
         step="1",
     ),
@@ -58,6 +60,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="cooldown_minutes",
         label="Cooldown (min)",
         kind="integer",
+        description="Pause after a trade before the next entry is allowed. Example: 30 makes the strategy wait 30 minutes after an order before trading again.",
         min="0",
         step="1",
     ),
@@ -65,6 +68,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="max_daily_notional",
         label="Max Daily Notional",
         kind="decimal",
+        description="Caps the total dollar value traded in one day. Example: 5000 means all buys and sells combined cannot exceed $5,000 that day.",
         min="0.01",
         step="0.01",
     ),
@@ -80,6 +84,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="atr_period",
         label="ATR Period",
         kind="integer",
+        description="Lookback used to measure recent volatility for ATR sizing. Example: 14 uses the last 14 bars to estimate normal movement.",
         min="1",
         step="1",
     ),
@@ -87,6 +92,7 @@ COMMON_RISK_FIELDS: tuple[StrategyField, ...] = (
         key="atr_stop_multiplier",
         label="ATR Multiplier",
         kind="decimal",
+        description="How many ATRs away the implied stop sits for risk sizing. Example: 2 means the sizing model assumes a stop about 2 ATR below entry.",
         min="0.1",
         step="0.1",
     ),
@@ -127,6 +133,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="fast_period",
                 label="Fast EMA",
                 kind="integer",
+                description="Short EMA used for the faster trend signal. Example: 9 reacts faster to price changes than the slow EMA.",
                 min="1",
                 step="1",
             ),
@@ -134,6 +141,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="slow_period",
                 label="Slow EMA",
                 kind="integer",
+                description="Longer EMA used as the trend baseline. Example: 21 smooths more noise and confirms broader direction.",
                 min="2",
                 step="1",
             ),
@@ -141,6 +149,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="order_quantity",
                 label="Order Qty",
                 kind="decimal",
+                description="Requested size for each trade before risk caps adjust it. Example: 5 tells the strategy to try buying or selling 5 shares per signal.",
                 min="0.00000001",
                 step="0.00000001",
             ),
@@ -163,6 +172,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="fast_period",
                 label="Fast SMA",
                 kind="integer",
+                description="Short SMA used for the faster trend signal. Example: 20 tracks recent price action more closely than the slow SMA.",
                 min="1",
                 step="1",
             ),
@@ -170,6 +180,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="slow_period",
                 label="Slow SMA",
                 kind="integer",
+                description="Longer SMA used as the trend baseline. Example: 50 helps filter out smaller pullbacks before flipping direction.",
                 min="2",
                 step="1",
             ),
@@ -177,6 +188,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="order_quantity",
                 label="Order Qty",
                 kind="decimal",
+                description="Requested size for each trade before risk caps adjust it. Example: 5 tells the strategy to try buying or selling 5 shares per signal.",
                 min="0.00000001",
                 step="0.00000001",
             ),
@@ -200,6 +212,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="rsi_period",
                 label="RSI Period",
                 kind="integer",
+                description="How many bars are used to compute RSI. Example: 14 measures momentum over the last 14 bars.",
                 min="1",
                 step="1",
             ),
@@ -207,6 +220,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="oversold_threshold",
                 label="Oversold",
                 kind="integer",
+                description="Buy trigger level for weak momentum. Example: 30 means the strategy looks for RSI dipping to 30 or lower before buying.",
                 min="1",
                 max="99",
                 step="1",
@@ -215,6 +229,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="overbought_threshold",
                 label="Overbought",
                 kind="integer",
+                description="Sell trigger level for stretched momentum. Example: 70 means the strategy looks for RSI reaching 70 or higher before selling.",
                 min="1",
                 max="99",
                 step="1",
@@ -223,6 +238,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="order_quantity",
                 label="Order Qty",
                 kind="decimal",
+                description="Requested size for each trade before risk caps adjust it. Example: 5 tells the strategy to try buying or selling 5 shares per signal.",
                 min="0.00000001",
                 step="0.00000001",
             ),
@@ -245,6 +261,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="breakout_period",
                 label="Breakout Lookback",
                 kind="integer",
+                description="How far back the strategy checks for a new high breakout. Example: 20 means price must clear the highest high from the prior 20 bars.",
                 min="1",
                 step="1",
             ),
@@ -252,6 +269,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="exit_period",
                 label="Exit Lookback",
                 kind="integer",
+                description="How far back the strategy checks for the trailing exit floor. Example: 10 means it exits if price breaks below the lowest low from the prior 10 bars.",
                 min="1",
                 step="1",
             ),
@@ -259,6 +277,7 @@ STRATEGY_TEMPLATES: tuple[StrategyTemplate, ...] = (
                 key="order_quantity",
                 label="Order Qty",
                 kind="decimal",
+                description="Requested size for each trade before risk caps adjust it. Example: 5 tells the strategy to try buying or selling 5 shares per signal.",
                 min="0.00000001",
                 step="0.00000001",
             ),
@@ -458,19 +477,35 @@ def run_backtest(
 
     order_quantity = _safe_decimal(params_json.get("order_quantity", "1"), "1")
     risk = normalized_risk_config(risk_json)
+    lookback_days = max(
+        bars_required_for_signal(strategy_type, params_json),
+        int(risk["atr_period"]) + 1,
+    )
+    history_start = start.date() - timedelta(days=max(lookback_days * 3, 30))
 
     bars_by_symbol: dict[str, list[DailyBar]] = {}
     for symbol in symbols:
         rows = (
             db.query(DailyBar)
-            .filter(DailyBar.ticker == symbol, DailyBar.date >= start.date(), DailyBar.date <= end.date())
+            .filter(
+                DailyBar.ticker == symbol,
+                DailyBar.date >= history_start,
+                DailyBar.date <= end.date(),
+            )
             .order_by(DailyBar.date.asc())
             .all()
         )
         bars_by_symbol[symbol] = rows
 
-    dates = sorted({row.date for rows in bars_by_symbol.values() for row in rows})
-    if not dates:
+    in_range_dates = sorted(
+        {
+            row.date
+            for rows in bars_by_symbol.values()
+            for row in rows
+            if row.date >= start.date()
+        }
+    )
+    if not in_range_dates:
         return {
             "equity_curve": [],
             "drawdown_curve": [],
@@ -492,7 +527,9 @@ def run_backtest(
 
     history_by_symbol: dict[str, list[DailyBar]] = {symbol: [] for symbol in symbols}
 
-    for date_value in dates:
+    all_dates = sorted({row.date for rows in bars_by_symbol.values() for row in rows})
+
+    for date_value in all_dates:
         day_order_count = 0
         day_notional = Decimal("0")
         for symbol, rows in bars_by_symbol.items():
@@ -500,6 +537,8 @@ def run_backtest(
             if row is None:
                 continue
             history_by_symbol[symbol].append(row)
+            if row.date < start.date():
+                continue
             decision = evaluate_signal_from_bars(
                 strategy_type,
                 history_by_symbol[symbol],
@@ -586,6 +625,9 @@ def run_backtest(
                         profit=pnl,
                     )
                 )
+
+        if date_value < start.date():
+            continue
 
         equity = cash
         for symbol, qty in position_qty.items():

@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -287,12 +287,12 @@ def test_strategy_controls_updates_all_matching_strategies(monkeypatch):
     db.commit.assert_called_once()
 
 
-def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch):
+async def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch):
     db = MagicMock()
     monkeypatch.setattr(
         strategies_router,
-        "_load_symbols",
-        lambda db, tickers: [_make_symbol(ticker) for ticker in tickers],
+        "_ensure_backtest_symbols_and_history",
+        AsyncMock(return_value=[_make_symbol("MSFT"), _make_symbol("AAPL")]),
     )
 
     captured: dict = {}
@@ -324,7 +324,7 @@ def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch)
 
     monkeypatch.setattr(strategies_router, "run_backtest", fake_run_backtest)
 
-    response = backtest_strategy(
+    response = await backtest_strategy(
         BacktestRequest(
             ticker="msft",
             symbols_json=["AAPL", "msft"],
@@ -368,6 +368,49 @@ def test_backtest_strategy_normalizes_symbols_and_serializes_trades(monkeypatch)
     assert response.trades[0].ticker == "MSFT"
     assert response.trades[0].profit == "12.34"
     assert response.ending_equity == "10012.34"
+
+
+async def test_backtest_strategy_auto_fetches_missing_history(monkeypatch):
+    db = MagicMock()
+    ensure_backtest_data = AsyncMock(return_value=[_make_symbol("MSFT")])
+    monkeypatch.setattr(
+        strategies_router,
+        "_ensure_backtest_symbols_and_history",
+        ensure_backtest_data,
+    )
+    monkeypatch.setattr(
+        strategies_router,
+        "run_backtest",
+        lambda **kwargs: {
+            "equity_curve": [],
+            "drawdown_curve": [],
+            "trades": [],
+            "win_rate": 0.0,
+            "avg_return_per_trade": 0.0,
+            "max_drawdown": 0.0,
+            "ending_equity": "10000",
+        },
+    )
+
+    await backtest_strategy(
+        BacktestRequest(
+            ticker="msft",
+            timeframe="1Day",
+            capital_allocation="10000",
+            params_json={
+                "fast_period": 2,
+                "slow_period": 4,
+                "order_quantity": "1",
+            },
+            risk_json={},
+            start="2026-01-01T00:00:00Z",
+            end="2026-01-31T00:00:00Z",
+        ),
+        user={"sub": "dev"},
+        db=db,
+    )
+
+    ensure_backtest_data.assert_awaited_once()
 
 
 def test_strategy_catalog_exposes_dynamic_form_fields():

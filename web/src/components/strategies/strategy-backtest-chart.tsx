@@ -10,6 +10,8 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
+import { InfoTooltip } from "@/components/ui/info-tooltip";
+
 export type StrategyCurvePoint = {
   time: number;
   equity: string;
@@ -20,6 +22,7 @@ function useChart(
   containerRef: RefObject<HTMLDivElement | null>,
   data: Array<{ time: number; value: number }>,
   color: string,
+  precision = 2,
 ) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -29,7 +32,7 @@ function useChart(
     if (!el) return;
 
     const chart = createChart(el, {
-      width: el.clientWidth,
+      width: Math.max(el.clientWidth, 1),
       height: 180,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
@@ -49,22 +52,25 @@ function useChart(
     const series = chart.addSeries(LineSeries, {
       color,
       lineWidth: 2,
-      priceFormat: { type: "price", precision: 2, minMove: 0.01 },
+      priceFormat: { type: "price", precision, minMove: precision === 0 ? 1 : 0.01 },
     });
 
     chartRef.current = chart;
     seriesRef.current = series;
 
-    const onResize = () => chart.applyOptions({ width: el.clientWidth });
-    window.addEventListener("resize", onResize);
+    const resizeObserver = new ResizeObserver(() => {
+      chart.applyOptions({ width: Math.max(el.clientWidth, 1) });
+      chart.timeScale().fitContent();
+    });
+    resizeObserver.observe(el);
 
     return () => {
-      window.removeEventListener("resize", onResize);
+      resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
     };
-  }, [containerRef, color]);
+  }, [containerRef, color, precision]);
 
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current) return;
@@ -74,8 +80,9 @@ function useChart(
         value: point.value,
       })),
     );
+    chartRef.current.applyOptions({ width: Math.max(containerRef.current?.clientWidth ?? 1, 1) });
     chartRef.current.timeScale().fitContent();
-  }, [data]);
+  }, [containerRef, data]);
 }
 
 export function StrategyBacktestChart({
@@ -92,11 +99,13 @@ export function StrategyBacktestChart({
     equityRef,
     equity.map((point) => ({ time: point.time, value: parseFloat(point.equity) })),
     "#10b981",
+    2,
   );
   useChart(
     drawdownRef,
     drawdown.map((point) => ({ time: point.time, value: parseFloat(point.drawdown) * 100 })),
     "#ef4444",
+    2,
   );
 
   if (equity.length === 0) {
@@ -110,11 +119,17 @@ export function StrategyBacktestChart({
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-2 text-sm font-medium">Equity curve</p>
+        <div className="mb-2 flex items-center gap-1.5">
+          <p className="text-sm font-medium">Equity curve</p>
+          <InfoTooltip content="Shows how total account value changed throughout the backtest. Example: a climb from $10,000 to $10,650 means the strategy gained $650 over the test window." />
+        </div>
         <div ref={equityRef} className="w-full rounded-xl border bg-card p-2" />
       </div>
       <div>
-        <p className="mb-2 text-sm font-medium">Drawdown (%)</p>
+        <div className="mb-2 flex items-center gap-1.5">
+          <p className="text-sm font-medium">Drawdown (%)</p>
+          <InfoTooltip content="Shows how far the strategy fell from its prior peak. Example: -8% means the account dropped 8% from the highest equity reached before recovering or falling further." />
+        </div>
         <div ref={drawdownRef} className="w-full rounded-xl border bg-card p-2" />
       </div>
     </div>

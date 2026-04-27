@@ -5,11 +5,29 @@ import type {
   StrategyTemplate,
 } from "@/app/actions/strategies";
 import { Input } from "@/components/ui/input";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
 export type StrategyFieldValue = string | boolean;
 export type StrategyFieldValues = Record<string, StrategyFieldValue>;
+
+function FieldLabel({
+  htmlFor,
+  label,
+  description,
+}: {
+  htmlFor: string;
+  label: string;
+  description?: string | null;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {description ? <InfoTooltip content={description} /> : null}
+    </div>
+  );
+}
 
 function fieldDefaultValue(value: unknown): StrategyFieldValue {
   return typeof value === "boolean" ? value : value == null ? "" : String(value);
@@ -103,12 +121,12 @@ export function StrategyFieldGrid({
                 onCheckedChange={(checked) => onChange(field.key, checked)}
               />
               <div>
-                <Label htmlFor={fieldId} className="text-sm font-medium">
-                  {field.label}
-                </Label>
-                {field.description ? (
-                  <p className="text-xs text-muted-foreground">{field.description}</p>
-                ) : null}
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor={fieldId} className="text-sm font-medium">
+                    {field.label}
+                  </Label>
+                  {field.description ? <InfoTooltip content={field.description} /> : null}
+                </div>
               </div>
             </div>
           );
@@ -116,7 +134,7 @@ export function StrategyFieldGrid({
 
         return (
           <div key={field.key} className="space-y-1">
-            <Label htmlFor={fieldId}>{field.label}</Label>
+            <FieldLabel htmlFor={fieldId} label={field.label} description={field.description} />
             <Input
               id={fieldId}
               type="number"
@@ -126,9 +144,6 @@ export function StrategyFieldGrid({
               value={String(values[field.key] ?? "")}
               onChange={(event) => onChange(field.key, event.target.value)}
             />
-            {field.description ? (
-              <p className="text-xs text-muted-foreground">{field.description}</p>
-            ) : null}
           </div>
         );
       })}

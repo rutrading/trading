@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
@@ -37,6 +38,9 @@ from app.services.strategy_engine import (
     get_strategy_template,
     run_backtest,
 )
+from app.services.strategy_signals import bars_required_for_signal
+from app.services.bars import fetch_daily_bars
+from app.rate_limit import get_alpaca_limiter
 from app.tasks.strategy_executor import run_strategy_once
 
 router = APIRouter()
@@ -292,6 +296,101 @@ def _load_symbols(db: Session, tickers: list[str]) -> list[Symbol]:
     if isinstance(rows, list):
         return rows
     return []
+
+
+async def _fetch_and_upsert_missing_symbol(ticker: str, db: Session) -> None:
+    ticker = ticker.strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="Ticker is required")
+
+    existing = db.query(Symbol).filter(Symbol.ticker == ticker).first()
+    if existing is not None:
+        return
+
+    config = get_config()
+    await get_alpaca_limiter().acquire()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(
+                f"{config.alpaca_base_url}/v2/assets/{ticker}",
+                headers={
+                    "APCA-API-KEY-ID": config.alpaca_api_key,
+                    "APCA-API-SECRET-KEY": config.alpaca_secret_key,
+                },
+            )
+            if res.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"{ticker} not found")
+            res.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Alpaca request failed: {exc.response.status_code}",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Alpaca request failed: {exc}")
+
+    asset = res.json()
+    now = datetime.now(timezone.utc)
+    db.add(
+        Symbol(
+            ticker=asset.get("symbol", ticker),
+            name=asset.get("name", ""),
+            exchange=asset.get("exchange"),
+            asset_class=asset.get("class", "us_equity"),
+            tradable=asset.get("tradable", True),
+            fractionable=asset.get("fractionable", False),
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    db.commit()
+
+
+async def _ensure_backtest_symbols_and_history(
+    db: Session,
+    *,
+    symbols: list[str],
+    strategy_type: str,
+    params_json: dict,
+    risk_json: dict,
+    start: datetime,
+    end: datetime,
+) -> list[Symbol]:
+    symbol_rows = _load_symbols(db, symbols)
+    found = {row.ticker for row in symbol_rows}
+    missing = [ticker for ticker in symbols if ticker not in found]
+    for ticker in missing:
+        await _fetch_and_upsert_missing_symbol(ticker, db)
+
+    symbol_rows = _load_symbols(db, symbols)
+    found = {row.ticker for row in symbol_rows}
+    missing = [ticker for ticker in symbols if ticker not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"{', '.join(missing)} not found")
+
+    if any(symbol.asset_class != "us_equity" for symbol in symbol_rows):
+        raise HTTPException(
+            status_code=400,
+            detail="Backtesting v1 supports US equity symbols only",
+        )
+
+    lookback_days = max(
+        bars_required_for_signal(strategy_type, params_json),
+        int(risk_json.get("atr_period", COMMON_DEFAULT_RISK["atr_period"])) + 1,
+    )
+    history_start = (start - timedelta(days=max(lookback_days * 3, 30))).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    end_value = end.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    for ticker in symbols:
+        await fetch_daily_bars(db, ticker, history_start.isoformat(), end_value.isoformat())
+    return symbol_rows
 
 
 @router.get("/strategies", response_model=StrategyListResponse)
@@ -680,7 +779,7 @@ async def strategy_stream(
 
 
 @router.post("/strategies/backtest", response_model=StrategyBacktestResponse)
-def backtest_strategy(
+async def backtest_strategy(
     payload: BacktestRequest,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -694,17 +793,6 @@ def backtest_strategy(
         raise HTTPException(status_code=400, detail="Unsupported timeframe")
 
     _, symbols = _normalize_symbols(payload.ticker, payload.symbols_json)
-    symbol_rows = _load_symbols(db, symbols)
-    found = {row.ticker for row in symbol_rows}
-    missing = [ticker for ticker in symbols if ticker not in found]
-    if missing:
-        raise HTTPException(status_code=404, detail=f"{', '.join(missing)} not found")
-    if any(symbol.asset_class != "us_equity" for symbol in symbol_rows):
-        raise HTTPException(
-            status_code=400,
-            detail="Backtesting v1 supports US equity symbols only",
-        )
-
     try:
         capital_allocation = Decimal(payload.capital_allocation)
     except InvalidOperation:
@@ -718,13 +806,25 @@ def backtest_strategy(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid start or end")
 
+    normalized_params = _normalize_params(payload.strategy_type, payload.params_json)
+    normalized_risk = _normalize_risk(payload.risk_json)
+    await _ensure_backtest_symbols_and_history(
+        db,
+        symbols=symbols,
+        strategy_type=payload.strategy_type,
+        params_json=normalized_params,
+        risk_json=normalized_risk,
+        start=start,
+        end=end,
+    )
+
     result = run_backtest(
         db=db,
         strategy_type=payload.strategy_type,
         symbols=symbols,
         timeframe=payload.timeframe,
-        params_json=_normalize_params(payload.strategy_type, payload.params_json),
-        risk_json=_normalize_risk(payload.risk_json),
+        params_json=normalized_params,
+        risk_json=normalized_risk,
         capital_allocation=capital_allocation,
         start=start,
         end=end,
