@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Date,
@@ -23,6 +24,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -33,6 +35,7 @@ from app.db.session import Base
 account_type_enum = Enum(
     "investment",
     "crypto",
+    "kalshi",
     name="account_type",
     create_type=False,
 )
@@ -116,6 +119,51 @@ strategy_action_enum = Enum(
     "place_sell",
     "none",
     name="strategy_action",
+    create_type=False,
+)
+
+# Kalshi uses one-L "canceled" — distinct from order_status_enum's two-L
+# "cancelled". Both must round-trip from the respective external APIs.
+kalshi_order_side_enum = Enum(
+    "yes",
+    "no",
+    name="kalshi_order_side",
+    create_type=False,
+)
+kalshi_order_action_enum = Enum(
+    "buy",
+    "sell",
+    name="kalshi_order_action",
+    create_type=False,
+)
+kalshi_order_status_enum = Enum(
+    "pending",
+    "resting",
+    "executed",
+    "canceled",
+    "rejected",
+    name="kalshi_order_status",
+    create_type=False,
+)
+kalshi_order_type_enum = Enum(
+    "limit",
+    "market",
+    name="kalshi_order_type",
+    create_type=False,
+)
+kalshi_account_status_enum = Enum(
+    "local_only",
+    "active",
+    "failed",
+    name="kalshi_account_status",
+    create_type=False,
+)
+kalshi_signal_decision_enum = Enum(
+    "emitted",
+    "skipped",
+    "dry_run",
+    "blocked",
+    name="kalshi_signal_decision",
     create_type=False,
 )
 
@@ -541,6 +589,287 @@ class WatchlistItem(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship(back_populates="watchlist_items")
+
+
+# JSONB columns must use with_variant(JSON(), "sqlite") so the SQLite test
+# engine in integration_helpers.make_test_engine can run create_all without
+# choking on the Postgres-only JSONB type.
+_JsonbCol = JSONB().with_variant(JSON(), "sqlite")
+
+
+class KalshiAccount(Base):
+    __tablename__ = "kalshi_account"
+    __table_args__ = (
+        # subaccount_number must be unique when not null, but multiple rows may
+        # be local_only (null) at the same time — partial unique index in
+        # Drizzle, mirrored here so future ALTER passes don't drift.
+        Index(
+            "kalshi_account_subaccount_number_idx",
+            "subaccount_number",
+            unique=True,
+            postgresql_where=text("subaccount_number IS NOT NULL"),
+            sqlite_where=text("subaccount_number IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "subaccount_number IS NULL "
+            "OR (subaccount_number BETWEEN 1 AND 32)",
+            name="kalshi_account_subaccount_number_range_check",
+        ),
+    )
+
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    subaccount_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(
+        kalshi_account_status_enum, default="local_only"
+    )
+    provisioning_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_balance_dollars: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class KalshiMarket(Base):
+    __tablename__ = "kalshi_market"
+    __table_args__ = (
+        Index("kalshi_market_series_ticker_idx", "series_ticker"),
+        Index("kalshi_market_close_time_idx", "close_time"),
+        Index("kalshi_market_status_idx", "status"),
+    )
+
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    event_ticker: Mapped[str | None] = mapped_column(String, nullable=True)
+    series_ticker: Mapped[str] = mapped_column(String)
+    market_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    yes_sub_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    no_sub_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    strike_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    floor_strike: Mapped[Decimal | None] = mapped_column(
+        Numeric(20, 6), nullable=True
+    )
+    cap_strike: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    open_time: Mapped[datetime | None] = mapped_column(nullable=True)
+    close_time: Mapped[datetime | None] = mapped_column(nullable=True)
+    latest_expiration_time: Mapped[datetime | None] = mapped_column(nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)
+    price_level_structure: Mapped[str | None] = mapped_column(String, nullable=True)
+    price_ranges: Mapped[dict | None] = mapped_column(_JsonbCol, nullable=True)
+    fractional_trading_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class KalshiSignal(Base):
+    __tablename__ = "kalshi_signal"
+    __table_args__ = (
+        Index(
+            "kalshi_signal_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
+        Index("kalshi_signal_decision_idx", "decision"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    market_ticker: Mapped[str | None] = mapped_column(
+        String, ForeignKey("kalshi_market.ticker"), nullable=True
+    )
+    strategy: Mapped[str] = mapped_column(String)
+    side: Mapped[str | None] = mapped_column(kalshi_order_side_enum, nullable=True)
+    action: Mapped[str | None] = mapped_column(
+        kalshi_order_action_enum, nullable=True
+    )
+    count_fp: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    limit_price_dollars: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    decision: Mapped[str] = mapped_column(kalshi_signal_decision_enum)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    snapshot: Mapped[dict | None] = mapped_column(_JsonbCol, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class KalshiOrder(Base):
+    __tablename__ = "kalshi_order"
+    __table_args__ = (
+        Index(
+            "kalshi_order_account_created_idx",
+            "trading_account_id",
+            text("created_at DESC"),
+        ),
+        Index(
+            "kalshi_order_account_status_idx",
+            "trading_account_id",
+            "status",
+        ),
+        Index("kalshi_order_market_ticker_idx", "market_ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    subaccount_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kalshi_order_id: Mapped[str | None] = mapped_column(
+        String, unique=True, nullable=True
+    )
+    client_order_id: Mapped[str] = mapped_column(String, unique=True)
+    market_ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("kalshi_market.ticker")
+    )
+    side: Mapped[str] = mapped_column(kalshi_order_side_enum)
+    action: Mapped[str] = mapped_column(kalshi_order_action_enum)
+    order_type: Mapped[str] = mapped_column(kalshi_order_type_enum)
+    time_in_force: Mapped[str] = mapped_column(String, default="immediate_or_cancel")
+    count_fp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    limit_price_dollars: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    status: Mapped[str] = mapped_column(kalshi_order_status_enum)
+    strategy: Mapped[str] = mapped_column(String)
+    signal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kalshi_signal.id"), nullable=True
+    )
+    fill_count_fp: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), default=Decimal("0")
+    )
+    remaining_count_fp: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
+    rejection_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_response: Mapped[dict | None] = mapped_column(_JsonbCol, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class KalshiPosition(Base):
+    __tablename__ = "kalshi_position"
+    __table_args__ = (
+        UniqueConstraint(
+            "trading_account_id",
+            "market_ticker",
+            name="kalshi_position_account_market_idx",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    subaccount_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    market_ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("kalshi_market.ticker")
+    )
+    position_fp: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), default=Decimal("0")
+    )
+    total_traded_dollars: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), default=Decimal("0")
+    )
+    market_exposure_dollars: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), default=Decimal("0")
+    )
+    realized_pnl_dollars: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), default=Decimal("0")
+    )
+    fees_paid_dollars: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), default=Decimal("0")
+    )
+    raw_response: Mapped[dict | None] = mapped_column(_JsonbCol, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class KalshiFill(Base):
+    __tablename__ = "kalshi_fill"
+    __table_args__ = (
+        Index("kalshi_fill_trading_account_id_idx", "trading_account_id"),
+        Index("kalshi_fill_market_ticker_idx", "market_ticker"),
+        Index("kalshi_fill_kalshi_order_id_idx", "kalshi_order_id"),
+        Index("kalshi_fill_executed_at_idx", "executed_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE")
+    )
+    subaccount_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kalshi_fill_id: Mapped[str] = mapped_column(String, unique=True)
+    kalshi_trade_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    kalshi_order_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    local_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kalshi_order.id"), nullable=True
+    )
+    market_ticker: Mapped[str] = mapped_column(
+        String, ForeignKey("kalshi_market.ticker")
+    )
+    side: Mapped[str] = mapped_column(kalshi_order_side_enum)
+    action: Mapped[str] = mapped_column(kalshi_order_action_enum)
+    count_fp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    yes_price_dollars: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    no_price_dollars: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 6), nullable=True
+    )
+    fee_dollars: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), default=Decimal("0")
+    )
+    is_taker: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    executed_at: Mapped[datetime] = mapped_column()
+    raw_response: Mapped[dict | None] = mapped_column(_JsonbCol, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class KalshiBotState(Base):
+    __tablename__ = "kalshi_bot_state"
+
+    trading_account_id: Mapped[int] = mapped_column(
+        ForeignKey("trading_account.id", ondelete="CASCADE"), primary_key=True
+    )
+    active_strategy: Mapped[str] = mapped_column(String, default="threshold_drift")
+    automation_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_orders_per_cycle: Mapped[int] = mapped_column(Integer, default=1)
+    max_open_contracts: Mapped[int] = mapped_column(Integer, default=5)
+    last_cycle_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
 
 class News_Article(Base):
     __tablename__ = "news_article"

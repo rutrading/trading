@@ -33,6 +33,7 @@ import { toastManager } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { OrderStatusBadge } from "./order-status-badge";
 import { cancelOrder, type Order, type OrderStatus } from "@/app/actions/orders";
+import type { AccountType } from "@/lib/accounts";
 
 import { fmtPrice as fmt } from "@/lib/format";
 
@@ -75,7 +76,7 @@ export const OrdersTable = ({
   formattedDates,
 }: {
   orders: Order[];
-  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
+  accountsById?: Record<number, { name: string; type: AccountType }>;
   page: number;
   perPage: number;
   total: number;

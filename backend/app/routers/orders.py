@@ -127,6 +127,26 @@ async def place_order(
         db=db,
     )
 
+    # Kalshi orders go through /api/kalshi/* and use kalshi_order, not the
+    # stock/crypto `order` table. Asset-class mismatches are caught here so a
+    # crypto-only account can't fall into the equities path (and vice versa)
+    # before the row lock or any downstream math runs.
+    if account.type == "kalshi":
+        raise HTTPException(
+            status_code=400,
+            detail="Use /api/kalshi/* for Kalshi accounts.",
+        )
+    if account.type == "investment" and payload.asset_class != "us_equity":
+        raise HTTPException(
+            status_code=400,
+            detail="Investment accounts can only place us_equity orders.",
+        )
+    if account.type == "crypto" and payload.asset_class != "crypto":
+        raise HTTPException(
+            status_code=400,
+            detail="Crypto accounts can only place crypto orders.",
+        )
+
     quantity = Decimal(payload.quantity)
     limit_price = Decimal(payload.limit_price) if payload.limit_price else None
     stop_price = Decimal(payload.stop_price) if payload.stop_price else None

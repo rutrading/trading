@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { TransactionHistory } from "@/components/portfolio/transaction-history";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllTransactions } from "@/app/actions/portfolio";
-import { resolveAccountScope } from "@/lib/accounts";
+import { resolveBrokerageScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Activity - R U Trading" };
 
@@ -13,7 +13,7 @@ export default async function ActivityPage({ searchParams }: Props) {
   const page = Math.max(1, Number(pageParam) || 1);
 
   const accounts = await getAccounts();
-  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveBrokerageScope(
     accounts,
     accountParam,
   );

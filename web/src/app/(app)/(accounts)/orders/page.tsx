@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { OrdersTable, type FormattedOrderDates } from "@/components/orders/orders-table";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllOrders } from "@/app/actions/orders";
-import { resolveAccountScope } from "@/lib/accounts";
+import { resolveBrokerageScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Orders - R U Trading" };
 
@@ -32,7 +32,7 @@ export default async function OrdersPage({ searchParams }: Props) {
   const page = Math.max(1, Number(pageParam) || 1);
 
   const accounts = await getAccounts();
-  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveBrokerageScope(
     accounts,
     accountParam,
   );

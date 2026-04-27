@@ -7,9 +7,12 @@
 // guard, which would otherwise let a stale link to an unauthorized
 // account slip through.
 
+export type AccountType = "investment" | "crypto" | "kalshi";
+export type BrokerageAccountType = Exclude<AccountType, "kalshi">;
+
 export type AccountInfo = {
   name: string;
-  type: "investment" | "crypto";
+  type: AccountType;
 };
 
 // Loose shape for the `getAccounts()` Drizzle result so this helper
@@ -19,9 +22,21 @@ export type AccountMemberLike = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
   };
 };
+
+export function isBrokerageAccount(
+  type: AccountType,
+): type is BrokerageAccountType {
+  return type === "investment" || type === "crypto";
+}
+
+export function filterBrokerageMembers<
+  T extends { tradingAccount: { type: AccountType } },
+>(members: T[]): T[] {
+  return members.filter((m) => isBrokerageAccount(m.tradingAccount.type));
+}
 
 export type AccountScope = {
   // Account ID the user is currently filtered to, or null when looking
@@ -68,4 +83,14 @@ export function resolveAccountScope(
   const scopedAccount = scopedId != null ? accountsById[scopedId] : null;
 
   return { scopedId, scopedAccount, activeIds, allAccountIds, accountsById };
+}
+
+// Brokerage-only wrapper around `resolveAccountScope`. Strips Kalshi rows
+// out of `getAccounts()` before scoping so `activeIds` never fans out
+// across an account type whose data lives in a separate set of endpoints.
+export function resolveBrokerageScope(
+  accounts: AccountMemberLike[],
+  accountParam: string | undefined,
+): AccountScope {
+  return resolveAccountScope(filterBrokerageMembers(accounts), accountParam);
 }

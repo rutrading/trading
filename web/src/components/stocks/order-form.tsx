@@ -18,11 +18,12 @@ import { Separator } from "@/components/ui/separator";
 import { toastManager } from "@/components/ui/toast";
 import { useQuote } from "@/components/ws-provider";
 import { fmtPrice } from "@/lib/format";
+import type { BrokerageAccountType } from "@/lib/accounts";
 
 export type OrderFormAccount = {
   id: number;
   name: string;
-  type: "investment" | "crypto";
+  type: BrokerageAccountType;
   balance: string;
 };
 

@@ -24,6 +24,16 @@ def list_holdings(
         trading_account_id=trading_account_id, user=user, db=db
     )
 
+    # A stale dashboard fan-out may include kalshi ids in its per-account
+    # /holdings calls. Returning empty (not 400) keeps that path 200 while
+    # holdings for kalshi positions live in kalshi_position, not `holding`.
+    if account.type == "kalshi":
+        return HoldingsResponse(
+            holdings=[],
+            trading_account_id=account.id,
+            cash_balance=str(account.balance),
+        )
+
     # Outer join so a holding on an unseeded ticker still comes back (name=None).
     rows = (
         db.query(Holding, Symbol.name)

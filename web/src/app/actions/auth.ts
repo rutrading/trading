@@ -8,6 +8,7 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { del, post, put, type ApiResult } from "@/lib/api";
 import { BALANCE_MAP, type Experience } from "@/lib/experience";
+import type { BrokerageAccountType } from "@/lib/accounts";
 
 type ActionResult = { success: true } | { success: false; error: string };
 
@@ -42,7 +43,7 @@ export async function updateProfile(name: string): Promise<ActionResult> {
 
 export async function createAccount(
   name: string,
-  type: "investment" | "crypto",
+  type: BrokerageAccountType,
   experience: Experience,
   partnerEmail?: string,
 ): Promise<ActionResult> {

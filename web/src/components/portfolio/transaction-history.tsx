@@ -19,6 +19,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import type { TransactionRow } from "@/app/actions/portfolio";
+import type { AccountType } from "@/lib/accounts";
 
 import { fmtPrice as fmt } from "@/lib/format";
 
@@ -40,7 +41,7 @@ export const TransactionHistory = ({
   scopedAccountId,
 }: {
   transactions: TransactionRow[];
-  accountsById?: Record<number, { name: string; type: "investment" | "crypto" }>;
+  accountsById?: Record<number, { name: string; type: AccountType }>;
   page: number;
   perPage: number;
   total: number;
