@@ -27,7 +27,7 @@ from app.routers import (
     watchlist,
 )
 from app.tasks.order_executor import run_order_executor
-from app.tasks.get_news import get_news
+from app.tasks.get_news import run_news_loop
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
 from app.ws.feeds.mock import MockFeed
@@ -183,7 +183,8 @@ async def lifespan(app: FastAPI):
     logger.info("Quote flush task started")
 
     executor_task = asyncio.create_task(run_order_executor())
-    news_task = asyncio.create_task(get_news())
+    news_task = asyncio.create_task(run_news_loop())
+    logger.info("News refresh task started")
 
     yield
 

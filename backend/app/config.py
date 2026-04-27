@@ -25,6 +25,7 @@ class Config:
     allow_symbol_seed_endpoint: bool = False
     symbol_seed_on_startup: bool = True
     symbol_seed_refresh_interval_seconds: int = 86400
+    news_refresh_interval_seconds: int = 900
 
 
 def get_config() -> Config:
