@@ -5,6 +5,10 @@ import {
   SIDEBAR_COLLAPSED_COOKIE,
   SidebarShell,
 } from "@/components/account-sidebar/sidebar-shell";
+import {
+  filterBrokerageMembers,
+  type BrokerageAccountType,
+} from "@/lib/accounts";
 
 // Format with formatToParts so the output is independent of ICU's locale
 // connectors (Node emits "Apr 21, 2026, 12:59 AM" while browsers emit
@@ -34,10 +38,10 @@ export default async function AccountsLayout({
   children: React.ReactNode;
 }) {
   const members = await getAccounts();
-  const accounts = members.map((m) => ({
+  const accounts = filterBrokerageMembers(members).map((m) => ({
     id: m.tradingAccount.id,
     name: m.tradingAccount.name,
-    type: m.tradingAccount.type,
+    type: m.tradingAccount.type as BrokerageAccountType,
     balance: m.tradingAccount.balance,
     isJoint: m.tradingAccount.isJoint,
   }));

@@ -14,6 +14,10 @@ import {
 import { Wallet } from "@phosphor-icons/react/ssr";
 import { TradeForm, type TradeAccount } from "@/components/trade/trade-form";
 import { isUSMarketOpen } from "@/lib/market-hours";
+import {
+  filterBrokerageMembers,
+  type BrokerageAccountType,
+} from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Trade - R U Trading" };
 
@@ -25,10 +29,10 @@ export default async function TradePage({ searchParams }: Props) {
   const { account: accountParam, ticker: tickerParam } = await searchParams;
   const members = await getAccounts();
 
-  const accounts: TradeAccount[] = members.map((m) => ({
+  const accounts: TradeAccount[] = filterBrokerageMembers(members).map((m) => ({
     id: m.tradingAccount.id,
     name: m.tradingAccount.name,
-    type: m.tradingAccount.type,
+    type: m.tradingAccount.type as BrokerageAccountType,
     isJoint: m.tradingAccount.isJoint,
     balance: m.tradingAccount.balance,
     reservedBalance: m.tradingAccount.reservedBalance,

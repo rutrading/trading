@@ -21,6 +21,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { SignOutButton } from "@/components/sign-out-button";
+import type { AccountType } from "@/lib/accounts";
 
 type Account = {
   id: number;
@@ -29,7 +30,7 @@ type Account = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
     balance: string;
     isJoint: boolean;
     createdAt: Date;
