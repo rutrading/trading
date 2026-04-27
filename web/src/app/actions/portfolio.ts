@@ -111,9 +111,54 @@ export async function getAllHoldings(
 
 export type PortfolioPoint = { time: number; value: number };
 
+// Aggregate per-ticker daily bars into a single portfolio-value timeline.
+// Unions every ticker's bar dates and forward-fills each ticker's last
+// known close on dates it has no bar of its own — so weekends and NYSE
+// holidays still reflect each stock's prior close instead of contributing
+// zero. Without this, a mixed stock+crypto portfolio "halves" every
+// Saturday and Sunday because equities have no weekend bars but crypto
+// does, and the summed map only carries crypto on those dates. Dates
+// earlier than a ticker's first observed bar use that first close as a
+// backfill, consistent with the current-quantity-throughout simplification
+// documented on the callers below.
+type PortfolioSeries = { qty: number; bars: { time: number; close: number }[] };
+
+function aggregatePortfolioBars(
+  series: PortfolioSeries[],
+  totalCash: number,
+): PortfolioPoint[] {
+  const ordered = series
+    .filter((s) => s.qty > 0 && s.bars.length > 0)
+    .map((s) => ({ qty: s.qty, bars: [...s.bars].sort((a, b) => a.time - b.time) }));
+  if (ordered.length === 0) return [];
+
+  const allTimes = new Set<number>();
+  for (const s of ordered) for (const b of s.bars) allTimes.add(b.time);
+  const sortedTimes = [...allTimes].sort((a, b) => a - b);
+
+  const valueByTime = new Map<number, number>();
+  for (const s of ordered) {
+    let i = 0;
+    let lastClose = s.bars[0].close;
+    for (const time of sortedTimes) {
+      while (i < s.bars.length && s.bars[i].time <= time) {
+        lastClose = s.bars[i].close;
+        i += 1;
+      }
+      valueByTime.set(time, (valueByTime.get(time) ?? 0) + s.qty * lastClose);
+    }
+  }
+
+  return sortedTimes.map((time) => ({
+    time,
+    value: (valueByTime.get(time) ?? 0) + totalCash,
+  }));
+}
+
 // Approximation of portfolio value over time. For each unique held ticker
-// we pull `days` of daily closes and sum (qty × close) on each date, then
-// add the user's *current* cash balance. Caveats baked in:
+// we pull `days` of daily closes and feed them through the forward-fill
+// aggregator above, then add the user's *current* cash balance. Caveats
+// baked in:
 //   - Uses CURRENT quantity for every historical date, so a position you
 //     opened last week appears as if you've held it the whole window.
 //   - Cash is treated as constant — there is no per-date cash snapshot.
@@ -155,19 +200,12 @@ export async function getPortfolioTimeSeries(
     ),
   );
 
-  const valueByTime = new Map<number, number>();
-  for (let i = 0; i < tickers.length; i++) {
-    const res = barResults[i];
-    if (!res.ok) continue;
-    const qty = qtyByTicker.get(tickers[i]) ?? 0;
-    for (const bar of res.data.bars) {
-      valueByTime.set(bar.time, (valueByTime.get(bar.time) ?? 0) + qty * bar.close);
-    }
-  }
-
-  return [...valueByTime.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
+  const series = barResults.flatMap((res, i) =>
+    res.ok
+      ? [{ qty: qtyByTicker.get(tickers[i]) ?? 0, bars: res.data.bars }]
+      : [],
+  );
+  return aggregatePortfolioBars(series, totalCash);
 }
 
 // Bars-only refetch used by the dashboard's portfolio chart when the user
@@ -197,20 +235,12 @@ export async function refreshPortfolioBars(
     ),
   );
 
-  const valueByTime = new Map<number, number>();
-  for (let i = 0; i < tickers.length; i++) {
-    const res = barResults[i];
-    if (!res.ok) continue;
+  const series = barResults.flatMap((res, i) => {
+    if (!res.ok) return [];
     const qty = parseFloat(tickerQuantities[tickers[i]]);
-    if (!(qty > 0)) continue;
-    for (const bar of res.data.bars) {
-      valueByTime.set(bar.time, (valueByTime.get(bar.time) ?? 0) + qty * bar.close);
-    }
-  }
-
-  return [...valueByTime.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([time, holdingsValue]) => ({ time, value: holdingsValue + totalCash }));
+    return qty > 0 ? [{ qty, bars: res.data.bars }] : [];
+  });
+  return aggregatePortfolioBars(series, totalCash);
 }
 
 export async function getAllTransactions(
