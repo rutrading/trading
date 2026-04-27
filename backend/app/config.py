@@ -24,6 +24,10 @@ class Config:
     strategy_poll_interval: int = 30
     strategy_executor_enabled: int = 1
     log_level: str = "INFO"
+    allow_symbol_seed_endpoint: bool = False
+    symbol_seed_on_startup: bool = True
+    symbol_seed_refresh_interval_seconds: int = 86400
+    news_refresh_interval_seconds: int = 900
 
 
 def get_config() -> Config:
@@ -31,7 +35,9 @@ def get_config() -> Config:
     for f in fields(Config):
         env_val = os.getenv(f.name.upper())
         if env_val is not None:
-            if isinstance(f.default, int):
+            if isinstance(f.default, bool):
+                kwargs[f.name] = env_val.lower() in ("1", "true", "yes", "on")
+            elif isinstance(f.default, int):
                 kwargs[f.name] = int(env_val)
             else:
                 kwargs[f.name] = env_val

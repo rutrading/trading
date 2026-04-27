@@ -9,6 +9,7 @@ import {
   jsonb,
   numeric,
   pgEnum,
+  pgView,
   pgTable,
   serial,
   text,
@@ -266,7 +267,6 @@ export const company = pgTable("company", {
   description: text("description"),
   sector: text("sector"),
   industry: text("industry"),
-  logoUrl: text("logo_url"),
 });
 
 export const dailyBar = pgTable(
@@ -645,3 +645,76 @@ export const watchlistItemRelations = relations(watchlistItem, ({ one }) => ({
     references: [symbol.ticker],
   }),
 }));
+
+export const newsArticle  = pgTable("news_article", {
+  article_id: serial("article_id").primaryKey(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  summary: text("summary"),
+  thumbnail: text("thumbnail"),
+  date_published: timestamp("date_published", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const author  = pgTable("author", {
+  author_id: serial("author_id").primaryKey(),
+  article_id: integer("article_id").notNull().references(() => newsArticle.article_id),
+  author_name: text("author_name").notNull(),
+});
+
+export const newsSource  = pgTable("news_source", {
+  news_source_id: serial("news_source_id").primaryKey(),
+  source_name: text("source_name").notNull().unique(),
+});
+
+export const newsSourceBridge  = pgTable("news_article_source_bridge", {
+  id: serial("id").primaryKey(),
+  news_source_id: integer("news_source_id").notNull().references(() => newsSource.news_source_id, { onDelete: "cascade" }),
+  article_id: integer("article_id").notNull().references(() => newsArticle.article_id, { onDelete: "cascade" })
+});
+
+export const articleStockTicker  = pgTable("article_stock_ticker", {
+  ticker_id: serial("ticker_id").primaryKey(),
+  ticker: text("ticker").notNull(),
+});
+
+export const newsArticleTickerBridge  = pgTable("news_article_ticker_bridge", {
+  id: serial("id").primaryKey(),
+  article_id: integer("article_id").notNull().references(() => newsArticle.article_id, { onDelete: "cascade" }),
+  ticker_id: integer("ticker_id").notNull().references(() => articleStockTicker.ticker_id, { onDelete: "cascade" }),
+});
+
+export const articleSummaryView = pgView("article_summary_view", {
+  article_id: integer("article_id"),
+  title: text("title"),
+  url: text("url"),
+  summary: text("summary"),
+  thumbnail: text("thumbnail"),
+  date_published: timestamp("date_published", { withTimezone: true }),
+  source_name: text("source_name"),
+  authors: text("authors"),
+  tickers: text("tickers"),
+}).as(sql`
+  SELECT 
+    ${newsArticle.article_id} as article_id, 
+    ${newsArticle.title} as title,
+    ${newsArticle.url} as url,
+    ${newsArticle.summary} as summary,
+    ${newsArticle.thumbnail} as thumbnail,
+    ${newsArticle.date_published} as date_published,
+    ${newsSource.source_name} as source_name,
+    (SELECT STRING_AGG(${author.author_name}, ', ') 
+        FROM ${author} 
+        WHERE ${newsArticle.article_id} = ${author.article_id}
+    ) AS authors,
+    (
+        SELECT STRING_AGG(${articleStockTicker.ticker}, ', ') 
+        FROM ${articleStockTicker} 
+		    join ${newsArticleTickerBridge} on (${newsArticle.article_id} = ${newsArticleTickerBridge.article_id})
+        WHERE ${newsArticleTickerBridge.ticker_id} = ${articleStockTicker.ticker_id}
+    ) AS tickers
+  FROM ${newsArticle}
+  LEFT JOIN ${newsSourceBridge} ON ${newsArticle.article_id} = ${newsSourceBridge.article_id}
+  LEFT JOIN ${newsSource} ON ${newsSourceBridge.news_source_id} = ${newsSource.news_source_id}
+  ORDER BY ${newsArticle.date_published} DESC
+`);
+

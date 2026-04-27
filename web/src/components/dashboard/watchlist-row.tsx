@@ -8,12 +8,13 @@ import { cn } from "@/lib/utils";
 import { fmtPrice, fmtSignedPct, tone } from "@/lib/format";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
 import { toastManager } from "@/components/ui/toast";
+import { useQuote } from "@/components/ws-provider";
+import { mergeQuote } from "@/lib/quote";
 
 export const WatchlistRow = ({ item }: { item: WatchlistItem }) => {
   const router = useRouter();
   const [removing, setRemoving] = useState(false);
-  const price = item.quote?.price;
-  const changePct = item.quote?.change_percent;
+  const { price, change_percent: changePct } = mergeQuote(item.quote, useQuote(item.ticker));
 
   const handleRemove = async () => {
     if (removing) return;

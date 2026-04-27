@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -25,6 +24,7 @@ from app.services.alpaca_rest import (
     QuoteData,
     fetch_snapshot,
 )
+from app.services.quote_cache import persist_quote
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,21 +40,6 @@ def _quote_to_watchlist(quote: QuoteData, source: str) -> WatchlistQuoteResponse
         timestamp=quote.timestamp,
         source=source,
     )
-
-
-def _persist_snapshot(db: Session, quote: QuoteData) -> None:
-    """Upsert a freshly-fetched snapshot into Postgres so the next watchlist
-    load hits the warm cache instead of Alpaca REST again."""
-    payload = quote.to_db_payload()
-    existing = db.query(Quote).filter(Quote.ticker == quote.ticker).first()
-    if existing:
-        for field, value in payload.items():
-            if field != "ticker":
-                setattr(existing, field, value)
-        existing.updated_at = datetime.now(timezone.utc)
-    else:
-        db.add(Quote(**payload))
-    db.commit()
 
 
 async def _fetch_alpaca_snapshots(
@@ -88,7 +73,7 @@ async def _fetch_alpaca_snapshots(
             continue
         out[ticker] = _quote_to_watchlist(quote, source="alpaca_rest")
         try:
-            _persist_snapshot(db, quote)
+            persist_quote(quote, db=db)
         except Exception as exc:
             logger.warning("Watchlist persist skipped for %s: %s", ticker, exc)
     return out

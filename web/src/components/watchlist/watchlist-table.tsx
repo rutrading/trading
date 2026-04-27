@@ -7,6 +7,7 @@ import { toastManager } from "@/components/ui/toast";
 import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuotes } from "@/components/ws-provider";
+import { mergeQuote } from "@/lib/quote";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
   Pagination,
@@ -98,12 +99,8 @@ export const WatchlistTable = ({
           </thead>
           <tbody>
             {pageItems.map((w) => {
-              // Prefer live WS ticks; fall back to the server-rendered snapshot.
-              const live = liveQuotes.get(w.ticker);
-              const price = live?.price ?? w.quote?.price;
-              const change = live?.change_percent ?? w.quote?.change_percent;
-              const bid = live?.bid_price ?? w.quote?.bid_price ?? null;
-              const ask = live?.ask_price ?? w.quote?.ask_price ?? null;
+              const q = mergeQuote(w.quote, liveQuotes.get(w.ticker));
+              const { price, change_percent: change, bid_price: bid, ask_price: ask } = q;
               const qty = qtyByTicker[w.ticker] ?? 0;
               const valueOwned = qty > 0 && price != null ? qty * price : null;
               return (

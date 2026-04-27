@@ -2,21 +2,12 @@
 
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
-
-export type WatchlistQuote = {
-  price: number | null;
-  change: number | null;
-  change_percent: number | null;
-  bid_price: number | null;
-  ask_price: number | null;
-  timestamp: number | null;
-  source: string | null;
-};
+import type { Quote } from "@/lib/quote";
 
 export type WatchlistItem = {
   ticker: string;
   created_at: string;
-  quote: WatchlistQuote | null;
+  quote: Quote | null;
 };
 
 type WatchlistResponse = { watchlist: WatchlistItem[] };

@@ -12,6 +12,7 @@ import {
 } from "lightweight-charts";
 import { getHistoricalBars } from "@/app/actions/bars";
 import { useQuote } from "@/components/ws-provider";
+import { mergeQuote, type Quote } from "@/lib/quote";
 import { toIsoStart, toIsoEnd } from "@/components/iso-helper";
 
 type HistoricalBar = {
@@ -145,7 +146,13 @@ function timeframeToStartDate(tf: TimeframeValue): Date {
 
 // TODO: Auto-update chart when user goes back in time
 // TODO: Change zoom when interval changes
-export function StockChart({ ticker }: { ticker: string }) {
+export function StockChart({
+  ticker,
+  initialQuote,
+}: {
+  ticker: string;
+  initialQuote: Quote | null;
+}) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi>(null);
   const seriesRef = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
@@ -153,7 +160,12 @@ export function StockChart({ ticker }: { ticker: string }) {
   const [timeframe, setTimeframe] = useState<TimeframeValue>("15Min");
   const currentCandleRef = useRef<CandlestickData | null>(null);
 
-  const quote = useQuote(ticker);
+  // Falling back to the page-load REST snapshot lets the in-progress
+  // candle render at the same price the header shows from the very
+  // first paint, instead of pinning to the last historical bar's close
+  // (which on longer timeframes can be hours stale) until the WS feed
+  // pushes its first trade tick.
+  const quote = mergeQuote(initialQuote, useQuote(ticker));
 
   // TODO: Replace useMemo if possible
   const chartData = useMemo<CandlestickData[]>(() => {
@@ -256,15 +268,21 @@ export function StockChart({ ticker }: { ticker: string }) {
   }, [chartData]);
 
   useEffect(() => {
-    if (!quote || !seriesRef.current) return;
+    if (!seriesRef.current) return;
+    // Quote ticks (bid/ask updates) don't carry a last-trade price, so they
+    // shouldn't move the candle. Skip until a trade tick lands.
+    if (quote.price == null) return;
 
-    // match selected timeframe
+    // match selected timeframe; fall back to wall-clock if the snapshot
+    // came in without a timestamp (defensive — the backend always sets
+    // one, but `MergedQuote` types it as nullable).
+    const tsRaw = quote.timestamp ?? Math.floor(Date.now() / 1000);
     const rawMs =
-      typeof quote.timestamp === "string"
-        ? new Date(quote.timestamp).getTime()
-        : Number(quote.timestamp) > 1e10
-          ? Number(quote.timestamp)
-          : Number(quote.timestamp) * 1000;
+      typeof tsRaw === "string"
+        ? new Date(tsRaw).getTime()
+        : Number(tsRaw) > 1e10
+          ? Number(tsRaw)
+          : Number(tsRaw) * 1000;
 
     const intervalTime = normalizeToIntervalStart(rawMs, timeframe);
 

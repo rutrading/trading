@@ -8,7 +8,7 @@ export type NewsArticle = {
   summary: string;
   source: string;
   url: string;
-  symbol: string | null;
+  symbols: string[] | null;
 };
 
 type BackendArticle = {
@@ -16,6 +16,8 @@ type BackendArticle = {
   link: string;
   authors: string[] | null;
   body: string;
+  stock_tickers: string[] | null;
+  source_name: string | null;
 };
 
 type BackendResponse = {
@@ -27,9 +29,9 @@ function transform(article: BackendArticle): NewsArticle {
   return {
     headline: article.title,
     summary: article.body,
-    source: article.authors?.join(", ") || "",
+    source: article.source_name || "",
     url: article.link,
-    symbol: null,
+    symbols: article.stock_tickers || null,
   };
 }
 
@@ -41,12 +43,9 @@ export async function getNews(params?: {
   const session = await getSession();
   if (!session) return { articles: [], nextPageToken: null };
 
-  // TODO(Sean): default /news feed should pull the 25 most recent articles
-  // (no ticker filter) ordered by published desc. Backend currently returns
-  // whatever order it wants and ignores limit defaults.
   const res = await api.get<BackendResponse>("/news", {
     ticker: params?.ticker,
-    limit: params?.limit?.toString(),
+    limit: (params?.limit ?? 25).toString(),
     page_token: params?.page_token,
   });
 

@@ -1,56 +1,30 @@
 # R U Trading
 
+<p align="center"><a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js"></a><a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a><a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a><a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a><a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="Postgres"></a><a href="https://redis.io/"><img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis"></a><a href="https://bun.sh/"><img src="https://img.shields.io/badge/Bun-000000?style=for-the-badge&logo=bun&logoColor=white" alt="Bun"></a></p>
+
 Paper trading web application that simulates stock market trading using real-time data, allowing users to practice investing strategies without financial risk.
 
 Senior project for Rowan University, advised by Professor McKee.
 
 **Team:** Kyle Graham Matzen (Scrum/Lead), Nitin Sobti (Scrum/Lead), Josh Odom, Lucas Souder, Sean Twomey
 
-## Overview
-
-- Authentication with account registration and session management
-- Real-time quotes from Alpaca with three-tier caching (Redis, Postgres, REST fallback)
-- Historical candlestick charts with intraday, daily, and aggregated timeframes
-- Symbol search backed by Alpaca asset data synced to Postgres
-- Order placement and portfolio management with holdings and transaction history
-- Shared sliding-window rate limiter across all Alpaca API calls
-- WebSocket-based live quote streaming with per-user tracking and reconnection grace period (mock data, Alpaca feed pending)
-- Watchlist for tracking saved stocks with current prices and daily changes
-- Settings page for profile management and account actions
-
-**Planned:**
-
-- Dashboard with portfolio value, holdings breakdown, and daily movers
-- Financial news integration filtered by symbol
-- Stock detail page with live price, charts, and trade execution
-- Real-time Alpaca feed to replace mock WebSocket price data
-
 ## Architecture
 
-![System Architecture Diagram](.github/system_architecture_diagram.png)
+![System Architecture](.github/system-architecture.png)
 
-*Last updated: March 11, 2026*
+A Next.js frontend talks to a FastAPI backend over REST, with a WebSocket channel for live quotes. Market data comes from [Alpaca](https://alpaca.markets/) and is cached in Redis (hot) and Postgres (warm) before falling back to Alpaca REST. All outbound Alpaca calls go through a shared sliding-window rate limiter.
 
-The Next.js frontend communicates with a FastAPI backend over REST. The backend fetches market data from [Alpaca](https://alpaca.markets/), caches quotes in Redis (hot) and Postgres (warm), and falls back to Alpaca REST on cache miss. Authentication is handled by [Better Auth](https://www.better-auth.com/) on the Next.js server.
+The schema lives in `web/src/db/schema.ts` as the single source of truth via [Drizzle ORM](https://orm.drizzle.team/), with the Python backend reading and writing through SQLAlchemy models against the same tables. Migrations are handled exclusively by Drizzle (`bun db:push`).
 
-### Quote Flow
+## Overview
 
-1. API receives `/api/quote?ticker=...`
-2. Checks Redis hash (`quote:<ticker>`) for a fresh cached quote
-3. Falls back to Postgres `quote` table if Redis misses
-4. Fetches from Alpaca snapshot endpoint on full cache miss
-5. Writes back to Redis and upserts into Postgres
-
-### Historical Bars Flow
-
-1. API receives `/api/historical-bars?ticker=...&timeframe=...&start=...`
-2. Intraday timeframes (1Min through 1Hour) fetch directly from Alpaca REST, never stored
-3. Daily bars read from the `daily_bar` table, backfilling gaps from Alpaca on demand
-4. Aggregated timeframes (1Week through 1Year) use SQL aggregation over daily bars
-
-### Database
-
-Schema is defined in `web/src/db/schema.ts` using [Drizzle ORM](https://orm.drizzle.team/) (single source of truth). Python backend uses SQLAlchemy models as read/write mappings against the same tables. Migrations are handled exclusively by Drizzle (`bun db:push`).
+- Account registration and sessions powered by [Better Auth](https://www.better-auth.com/)
+- Portfolio dashboard with positions, holdings, orders, and activity history
+- Stock detail pages with live price, candlestick charts, and trade execution
+- Order placement with buying-power reservations and a full transaction ledger
+- Watchlists, symbol search with trending tickers, and per-symbol financial news
+- Quotes from [Alpaca](https://alpaca.markets/) backed by three-tier caching across Redis, Postgres, and REST, plus a live WebSocket stream with per-user subscriptions
+- Company profiles from Alpha Vantage with logos from [Logo.dev](https://logo.dev), themed to the user's preference
 
 ## Getting Started
 
@@ -102,14 +76,6 @@ For local services only:
 ```bash
 docker compose up -d
 ```
-
-## Contributing
-
-See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for development setup and guidelines.
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
 
 ## AI Use Statement
 

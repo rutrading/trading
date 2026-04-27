@@ -29,6 +29,7 @@ from app.routers import (
 )
 from app.tasks.order_executor import run_order_executor
 from app.tasks.strategy_executor import run_strategy_executor
+from app.tasks.get_news import run_news_loop
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
 from app.ws.feeds.mock import MockFeed
@@ -49,6 +50,26 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+class _HealthcheckAccessFilter(logging.Filter):
+    """Drop uvicorn access lines for the health endpoint.
+
+    The platform pings /api/health every couple of seconds, which buries every
+    other request under a wall of 200 OK lines. We still want access logs for
+    everything else, so filter at the record level instead of disabling the
+    access logger entirely.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+        return "/api/health" not in message
+
+
+logging.getLogger("uvicorn.access").addFilter(_HealthcheckAccessFilter())
 
 
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
@@ -177,18 +198,30 @@ async def lifespan(app: FastAPI):
 
     await feed.start()
 
+    symbol_sync_task = asyncio.create_task(symbols.run_symbol_sync_loop())
+    logger.info("Symbol sync task started")
+
     flush_task = asyncio.create_task(flush_quotes_loop())
     logger.info("Quote flush task started")
 
     executor_task = asyncio.create_task(run_order_executor())
     strategy_task = asyncio.create_task(run_strategy_executor())
+    news_task = asyncio.create_task(run_news_loop())
+    logger.info("News refresh task started")
+    logger.info("Strategy executor task started")
 
     yield
 
     await feed.stop()
+    symbol_sync_task.cancel()
     flush_task.cancel()
     executor_task.cancel()
     strategy_task.cancel()
+    news_task.cancel()
+    try:
+        await symbol_sync_task
+    except asyncio.CancelledError:
+        pass
     try:
         await flush_task
     except asyncio.CancelledError:
@@ -199,6 +232,7 @@ async def lifespan(app: FastAPI):
         pass
     try:
         await strategy_task
+        await news_task
     except asyncio.CancelledError:
         pass
     await close_redis()

@@ -4,8 +4,15 @@
 import { headers as nextHeaders } from "next/headers";
 import { auth } from "@/lib/auth";
 
+// Server actions resolve the backend over Coolify's internal Docker network
+// when INTERNAL_BACKEND_API_URL is set — hairpin NAT drops loopback through
+// the host's public IP, so the public NEXT_PUBLIC_* URL only works from the
+// browser. Falls back to the public URL for local dev where there is no
+// internal hostname to resolve.
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
+  process.env.INTERNAL_BACKEND_API_URL ??
+  process.env.NEXT_PUBLIC_BACKEND_API_URL ??
+  "http://localhost:8000/api";
 
 async function authHeader(): Promise<Record<string, string>> {
   try {
@@ -104,7 +111,8 @@ async function request<T>(
     }
 
     return { ok: true, data: (await res.json()) as T };
-  } catch {
+  } catch (err) {
+    console.error("api fetch failed", { method, path, err });
     return { ok: false, error: "Network error" };
   }
 }

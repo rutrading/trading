@@ -1,6 +1,7 @@
 """Order endpoints: place, list, get, and cancel orders."""
 
 import logging
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -11,8 +12,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.config import get_config
 from app.db import Order, get_db
-from app.db.models import DailyBar, Holding, Quote, TradingAccount, Transaction
+from app.db.models import DailyBar, Holding, TradingAccount, Transaction
 from app.dependencies import get_trading_account
 from app.rate_limit import get_order_cancel_limiter, get_order_placement_limiter
 from app.schemas import (
@@ -23,6 +25,7 @@ from app.schemas import (
 )
 from app.services.atr import compute_atr
 from app.services.market_calendar import is_stock_market_open
+from app.services.quote_cache import resolve_quote
 from app.services.trading import (
     OrderValidationError,
     to_money,
@@ -37,7 +40,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _ET = ZoneInfo("America/New_York")
-_QUOTE_STALENESS_LIMIT_SEC = 60
 
 
 class PlaceOrderRequest(BaseModel):
@@ -167,8 +169,8 @@ async def place_order(
     # timeout when the DB has fewer than ATR_PERIODS+1 daily bars cached for
     # the ticker — and that call has no dependency on the locked row state.
     # Holding FOR UPDATE through a 10s network call would freeze every other
-    # writer on the same trading account. Quote and DailyBar reads stay
-    # inline below since they're sub-millisecond local Postgres queries.
+    # writer on the same trading account. DailyBar reads stay inline below;
+    # quote resolution goes through the shared cache (Redis-first).
     needs_atr = payload.side == "buy" and (
         payload.order_type == "stop" or deferred_market
     )
@@ -225,8 +227,14 @@ async def place_order(
     rps: Decimal | None = None
     if (payload.order_type != "market" or deferred_market) and payload.side == "buy":
         if deferred_market:
-            quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
-            if quote is None or quote.price is None:
+            try:
+                quote = await resolve_quote(payload.ticker, db=db)
+            except HTTPException as exc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No current price available for {payload.ticker}. Try again in a moment.",
+                ) from exc
+            if quote.price is None:
                 raise HTTPException(
                     status_code=400,
                     detail=f"No current price available for {payload.ticker}. Try again in a moment.",
@@ -252,34 +260,41 @@ async def place_order(
                 raise HTTPException(status_code=400, detail=exc.detail)
 
     if payload.order_type == "market" and not deferred_market:
-        # backend owns the price — never trust the client for market fills
-        quote = db.query(Quote).filter(Quote.ticker == payload.ticker).first()
-        if quote is None or quote.price is None or quote.price <= 0:
+        # Backend owns the price — never trust the client for market fills.
+        # Goes through the same Redis -> Postgres -> Alpaca chain the REST
+        # `/quote` endpoint uses. Critical: staleness is computed from the
+        # data-event `timestamp` field (refreshed by every WS tick), NOT
+        # `Quote.updated_at` (a row-mutation column the flush loop never
+        # touches — that gave us the "stale 785s" rejection on actively
+        # ticking BTC/USD).
+        try:
+            quote = await resolve_quote(payload.ticker, db=db)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No current price available for {payload.ticker}. Try again in a moment.",
+            ) from exc
+        if quote.price is None or quote.price <= 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"No current price available for {payload.ticker}. Try again in a moment.",
             )
-        # Reject stale quotes during market hours. A market order against a
-        # quote that hasn't ticked in minutes (typically a feed outage) would
-        # fill at whatever ancient price is in the table — pause the user
-        # rather than execute on stale data. Off-hours stocks are filtered out
-        # so the warning isn't spammed when the WS feed is intentionally idle.
-        now_utc = datetime.now(timezone.utc)
         is_live_market = (
             payload.asset_class == "crypto"
-            or is_stock_market_open(now_utc.astimezone(_ET))
+            or is_stock_market_open(datetime.now(timezone.utc).astimezone(_ET))
         )
-        if is_live_market and quote.updated_at is not None:
-            quote_updated = quote.updated_at
-            if quote_updated.tzinfo is None:
-                quote_updated = quote_updated.replace(tzinfo=timezone.utc)
-            staleness = (now_utc - quote_updated).total_seconds()
-            if staleness > _QUOTE_STALENESS_LIMIT_SEC:
+        if is_live_market and quote.timestamp is not None:
+            # Defence-in-depth: `resolve_quote` already enforces this on
+            # Redis/Postgres hits; this guard only fires when an Alpaca
+            # REST fall-through returns a `timestamp` that's itself older
+            # than the threshold (genuine upstream stale data).
+            staleness = int(time.time()) - quote.timestamp
+            if staleness > get_config().quote_staleness_seconds:
                 raise HTTPException(
                     status_code=400,
                     detail=(
                         f"Quote for {payload.ticker} is stale "
-                        f"({int(staleness)}s old). Try again in a moment."
+                        f"({staleness}s old). Try again in a moment."
                     ),
                 )
         market_price = Decimal(str(quote.price))

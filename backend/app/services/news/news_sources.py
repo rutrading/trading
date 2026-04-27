@@ -83,7 +83,15 @@ class News_Source:
         else:
             return self.df['link'][index]
         
-    async def get_article_html(self, article_link: str) -> str:
+    
+    async def get_article_body(self, index: int) -> str: #Default method returns raw html 
+        if index > len(self.df)-1 or index < 0:
+            return None
+        else:
+            return await self.get_article_body_link(self.df['link'][index])
+    
+    @staticmethod
+    async def get_article_html(article_link: str) -> str:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                             "(KHTML, like Gecko) Chrome/121.0 Safari/537.36",
@@ -93,26 +101,23 @@ class News_Source:
         async with httpx.AsyncClient(headers=headers, verify=False, timeout=10.0) as client: #TODO: Change verify to use actual SSL certificates at some point
             html = await client.get(article_link)
         return html
-    
-    async def get_article_body(self, index: int) -> str: #Default method returns raw html 
-        if index > len(self.df)-1 or index < 0:
-            return None
-        else:
-            return await self.get_article_body_link(self.df['link'][index])
-    
-    async def get_article_body_link(self, article_link: str) -> str: #Default method returns raw html 
-        html = await self.get_article_html(article_link)
+
+    @staticmethod
+    async def get_article_body_link(article_link: str) -> str: #Default method returns raw html 
+        html = await News_Source.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         return soup
     
-    async def get_stock_map(self): # Decortator function to get stock map for use in nlp sentiment analysis lies dormant until stock sentimenent analysis is needed
+    @staticmethod
+    async def get_stock_map(): # Decortator function to get stock map for use in nlp sentiment analysis lies dormant until stock sentimenent analysis is needed
         async with httpx.AsyncClient(verify=False) as client: #TODO: Change verify to use actual SSL certificates at some point
             response = await client.get("https://raw.githubusercontent.com/ahmeterenodaci/Nasdaq-Stock-Exchange-including-Symbols-and-Logos/refs/heads/main/without_logo.min.json")
         News_Source.stock_map = response.json()
     
-    async def nlp_get_stock_tickers(self, article_text: str) -> list:
+    @staticmethod
+    async def nlp_get_stock_tickers(article_text: str) -> list:
         if News_Source.stock_map is None:
-            await self.get_stock_map()
+            await News_Source.get_stock_map()
         nlp = spacy.load("en_core_web_sm")
         
         doc = nlp(article_text)
@@ -137,16 +142,16 @@ class News_Source:
                     if symbol not in tickers:
                         tickers.append(symbol)
                     
-
         return tickers
 
 class News_Source_NBC(News_Source):
     
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="NBC")
-        
-    async def get_article_body_link(self, article_link: str) -> str:
-        html = await self.get_article_html(article_link)
+    
+    @staticmethod
+    async def get_article_body_link(article_link: str) -> str:
+        html = await News_Source.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         article_json = soup.find("script", type="application/ld+json")
         article_body = json.loads(article_json.string).get('articleBody')
@@ -159,8 +164,9 @@ class News_Source_ABC(News_Source):
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="ABC")
     
-    async def get_article_body_link(self, article_link: str) -> str:
-        html = await self.get_article_html(article_link)
+    @staticmethod
+    async def get_article_body_link(article_link: str) -> str:
+        html = await News_Source.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         if soup is not None:
             article_p_tags = soup.find_all("p")
@@ -178,8 +184,9 @@ class News_Source_invescom(News_Source):
     def __init__(self, feed_url: str):
         super().__init__(feed_url=feed_url, source_name="INVESCOM")
     
-    async def get_article_body_link(self, article_link: str) -> str:
-        html = await self.get_article_html(article_link)
+    @staticmethod
+    async def get_article_body_link(article_link: str) -> str:
+        html = await News_Source.get_article_html(article_link)
         soup = BeautifulSoup(html.text, features='html.parser')
         found_art = soup.find("div", id='article')
         if found_art is not None:

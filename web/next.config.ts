@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "www.google.com",
+        hostname: "img.logo.dev",
       },
     ],
   },
@@ -18,7 +18,8 @@ const nextConfig: NextConfig = {
     root: resolve(__dirname, ".."),
   },
   experimental: {
-    turbopackFileSystemCacheForDev: true,
+    preloadEntriesOnStart: false,
+    optimizePackageImports: ["@tanstack/react-virtual"],
   },
   allowedDevOrigins: ["10.0.0.104"],
 };

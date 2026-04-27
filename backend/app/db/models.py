@@ -212,7 +212,6 @@ class Company(Base):
     description: Mapped[str | None] = mapped_column(String, default=None)
     sector: Mapped[str | None] = mapped_column(String, default=None)
     industry: Mapped[str | None] = mapped_column(String, default=None)
-    logo_url: Mapped[str | None] = mapped_column(String, default=None)
 
     symbol: Mapped["Symbol"] = relationship(back_populates="company")
 
@@ -542,3 +541,91 @@ class WatchlistItem(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship(back_populates="watchlist_items")
+
+class News_Article(Base):
+    __tablename__ = "news_article"
+
+    article_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(nullable=False)
+    url: Mapped[str] = mapped_column(nullable=False)
+    summary: Mapped[str] = mapped_column(default=None)
+    thumbnail: Mapped[str | None] = mapped_column(default=None)
+    date_published: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        Index("article_articletId_idx", "article_id"),
+    )
+
+class News_Source(Base):
+    __tablename__ = "news_source"
+
+    news_source_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    source_name: Mapped[str] = mapped_column(nullable=False, unique=True)
+
+    __table_args__ = (
+        Index("news_source_news_sourcetId_idx", "news_source_id"),
+    )
+
+class News_Article_Source_Bridge(Base):
+    __tablename__ = "news_article_source_bridge"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_article.article_id"))
+    news_source_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_source.news_source_id"))
+    
+    __table_args__ = (
+        Index("article_source_bridge_articleId_idx", "article_id"),
+        Index("news_source_bridge_news_sourcetId_idx", "news_source_id")
+    )
+
+class Author(Base):
+    __tablename__ = "author"
+
+    author_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_article.article_id"))
+    author_name: Mapped[str] = mapped_column(nullable=False)
+
+    __table_args__ = (
+        Index("author_articleId_idx", "article_id"),
+    )
+
+class News_Article_Ticker_Bridge(Base):
+    __tablename__ = "news_article_ticker_bridge"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    article_id: Mapped[int] = mapped_column(Integer, ForeignKey("news_article.article_id"))
+    ticker_id: Mapped[int] = mapped_column(Integer, ForeignKey("article_stock_ticker.ticker_id"))
+
+    __table_args__ = (
+        Index("article_ticker_bridge_articletId_idx", "article_id"),
+        Index("stock_ticker_tickerId_idx", "ticker_id")
+    )
+
+class Article_Stock_Ticker(Base):
+    __tablename__ = "article_stock_ticker"
+
+    ticker_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String, ForeignKey("symbol.ticker"))
+
+    __table_args__ = (
+        Index("stock_tickerId_idx", "ticker_id"),
+        Index("article_stock_ticker_ticker_idx", "ticker")
+    )
+
+class ArticleSummaryView(Base):
+    __tablename__ = "article_summary_view"
+    
+    article_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(nullable=False)
+    url: Mapped[str] = mapped_column(nullable=False)
+    summary: Mapped[str] = mapped_column(nullable=False)
+    thumbnail: Mapped[str | None] = mapped_column(nullable=True)
+    date_published: Mapped[datetime] = mapped_column( default=lambda: datetime.now(timezone.utc) )
+    source_name: Mapped[str] = mapped_column(nullable=False)
+    # Subquery Columns
+    authors: Mapped[str | None] = mapped_column(nullable=True)
+    tickers: Mapped[str | None] = mapped_column(nullable=True)
+
+    __table_args__ = {"info": {"is_view": True}}

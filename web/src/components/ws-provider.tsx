@@ -10,19 +10,11 @@ import {
 } from "react";
 import useWebSocket, { ReadyState } from "react-use-websocket";
 
-export type QuoteData = {
-  price: number;
-  change: number;
-  change_percent: number;
-  bid_price: number;
-  ask_price: number;
-  timestamp: number;
-  source: string;
-};
+import type { Quote } from "@/lib/quote";
 
 type WSContextValue = {
   subscribe: (ticker: string) => () => void;
-  quotes: Map<string, QuoteData>;
+  quotes: Map<string, Quote>;
   readyState: ReadyState;
   restoredTickers: string[];
 };
@@ -37,7 +29,7 @@ export function WebSocketProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map());
+  const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const [restoredTickers, setRestoredTickers] = useState<string[]>([]);
 
   // ref-counted subscriptions: ticker -> number of active subscribers
@@ -91,7 +83,7 @@ export function WebSocketProvider({
     const msg = lastJsonMessage as {
       type?: string;
       ticker?: string;
-      data?: QuoteData;
+      data?: Quote;
       tickers?: string[];
     };
 
@@ -175,7 +167,7 @@ export function WebSocketProvider({
   );
 }
 
-export function useQuote(ticker: string | null): QuoteData | null {
+export function useQuote(ticker: string | null): Quote | null {
   const ctx = useContext(WSContext);
   if (!ctx) throw new Error("useQuote must be used within WebSocketProvider");
 
@@ -191,7 +183,7 @@ export function useQuote(ticker: string | null): QuoteData | null {
   return ticker ? (ctx.quotes.get(ticker.toUpperCase()) ?? null) : null;
 }
 
-export function useQuotes(tickers: string[]): Map<string, QuoteData> {
+export function useQuotes(tickers: string[]): Map<string, Quote> {
   const ctx = useContext(WSContext);
   if (!ctx) throw new Error("useQuotes must be used within WebSocketProvider");
 
@@ -203,7 +195,7 @@ export function useQuotes(tickers: string[]): Map<string, QuoteData> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickers.join(",")]);
 
-  const filtered = new Map<string, QuoteData>();
+  const filtered = new Map<string, Quote>();
   for (const t of tickers) {
     const key = t.toUpperCase();
     const q = ctx.quotes.get(key);
