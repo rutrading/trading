@@ -303,3 +303,68 @@ class TestDeposit:
             account = db.query(TradingAccount).filter(TradingAccount.id == account_id).one()
             assert account.balance == Decimal("1100.00")
             assert account.reserved_balance == Decimal("250")
+
+
+class TestKalshiAccountGuards:
+    """Cash-mutation endpoints must reject Kalshi accounts; rename and delete
+    still apply because they are type-agnostic account housekeeping."""
+
+    def _seed_kalshi(self, factory, user_id: str = "user-a") -> int:
+        with factory() as db:
+            seed_user(db, user_id)
+            account = seed_account(
+                db, user_id, name="Kalshi", balance="0", type_="kalshi",
+            )
+            return account.id
+
+    def test_reset_account_rejects_kalshi(self, session_factory):
+        account_id = self._seed_kalshi(session_factory)
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                f"/api/accounts/{account_id}/reset",
+                json={"experience_level": "beginner"},
+            )
+        assert response.status_code == 400
+        assert "kalshi" in response.json()["detail"].lower()
+
+    def test_create_account_deposit_rejects_kalshi(self, session_factory):
+        account_id = self._seed_kalshi(session_factory)
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                f"/api/accounts/{account_id}/deposits",
+                json={"amount": "100"},
+            )
+        assert response.status_code == 400
+        assert "kalshi" in response.json()["detail"].lower()
+        with session_factory() as db:
+            account = db.query(TradingAccount).filter(TradingAccount.id == account_id).one()
+            assert account.balance == Decimal("0")
+            assert (
+                db.query(Transaction)
+                .filter(Transaction.trading_account_id == account_id)
+                .count()
+                == 0
+            )
+
+    def test_update_account_works_for_kalshi(self, session_factory):
+        account_id = self._seed_kalshi(session_factory)
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.put(
+                f"/api/accounts/{account_id}",
+                params={"name": "Kalshi (renamed)"},
+            )
+        assert response.status_code == 200
+        with session_factory() as db:
+            account = db.query(TradingAccount).filter(TradingAccount.id == account_id).one()
+            assert account.name == "Kalshi (renamed)"
+
+    def test_delete_account_works_for_kalshi(self, session_factory):
+        account_id = self._seed_kalshi(session_factory)
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.delete(f"/api/accounts/{account_id}")
+        assert response.status_code == 200
+        with session_factory() as db:
+            assert (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+                is None
+            )
