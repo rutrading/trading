@@ -86,11 +86,19 @@ export default async function StockPage({ params }: Props) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       <div className="space-y-6">
-        <StockHeader ticker={symbol} stock={stock} watched={watched} />
+        <StockHeader
+          ticker={symbol}
+          stock={stock}
+          initialQuote={quoteRes.ok ? quoteRes.data : null}
+          watched={watched}
+        />
         <div className="rounded-2xl bg-accent p-6">
           <h2 className="mb-4 text-sm font-medium text-muted-foreground">Price Chart</h2>
           <div className="rounded-xl bg-card p-4">
-            <StockChart ticker={symbol} />
+            <StockChart
+              ticker={symbol}
+              initialQuote={quoteRes.ok ? quoteRes.data : null}
+            />
           </div>
         </div>
         <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
