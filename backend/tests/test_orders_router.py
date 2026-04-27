@@ -200,6 +200,42 @@ class TestTransactionsIDOR:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _isolate_redis_from_dev_cache(monkeypatch):
+    """Force `read_redis` to miss in every test.
+
+    The dev `.env` points at a real Redis with cached quotes from prior
+    `bun dev` sessions. Without this, tests that seed Postgres at one
+    price find a stale Redis hit at a different price (or with `price=None`)
+    and resolve_quote returns the wrong layer. The order-placement suite
+    is about Postgres + the staleness gate; Redis behaviour is covered by
+    `test_quotes_router.py`."""
+
+    async def _miss(_ticker):
+        return None
+
+    monkeypatch.setattr("app.services.quote_cache.read_redis", _miss)
+
+
+@pytest.fixture
+def _alpaca_returns_no_quote(monkeypatch):
+    """Stub upstream layers so resolve_quote treats every fall-through as a
+    miss. Tests for the no-quote / null-price rejection paths need this:
+    the dev `.env` ships real Alpaca credentials AND a real Redis with
+    cached quotes from prior dev runs, so without the stubs `read_redis`
+    or `_fetch_from_alpaca` returns live data and the rejection never fires."""
+    from fastapi import HTTPException
+
+    async def _raise_alpaca(_ticker):
+        raise HTTPException(404, "Ticker not found")
+
+    async def _redis_miss(_ticker):
+        return None
+
+    monkeypatch.setattr("app.services.quote_cache._fetch_from_alpaca", _raise_alpaca)
+    monkeypatch.setattr("app.services.quote_cache.read_redis", _redis_miss)
+
+
 class TestPlaceMarketOrder:
     @pytest.fixture(autouse=True)
     def _force_market_open(self, monkeypatch):
@@ -253,7 +289,9 @@ class TestPlaceMarketOrder:
             )
             assert account.balance == expected_balance
 
-    def test_market_order_rejected_with_no_quote(self, session_factory):
+    def test_market_order_rejected_with_no_quote(
+        self, session_factory, _alpaca_returns_no_quote
+    ):
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
@@ -282,7 +320,9 @@ class TestPlaceMarketOrder:
             account = db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
             assert account.balance == Decimal("10000")
 
-    def test_market_order_rejected_when_quote_price_is_null(self, session_factory):
+    def test_market_order_rejected_when_quote_price_is_null(
+        self, session_factory, _alpaca_returns_no_quote
+    ):
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
@@ -305,6 +345,48 @@ class TestPlaceMarketOrder:
             )
         assert response.status_code == 400
         assert "no current price" in response.json()["detail"].lower()
+
+    def test_market_order_accepts_fresh_data_event_timestamp_with_stale_updated_at(
+        self, session_factory, _alpaca_returns_no_quote
+    ):
+        # Regression: the staleness check must read the data-event `timestamp`
+        # field (refreshed by every WS trade or quote tick), NOT the
+        # ORM-side `Quote.updated_at` (which the flush loop never writes).
+        # Reproduces the user-reported "Quote for BTC/USD is stale (785s old)"
+        # rejection. With the fix, this order must succeed at the seeded price
+        # because `resolve_quote()` consults the data-event timestamp and the
+        # warm-cache row is genuinely fresh.
+        from datetime import datetime, timedelta, timezone
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            quote = seed_quote(db, "AAPL", price=150.0)  # default fresh timestamp
+            seed_daily_bar(db, "AAPL", volume=10_000_000)
+            account = seed_account(db, "user-a", balance="10000")
+            account_id = account.id
+            # Force `updated_at` 30 minutes in the past — the bug-case shape.
+            # The Alpaca-fetch stub above ensures we cannot accidentally pass
+            # by falling through to a real upstream fetch.
+            quote.updated_at = datetime.now(timezone.utc) - timedelta(minutes=30)
+            db.commit()
+
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(
+                "/api/orders",
+                json={
+                    "trading_account_id": account_id,
+                    "ticker": "AAPL",
+                    "asset_class": "us_equity",
+                    "side": "buy",
+                    "order_type": "market",
+                    "time_in_force": "gtc",
+                    "quantity": "1",
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert Decimal(body["reference_price"]) == Decimal("150")
 
 
 class TestPlaceDeferredMarketOrder:
@@ -355,7 +437,9 @@ class TestPlaceDeferredMarketOrder:
             order = db.query(Order).first()
             assert order.reserved_per_share == Decimal("102")
 
-    def test_deferred_market_buy_rejected_with_no_quote(self, session_factory):
+    def test_deferred_market_buy_rejected_with_no_quote(
+        self, session_factory, _alpaca_returns_no_quote
+    ):
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
