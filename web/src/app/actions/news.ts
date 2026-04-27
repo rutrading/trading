@@ -17,6 +17,7 @@ type BackendArticle = {
   authors: string[] | null;
   body: string;
   stock_tickers: string[] | null;
+  source_name: string | null;
 };
 
 type BackendResponse = {
@@ -28,7 +29,7 @@ function transform(article: BackendArticle): NewsArticle {
   return {
     headline: article.title,
     summary: article.body,
-    source: article.authors?.join(", ") || "",
+    source: article.source_name || "",
     url: article.link,
     symbols: article.stock_tickers || null,
   };
