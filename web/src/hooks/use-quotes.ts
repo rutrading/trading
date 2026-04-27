@@ -1,7 +1,6 @@
 import {
   ReadyState,
   type ConnectionStatus,
-  type QuoteData,
   useConnectionStatus,
   useQuote,
   useQuotes,
@@ -17,4 +16,5 @@ export {
   useRestoredTickers,
   useWSReadyState,
 };
-export type { ConnectionStatus, QuoteData };
+export type { ConnectionStatus };
+export type { Quote } from "@/lib/quote";

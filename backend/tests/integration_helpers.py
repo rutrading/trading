@@ -16,6 +16,7 @@ Why SQLite, not the real Postgres test DB?
   on lock contention. For genuine concurrency tests see test_orders_router_loop.
 """
 
+import time
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -118,8 +119,18 @@ def seed_symbol(db: Session, ticker: str, asset_class: str = "us_equity") -> Sym
     return symbol
 
 
-def seed_quote(db: Session, ticker: str, price: float | None) -> Quote:
-    quote = Quote(ticker=ticker, price=price)
+def seed_quote(
+    db: Session,
+    ticker: str,
+    price: float | None,
+    timestamp: int | None = None,
+) -> Quote:
+    # Default to a fresh data-event timestamp so resolve_quote's staleness
+    # gate treats this as live. Tests that need a stale-quote scenario
+    # pass `timestamp` explicitly.
+    if timestamp is None:
+        timestamp = int(time.time())
+    quote = Quote(ticker=ticker, price=price, timestamp=timestamp)
     db.add(quote)
     db.commit()
     return quote

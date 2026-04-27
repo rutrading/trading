@@ -396,6 +396,10 @@ class ConnectionManager:
         """Return the user_id for a given WebSocket connection."""
         return self._ws_user.get(ws)
 
+    def get_ws_tickers(self, ws: WebSocket) -> set[str]:
+        """Return the tickers a single connection is currently subscribed to."""
+        return set(self._subs.get(ws, set()))
+
     @property
     def active_tickers(self) -> set[str]:
         return set(self._ticker_clients.keys())

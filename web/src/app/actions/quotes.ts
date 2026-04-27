@@ -2,32 +2,18 @@
 
 import { getSession } from "@/app/actions/auth";
 import * as api from "@/lib/api";
-
-export type QuoteSnapshot = {
-  ticker: string;
-  price: number | null;
-  bid_price: number | null;
-  ask_price: number | null;
-  change: number | null;
-  change_percent: number | null;
-  previous_close: number | null;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  volume: number | null;
-  timestamp: number;
-};
+import type { Quote } from "@/lib/quote";
 
 type BulkQuotesResponse = {
-  quotes: Record<string, QuoteSnapshot>;
+  quotes: Record<string, Quote>;
 };
 
 export async function getQuote(
   ticker: string,
-): Promise<api.ApiResult<QuoteSnapshot>> {
+): Promise<api.ApiResult<Quote>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
-  return api.get<QuoteSnapshot>("/quote", { ticker });
+  return api.get<Quote>("/quote", { ticker });
 }
 
 // Bulk quotes — one backend round-trip for N tickers instead of N. The
@@ -37,7 +23,7 @@ export async function getQuote(
 // fallback price" rather than a hard failure.
 export async function getQuotes(
   tickers: string[],
-): Promise<Record<string, QuoteSnapshot>> {
+): Promise<Record<string, Quote>> {
   const session = await getSession();
   if (!session) return {};
   const cleaned = tickers
