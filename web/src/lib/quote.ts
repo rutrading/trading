@@ -15,7 +15,7 @@
 // the same. Defaulting to `0` is forbidden — it renders as "$0.00"
 // during the WS-catchup window and confuses the user.
 export type Quote = {
-  ticker?: string;
+  ticker?: string | null;
   price?: number | null;
   bid_price?: number | null;
   ask_price?: number | null;
@@ -30,6 +30,12 @@ export type Quote = {
   source?: string | null;
 };
 
+// Every field is non-undefined — the helper coerces missing values to
+// null. Lets `mergeQuote(...).price` be typed as `number | null`
+// instead of `number | null | undefined` and saves callers from a
+// redundant `?? null` at every read site.
+export type MergedQuote = { [K in keyof Required<Quote>]: Exclude<Quote[K], undefined> };
+
 // Field-by-field merge: prefer the live WS tick, fall back to the
 // server snapshot, fall back to null. Centralising this guarantees
 // every page reads the same precedence and never defaults a numeric
@@ -37,9 +43,9 @@ export type Quote = {
 export function mergeQuote(
   snapshot: Quote | null | undefined,
   live: Quote | null | undefined,
-): Quote {
+): MergedQuote {
   return {
-    ticker: live?.ticker ?? snapshot?.ticker,
+    ticker: live?.ticker ?? snapshot?.ticker ?? null,
     price: live?.price ?? snapshot?.price ?? null,
     bid_price: live?.bid_price ?? snapshot?.bid_price ?? null,
     ask_price: live?.ask_price ?? snapshot?.ask_price ?? null,

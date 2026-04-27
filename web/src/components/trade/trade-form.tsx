@@ -22,7 +22,7 @@ import { toastManager } from "@/components/ui/toast";
 import { SymbolSearch, type SymbolItem } from "@/components/symbol-search";
 import { useQuote } from "@/components/ws-provider";
 import { placeOrder } from "@/app/actions/orders";
-import type { Quote } from "@/lib/quote";
+import { mergeQuote, type Quote } from "@/lib/quote";
 import { cn } from "@/lib/utils";
 import { fmtPrice } from "@/lib/format";
 import { dollarsToShares } from "@/lib/order-math";
@@ -124,18 +124,7 @@ export function TradeForm({
     return () => controller.abort();
   }, [ticker]);
 
-  // Only fall back to the snapshot if the live quote is for THIS ticker
-  // (useQuote may briefly return the prior ticker's data during a switch).
-  const snapshotQuote = snapshot
-    ? {
-        price: snapshot.price ?? 0,
-        change: snapshot.change ?? 0,
-        change_percent: snapshot.change_percent ?? 0,
-        bid_price: snapshot.bid_price ?? 0,
-        ask_price: snapshot.ask_price ?? 0,
-      }
-    : null;
-  const quote = liveQuote ?? snapshotQuote;
+  const quote = mergeQuote(snapshot, liveQuote);
 
   const available =
     account &&
@@ -149,7 +138,7 @@ export function TradeForm({
       ? parseFloat(limitPrice)
       : orderType === "stop"
         ? parseFloat(stopPrice)
-        : (quote?.price ?? NaN);
+        : (quote.price ?? NaN);
   const qtyNum = parseFloat(quantity);
   // When the user enters a dollar amount, we convert to shares at submit time
   // using the reference price. Everything downstream (estimated total, sell
@@ -521,11 +510,11 @@ export function TradeForm({
               <QuoteStrip
                 ticker={ticker}
                 name={tickerName}
-                price={quote?.price ?? null}
-                change={quote?.change ?? null}
-                changePercent={quote?.change_percent ?? null}
-                bid={quote?.bid_price ?? null}
-                ask={quote?.ask_price ?? null}
+                price={quote.price ?? null}
+                change={quote.change ?? null}
+                changePercent={quote.change_percent ?? null}
+                bid={quote.bid_price ?? null}
+                ask={quote.ask_price ?? null}
                 loading={quoteLoading && !liveQuote}
               />
             )}

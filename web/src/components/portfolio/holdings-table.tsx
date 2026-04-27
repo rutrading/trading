@@ -14,7 +14,7 @@ import {
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useQuotes } from "@/components/ws-provider";
 import type { HoldingRow } from "@/app/actions/portfolio";
-import type { Quote } from "@/lib/quote";
+import { mergeQuote, type Quote } from "@/lib/quote";
 import { cn } from "@/lib/utils";
 import {
   fmtPrice as fmt,
@@ -72,10 +72,7 @@ export const HoldingsTable = ({
     const qty = parseFloat(h.quantity);
     const avg = parseFloat(h.average_cost);
     const costBasisTotal = qty * avg;
-    const live = liveQuotes.get(h.ticker);
-    const seed = initialQuotes?.[h.ticker];
-    const price = live?.price ?? seed?.price ?? null;
-    const change = live?.change ?? seed?.change ?? null;
+    const { price, change } = mergeQuote(initialQuotes?.[h.ticker], liveQuotes.get(h.ticker));
     const currentValue = price != null ? price * qty : costBasisTotal;
     const todayGain = change != null ? change * qty : 0;
     const totalGain = price != null ? (price - avg) * qty : 0;
