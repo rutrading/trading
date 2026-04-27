@@ -6,6 +6,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgView,
@@ -16,7 +17,11 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export const accountTypeEnum = pgEnum("account_type", ["investment", "crypto"]);
+export const accountTypeEnum = pgEnum("account_type", [
+  "investment",
+  "crypto",
+  "kalshi",
+]);
 
 export const experienceLevelEnum = pgEnum("experience_level", [
   "beginner",
@@ -51,6 +56,31 @@ export const transactionKindEnum = pgEnum("transaction_kind", [
   "trade",
   "deposit",
   "withdrawal",
+]);
+
+// Kalshi uses one-L "canceled", intentionally distinct from the equities
+// order_status enum's two-L "cancelled" — both must round-trip from external
+// APIs, so they cannot be unified.
+export const kalshiOrderSideEnum = pgEnum("kalshi_order_side", ["yes", "no"]);
+export const kalshiOrderActionEnum = pgEnum("kalshi_order_action", ["buy", "sell"]);
+export const kalshiOrderStatusEnum = pgEnum("kalshi_order_status", [
+  "pending",
+  "resting",
+  "executed",
+  "canceled",
+  "rejected",
+]);
+export const kalshiOrderTypeEnum = pgEnum("kalshi_order_type", ["limit", "market"]);
+export const kalshiAccountStatusEnum = pgEnum("kalshi_account_status", [
+  "local_only",
+  "active",
+  "failed",
+]);
+export const kalshiSignalDecisionEnum = pgEnum("kalshi_signal_decision", [
+  "emitted",
+  "skipped",
+  "dry_run",
+  "blocked",
 ]);
 
 export const user = pgTable("user", {
@@ -518,6 +548,331 @@ export const watchlistItemRelations = relations(watchlistItem, ({ one }) => ({
   symbol: one(symbol, {
     fields: [watchlistItem.ticker],
     references: [symbol.ticker],
+  }),
+}));
+
+export const kalshiAccount = pgTable(
+  "kalshi_account",
+  {
+    tradingAccountId: integer("trading_account_id")
+      .primaryKey()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+    subaccountNumber: integer("subaccount_number"),
+    status: kalshiAccountStatusEnum("status").notNull().default("local_only"),
+    provisioningError: text("provisioning_error"),
+    lastBalanceDollars: numeric("last_balance_dollars", { precision: 18, scale: 6 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("kalshi_account_subaccount_number_idx")
+      .on(table.subaccountNumber)
+      .where(sql`${table.subaccountNumber} IS NOT NULL`),
+    check(
+      "kalshi_account_subaccount_number_range_check",
+      sql`${table.subaccountNumber} IS NULL OR (${table.subaccountNumber} BETWEEN 1 AND 32)`,
+    ),
+  ],
+);
+
+export const kalshiMarket = pgTable(
+  "kalshi_market",
+  {
+    ticker: text("ticker").primaryKey(),
+    eventTicker: text("event_ticker"),
+    seriesTicker: text("series_ticker").notNull(),
+    marketType: text("market_type"),
+    title: text("title"),
+    yesSubTitle: text("yes_sub_title"),
+    noSubTitle: text("no_sub_title"),
+    strikeType: text("strike_type"),
+    floorStrike: numeric("floor_strike", { precision: 20, scale: 6 }),
+    capStrike: numeric("cap_strike", { precision: 20, scale: 6 }),
+    openTime: timestamp("open_time", { withTimezone: true }),
+    closeTime: timestamp("close_time", { withTimezone: true }),
+    latestExpirationTime: timestamp("latest_expiration_time", {
+      withTimezone: true,
+    }),
+    status: text("status"),
+    priceLevelStructure: text("price_level_structure"),
+    priceRanges: jsonb("price_ranges"),
+    fractionalTradingEnabled: boolean("fractional_trading_enabled")
+      .notNull()
+      .default(false),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("kalshi_market_series_ticker_idx").on(table.seriesTicker),
+    index("kalshi_market_close_time_idx").on(table.closeTime),
+    index("kalshi_market_status_idx").on(table.status),
+  ],
+);
+
+export const kalshiSignal = pgTable(
+  "kalshi_signal",
+  {
+    id: serial("id").primaryKey(),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    marketTicker: text("market_ticker").references(() => kalshiMarket.ticker),
+    strategy: text("strategy").notNull(),
+    side: kalshiOrderSideEnum("side"),
+    action: kalshiOrderActionEnum("action"),
+    countFp: numeric("count_fp", { precision: 18, scale: 2 }),
+    limitPriceDollars: numeric("limit_price_dollars", { precision: 18, scale: 6 }),
+    decision: kalshiSignalDecisionEnum("decision").notNull(),
+    reason: text("reason"),
+    snapshot: jsonb("snapshot"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("kalshi_signal_account_created_idx").on(
+      table.tradingAccountId,
+      table.createdAt.desc(),
+    ),
+    index("kalshi_signal_decision_idx").on(table.decision),
+  ],
+);
+
+export const kalshiOrder = pgTable(
+  "kalshi_order",
+  {
+    id: serial("id").primaryKey(),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    subaccountNumber: integer("subaccount_number"),
+    kalshiOrderId: text("kalshi_order_id").unique(),
+    clientOrderId: text("client_order_id").notNull().unique(),
+    marketTicker: text("market_ticker")
+      .notNull()
+      .references(() => kalshiMarket.ticker),
+    side: kalshiOrderSideEnum("side").notNull(),
+    action: kalshiOrderActionEnum("action").notNull(),
+    orderType: kalshiOrderTypeEnum("order_type").notNull(),
+    timeInForce: text("time_in_force").notNull().default("immediate_or_cancel"),
+    countFp: numeric("count_fp", { precision: 18, scale: 2 }).notNull(),
+    limitPriceDollars: numeric("limit_price_dollars", { precision: 18, scale: 6 }),
+    status: kalshiOrderStatusEnum("status").notNull(),
+    strategy: text("strategy").notNull(),
+    signalId: integer("signal_id").references(() => kalshiSignal.id),
+    fillCountFp: numeric("fill_count_fp", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    remainingCountFp: numeric("remaining_count_fp", { precision: 18, scale: 2 }),
+    rejectionReason: text("rejection_reason"),
+    rawResponse: jsonb("raw_response"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("kalshi_order_account_created_idx").on(
+      table.tradingAccountId,
+      table.createdAt.desc(),
+    ),
+    index("kalshi_order_account_status_idx").on(
+      table.tradingAccountId,
+      table.status,
+    ),
+    index("kalshi_order_market_ticker_idx").on(table.marketTicker),
+  ],
+);
+
+export const kalshiPosition = pgTable(
+  "kalshi_position",
+  {
+    id: serial("id").primaryKey(),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    subaccountNumber: integer("subaccount_number"),
+    marketTicker: text("market_ticker")
+      .notNull()
+      .references(() => kalshiMarket.ticker),
+    positionFp: numeric("position_fp", { precision: 18, scale: 2 })
+      .notNull()
+      .default("0"),
+    totalTradedDollars: numeric("total_traded_dollars", {
+      precision: 18,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
+    marketExposureDollars: numeric("market_exposure_dollars", {
+      precision: 18,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
+    realizedPnlDollars: numeric("realized_pnl_dollars", {
+      precision: 18,
+      scale: 6,
+    })
+      .notNull()
+      .default("0"),
+    feesPaidDollars: numeric("fees_paid_dollars", { precision: 18, scale: 6 })
+      .notNull()
+      .default("0"),
+    rawResponse: jsonb("raw_response"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("kalshi_position_account_market_idx").on(
+      table.tradingAccountId,
+      table.marketTicker,
+    ),
+  ],
+);
+
+export const kalshiFill = pgTable(
+  "kalshi_fill",
+  {
+    id: serial("id").primaryKey(),
+    tradingAccountId: integer("trading_account_id")
+      .notNull()
+      .references(() => tradingAccount.id, { onDelete: "cascade" }),
+    subaccountNumber: integer("subaccount_number"),
+    kalshiFillId: text("kalshi_fill_id").notNull().unique(),
+    kalshiTradeId: text("kalshi_trade_id"),
+    kalshiOrderId: text("kalshi_order_id"),
+    localOrderId: integer("local_order_id").references(() => kalshiOrder.id),
+    marketTicker: text("market_ticker")
+      .notNull()
+      .references(() => kalshiMarket.ticker),
+    side: kalshiOrderSideEnum("side").notNull(),
+    action: kalshiOrderActionEnum("action").notNull(),
+    countFp: numeric("count_fp", { precision: 18, scale: 2 }).notNull(),
+    yesPriceDollars: numeric("yes_price_dollars", { precision: 18, scale: 6 }),
+    noPriceDollars: numeric("no_price_dollars", { precision: 18, scale: 6 }),
+    feeDollars: numeric("fee_dollars", { precision: 18, scale: 6 })
+      .notNull()
+      .default("0"),
+    isTaker: boolean("is_taker"),
+    executedAt: timestamp("executed_at", { withTimezone: true }).notNull(),
+    rawResponse: jsonb("raw_response"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("kalshi_fill_trading_account_id_idx").on(table.tradingAccountId),
+    index("kalshi_fill_market_ticker_idx").on(table.marketTicker),
+    index("kalshi_fill_kalshi_order_id_idx").on(table.kalshiOrderId),
+    index("kalshi_fill_executed_at_idx").on(table.executedAt),
+  ],
+);
+
+export const kalshiBotState = pgTable("kalshi_bot_state", {
+  tradingAccountId: integer("trading_account_id")
+    .primaryKey()
+    .references(() => tradingAccount.id, { onDelete: "cascade" }),
+  activeStrategy: text("active_strategy").notNull().default("threshold_drift"),
+  automationEnabled: boolean("automation_enabled").notNull().default(false),
+  paused: boolean("paused").notNull().default(false),
+  dryRun: boolean("dry_run").notNull().default(true),
+  maxOrdersPerCycle: integer("max_orders_per_cycle").notNull().default(1),
+  maxOpenContracts: integer("max_open_contracts").notNull().default(5),
+  lastCycleAt: timestamp("last_cycle_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const kalshiAccountRelations = relations(kalshiAccount, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiAccount.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  user: one(user, {
+    fields: [kalshiAccount.userId],
+    references: [user.id],
+  }),
+}));
+
+export const kalshiMarketRelations = relations(kalshiMarket, ({ many }) => ({
+  signals: many(kalshiSignal),
+  orders: many(kalshiOrder),
+  positions: many(kalshiPosition),
+  fills: many(kalshiFill),
+}));
+
+export const kalshiSignalRelations = relations(kalshiSignal, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiSignal.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  market: one(kalshiMarket, {
+    fields: [kalshiSignal.marketTicker],
+    references: [kalshiMarket.ticker],
+  }),
+}));
+
+export const kalshiOrderRelations = relations(kalshiOrder, ({ one, many }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiOrder.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  market: one(kalshiMarket, {
+    fields: [kalshiOrder.marketTicker],
+    references: [kalshiMarket.ticker],
+  }),
+  signal: one(kalshiSignal, {
+    fields: [kalshiOrder.signalId],
+    references: [kalshiSignal.id],
+  }),
+  fills: many(kalshiFill),
+}));
+
+export const kalshiPositionRelations = relations(kalshiPosition, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiPosition.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  market: one(kalshiMarket, {
+    fields: [kalshiPosition.marketTicker],
+    references: [kalshiMarket.ticker],
+  }),
+}));
+
+export const kalshiFillRelations = relations(kalshiFill, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiFill.tradingAccountId],
+    references: [tradingAccount.id],
+  }),
+  market: one(kalshiMarket, {
+    fields: [kalshiFill.marketTicker],
+    references: [kalshiMarket.ticker],
+  }),
+  localOrder: one(kalshiOrder, {
+    fields: [kalshiFill.localOrderId],
+    references: [kalshiOrder.id],
+  }),
+}));
+
+export const kalshiBotStateRelations = relations(kalshiBotState, ({ one }) => ({
+  tradingAccount: one(tradingAccount, {
+    fields: [kalshiBotState.tradingAccountId],
+    references: [tradingAccount.id],
   }),
 }));
 
