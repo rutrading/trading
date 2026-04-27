@@ -439,7 +439,6 @@ export function AutomatedTradingClient({
               </option>
             ))}
           </select>
-          <span className="text-xs text-muted-foreground">{accountLabel}</span>
         </div>
       </div>
 
@@ -582,7 +581,7 @@ export function AutomatedTradingClient({
 
           <Card>
             <CardHeader>
-              <CardTitle>PnL Chart</CardTitle>
+              <CardTitle>Profit and Loss Chart</CardTitle>
               <CardDescription>Portfolio value for the selected strategy account.</CardDescription>
             </CardHeader>
             <CardPanel>
