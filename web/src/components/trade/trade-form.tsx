@@ -26,11 +26,12 @@ import { mergeQuote, type Quote } from "@/lib/quote";
 import { cn } from "@/lib/utils";
 import { fmtPrice } from "@/lib/format";
 import { dollarsToShares } from "@/lib/order-math";
+import type { BrokerageAccountType } from "@/lib/accounts";
 
 export type TradeAccount = {
   id: number;
   name: string;
-  type: "investment" | "crypto";
+  type: BrokerageAccountType;
   isJoint: boolean;
   balance: string;
   reservedBalance: string;

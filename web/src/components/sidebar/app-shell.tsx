@@ -2,6 +2,7 @@
 
 import { Header } from "@/components/header/header";
 import { WebSocketProvider } from "@/components/ws-provider";
+import type { AccountType } from "@/lib/accounts";
 
 type Account = {
   id: number;
@@ -10,7 +11,7 @@ type Account = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
     balance: string;
     isJoint: boolean;
     createdAt: Date;
