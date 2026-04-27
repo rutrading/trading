@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { HoldingsTable, type InitialQuote } from "@/components/portfolio/holdings-table";
+import { HoldingsTable } from "@/components/portfolio/holdings-table";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllHoldings } from "@/app/actions/portfolio";
 import { getQuotes } from "@/app/actions/quotes";
@@ -23,14 +23,7 @@ export default async function HoldingsPage({ searchParams }: Props) {
   // gap before the WS pushes its first tick on a fresh connection. Crypto
   // snapshots are 24/7.
   const uniqueTickers = Array.from(new Set(holdings.map((h) => h.ticker)));
-  const quotes = await getQuotes(uniqueTickers);
-  const initialQuotes: Record<string, InitialQuote> = {};
-  for (const ticker of uniqueTickers) {
-    const q = quotes[ticker];
-    if (q) {
-      initialQuotes[ticker] = { price: q.price, change: q.change };
-    }
-  }
+  const initialQuotes = await getQuotes(uniqueTickers);
 
   return (
     <div className="space-y-6">

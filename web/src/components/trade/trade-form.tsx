@@ -22,7 +22,7 @@ import { toastManager } from "@/components/ui/toast";
 import { SymbolSearch, type SymbolItem } from "@/components/symbol-search";
 import { useQuote } from "@/components/ws-provider";
 import { placeOrder } from "@/app/actions/orders";
-import type { QuoteSnapshot } from "@/app/actions/quotes";
+import type { Quote } from "@/lib/quote";
 import { cn } from "@/lib/utils";
 import { fmtPrice } from "@/lib/format";
 import { dollarsToShares } from "@/lib/order-math";
@@ -94,7 +94,7 @@ export function TradeForm({
   }, [offHoursStockGuard, orderType, timeInForce]);
 
   const liveQuote = useQuote(ticker ?? null);
-  const [snapshot, setSnapshot] = useState<QuoteSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<Quote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
 
   // REST snapshot on ticker change; WS ticks take over once they arrive.
@@ -113,7 +113,7 @@ export function TradeForm({
       .then((r) => r.json())
       .then((body) => {
         if (controller.signal.aborted) return;
-        setSnapshot(body?.ok ? (body.data as QuoteSnapshot) : null);
+        setSnapshot(body?.ok ? (body.data as Quote) : null);
         setQuoteLoading(false);
       })
       .catch((err) => {

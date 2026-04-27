@@ -14,6 +14,7 @@ import {
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useQuotes } from "@/components/ws-provider";
 import type { HoldingRow } from "@/app/actions/portfolio";
+import type { Quote } from "@/lib/quote";
 import { cn } from "@/lib/utils";
 import {
   fmtPrice as fmt,
@@ -33,8 +34,6 @@ type RowStats = {
   costBasisTotal: number;
 };
 
-export type InitialQuote = { price: number | null; change: number | null };
-
 export const HoldingsTable = ({
   holdings,
   totalCash,
@@ -47,7 +46,7 @@ export const HoldingsTable = ({
   // shows "—" everywhere after the close. Crypto behaves the same way until
   // the WS feed has actually pushed at least one tick — REST gives an
   // immediate seed.
-  initialQuotes?: Record<string, InitialQuote>;
+  initialQuotes?: Record<string, Quote>;
 }) => {
   const tickers = useMemo(() => holdings.map((h) => h.ticker), [holdings]);
   const liveQuotes = useQuotes(tickers);
