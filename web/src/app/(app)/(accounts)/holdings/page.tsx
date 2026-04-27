@@ -3,7 +3,7 @@ import { HoldingsTable } from "@/components/portfolio/holdings-table";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllHoldings } from "@/app/actions/portfolio";
 import { getQuotes } from "@/app/actions/quotes";
-import { resolveAccountScope } from "@/lib/accounts";
+import { resolveBrokerageScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Holdings - R U Trading" };
 
@@ -13,7 +13,7 @@ export default async function HoldingsPage({ searchParams }: Props) {
   const { account: accountParam } = await searchParams;
 
   const accounts = await getAccounts();
-  const { scopedAccount, activeIds } = resolveAccountScope(accounts, accountParam);
+  const { scopedAccount, activeIds } = resolveBrokerageScope(accounts, accountParam);
 
   const { holdings, totalCash } = await getAllHoldings(activeIds);
 

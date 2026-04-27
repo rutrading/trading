@@ -11,6 +11,10 @@ import { getQuote } from "@/app/actions/quotes";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { STOCKS } from "@/components/stocks/stock-data";
 import { isUSMarketOpen } from "@/lib/market-hours";
+import {
+  filterBrokerageMembers,
+  type BrokerageAccountType,
+} from "@/lib/accounts";
 
 type Props = { params: Promise<{ ticker: string[] }> };
 
@@ -46,10 +50,10 @@ export default async function StockPage({ params }: Props) {
   const assetClass: "us_equity" | "crypto" =
     dbSymbol?.assetClass ?? "us_equity";
 
-  const accounts: OrderFormAccount[] = members.map((m) => ({
+  const accounts: OrderFormAccount[] = filterBrokerageMembers(members).map((m) => ({
     id: m.tradingAccount.id,
     name: m.tradingAccount.name,
-    type: m.tradingAccount.type,
+    type: m.tradingAccount.type as BrokerageAccountType,
     balance: m.tradingAccount.balance,
   }));
 
