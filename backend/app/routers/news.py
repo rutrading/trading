@@ -10,13 +10,19 @@ from app.db.models import ArticleSummaryView
 router = APIRouter()
 
 @router.get("/news")
-async def get_news(user: dict = Depends(get_current_user), page_token: int = 0, limit: int = 10):
+async def get_news(user: dict = Depends(get_current_user), page_token: int = 0, limit: int = 25):
     news_dict = await get_news_dict(page_token, limit)
     return news_dict
 
-async def get_news_dict(page_token: int = 0, limit: int = 10):
+async def get_news_dict(page_token: int = 0, limit: int = 25):
     with db_session() as db:
-        articles = db.query(ArticleSummaryView).offset(page_token*limit).limit(limit).all()
+        articles = (
+            db.query(ArticleSummaryView)
+            .order_by(ArticleSummaryView.date_published.desc())
+            .offset(page_token * limit)
+            .limit(limit)
+            .all()
+        )
     if articles is not None:
         return {
             "news": [
