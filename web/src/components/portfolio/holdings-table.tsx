@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { Briefcase } from "@phosphor-icons/react";
 import {
@@ -11,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useQuotes } from "@/components/ws-provider";
 import type { HoldingRow } from "@/app/actions/portfolio";
 import { mergeQuote, type Quote } from "@/lib/quote";
@@ -48,18 +47,15 @@ export const HoldingsTable = ({
   // immediate seed.
   initialQuotes?: Record<string, Quote>;
 }) => {
-  const tickers = useMemo(() => holdings.map((h) => h.ticker), [holdings]);
-  const liveQuotes = useQuotes(tickers);
+  const liveQuotes = useQuotes(holdings.map((h) => h.ticker));
 
   if (holdings.length === 0 && totalCash === 0) {
     return (
       <div className="rounded-2xl bg-accent p-6">
         <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><Briefcase /></EmptyMedia>
-            <EmptyTitle>No holdings</EmptyTitle>
-            <EmptyDescription>Place a trade to see your positions here.</EmptyDescription>
-          </EmptyHeader>
+          <EmptyMedia><Briefcase className="size-6 text-muted-foreground" /></EmptyMedia>
+          <EmptyTitle>No holdings</EmptyTitle>
+          <EmptyDescription>Place a trade to see your positions here.</EmptyDescription>
         </Empty>
       </div>
     );

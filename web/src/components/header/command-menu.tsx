@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChartLine,
   Briefcase,
@@ -20,7 +20,6 @@ import {
   CommandInput,
   CommandList,
   CommandEmpty,
-  CommandPanel,
   CommandGroup,
   CommandGroupLabel,
   CommandItem,
@@ -29,6 +28,7 @@ import {
   CommandFooter,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { getWatchlist } from "@/app/actions/watchlist";
 import { listSymbols, type PagedSymbols } from "@/app/actions/symbols";
 import { authClient } from "@/lib/auth-client";
@@ -77,8 +77,6 @@ const ACTIONS: ActionItem[] = [
 ];
 
 const PAGE_SIZE = 25;
-const LOAD_MORE_THRESHOLD_PX = 300;
-
 function toStockItem(s: { ticker: string; name: string }): StockItem {
   return {
     kind: "stock",
@@ -88,19 +86,18 @@ function toStockItem(s: { ticker: string; name: string }): StockItem {
   };
 }
 
-export function CommandMenu() {
+export function CommandMenu({ trigger = "icon" }: { trigger?: "icon" | "sidebar" }) {
   const [open, setOpen] = useState(false);
   const [watchlistTickers, setWatchlistTickers] = useState<Set<string>>(new Set());
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const mounted = useIsMounted();
 
   const queryRef = useRef("");
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null);
   const requestIdRef = useRef(0);
-  const loadMoreRef = useRef<() => void>(() => {});
-  const inFlightRef = useRef(false);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -113,7 +110,7 @@ export function CommandMenu() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const loadPage = useCallback(async (q: string, offset: number) => {
+  async function loadPage(q: string, offset: number) {
     const rid = ++requestIdRef.current;
     const page: PagedSymbols = await listSymbols({
       query: q,
@@ -129,7 +126,7 @@ export function CommandMenu() {
       return fresh.length === 0 ? prev : [...prev, ...fresh];
     });
     setHasMore(page.hasMore);
-  }, []);
+  }
 
   // Warm the cache once on mount — stocks + watchlist persist across opens so
   // toggling the dialog doesn't re-fetch.
@@ -140,68 +137,35 @@ export function CommandMenu() {
       }
     });
     loadPage("", 0);
-  }, [loadPage]);
+  }, []);
 
-  const navigate = useCallback(
-    (href: string) => {
-      setOpen(false);
-      router.push(href);
-    },
-    [router],
-  );
+  const navigate = (href: string) => {
+    setOpen(false);
+    router.push(withAccountScope(href));
+  };
 
-  const handleSignOut = useCallback(async () => {
+  const withAccountScope = (href: string) => {
+    const account = searchParams.get("account");
+    if (!account || href.startsWith("/stocks/")) return href;
+    const [pathname, query = ""] = href.split("?");
+    const params = new URLSearchParams(query);
+    params.set("account", account);
+    return `${pathname}?${params.toString()}`;
+  };
+
+  const handleSignOut = async () => {
     setOpen(false);
     await authClient.signOut();
     router.push("/auth/login");
-  }, [router]);
+  };
 
-  const handleSearch = useCallback(
-    (value: string) => {
-      queryRef.current = value;
-      if (searchTimeout.current) clearTimeout(searchTimeout.current);
-      searchTimeout.current = setTimeout(() => {
-        loadPage(value.trim(), 0);
-      }, 200);
-    },
-    [loadPage],
-  );
-
-  const loadMore = useCallback(async () => {
-    if (inFlightRef.current || !hasMore) return;
-    inFlightRef.current = true;
-    try {
-      await loadPage(queryRef.current.trim(), stocks.length);
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, [hasMore, loadPage, stocks.length]);
-
-  // Keep a ref to the latest loadMore so the scroll handler always sees it.
-  loadMoreRef.current = loadMore;
-
-  const attachViewport = useCallback((node: HTMLDivElement | null) => {
-    if (!node) return;
-    const el = node;
-    let lastScrollTop = el.scrollTop;
-    function onScroll() {
-      const prev = lastScrollTop;
-      const cur = el.scrollTop;
-      lastScrollTop = cur;
-      // Only consider scrolling DOWN. Prevents repeated triggers when the
-      // user sits at the bottom and the scroll event fires from layout
-      // shifts as new items append.
-      if (cur <= prev) return;
-      if (
-        el.scrollHeight - cur - el.clientHeight <
-        LOAD_MORE_THRESHOLD_PX
-      ) {
-        loadMoreRef.current();
-      }
-    }
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  const handleSearch = (value: string) => {
+    queryRef.current = value;
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      loadPage(value.trim(), 0);
+    }, 200);
+  };
 
   const starred = stocks.filter((s) => watchlistTickers.has(s.ticker));
   const rest = stocks.filter((s) => !watchlistTickers.has(s.ticker));
@@ -217,9 +181,19 @@ export function CommandMenu() {
 
   return (
     <>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
-        <MagnifyingGlass />
-      </Button>
+      {trigger === "sidebar" ? (
+        <SidebarMenuButton
+          onClick={() => setOpen(true)}
+          tooltip="Search"
+        >
+          <MagnifyingGlass />
+          <span>Search stocks, pages...</span>
+        </SidebarMenuButton>
+      ) : (
+        <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
+          <MagnifyingGlass />
+        </Button>
+      )}
 
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandDialogPopup>
@@ -228,9 +202,8 @@ export function CommandMenu() {
               placeholder="Search stocks, pages..."
               onChange={(e) => handleSearch(e.target.value)}
             />
-            <CommandPanel>
               <CommandEmpty>No results found.</CommandEmpty>
-              <CommandList viewportRef={attachViewport}>
+              <CommandList>
                 {(group: Group) => (
                   <Fragment key={group.value}>
                     <CommandGroup items={group.items}>
@@ -298,7 +271,6 @@ export function CommandMenu() {
                   </Fragment>
                 )}
               </CommandList>
-            </CommandPanel>
             <CommandFooter>
               <span className="flex items-center gap-1.5">
                 Navigate with

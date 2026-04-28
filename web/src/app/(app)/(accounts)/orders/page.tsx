@@ -57,7 +57,7 @@ export default async function OrdersPage({ searchParams }: Props) {
         <p className="text-sm text-muted-foreground">
           {scopedAccount
             ? `Orders for ${scopedAccount.name}.`
-            : "Your pending, filled, and cancelled orders across all accounts."}
+            : "Pending, filled, and cancelled orders across all accounts."}
         </p>
       </div>
       <OrdersTable

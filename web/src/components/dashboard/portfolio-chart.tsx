@@ -201,11 +201,23 @@ export const PortfolioChart = ({
 
   return (
     <div className="rounded-2xl bg-accent p-6">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
-        <h2 className="text-lg font-semibold">
-          Portfolio value · {periodLabel(days)}
-        </h2>
-        <div className="flex items-center gap-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold">Portfolio value</h2>
+          <Tabs
+            value={String(days)}
+            onValueChange={(v) => handlePeriodChange(Number(v))}
+          >
+            <TabsList variant="segmented" className="w-full sm:w-fit">
+              {PERIODS.map((p) => (
+                <TabsTab key={p.days} value={String(p.days)} className="flex-1 px-3 sm:flex-none">
+                  {p.label}
+                </TabsTab>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+        <div className="flex items-center gap-4 sm:pt-0.5">
           <div className="flex items-baseline gap-3 text-sm tabular-nums">
             <span className="font-medium">{fmtUsdMinor(last)}</span>
             <span className={toneClass}>
@@ -214,18 +226,6 @@ export const PortfolioChart = ({
               {pct.toFixed(2)}%)
             </span>
           </div>
-          <Tabs
-            value={String(days)}
-            onValueChange={(v) => handlePeriodChange(Number(v))}
-          >
-            <TabsList>
-              {PERIODS.map((p) => (
-                <TabsTab key={p.days} value={String(p.days)}>
-                  {p.label}
-                </TabsTab>
-              ))}
-            </TabsList>
-          </Tabs>
         </div>
       </div>
       <div

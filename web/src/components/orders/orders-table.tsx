@@ -3,7 +3,7 @@
 import { useState, useTransition, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowClockwise, CaretRight, Receipt } from "@phosphor-icons/react";
+import { CaretRight, Receipt } from "@phosphor-icons/react";
 import {
   Table,
   TableBody,
@@ -16,7 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
-  EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   EmptyDescription,
@@ -30,6 +29,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { toastManager } from "@/components/ui/toast";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { OrderStatusBadge } from "./order-status-badge";
 import { cancelOrder, type Order, type OrderStatus } from "@/app/actions/orders";
@@ -124,15 +124,13 @@ export const OrdersTable = ({
     return (
       <div className="rounded-2xl bg-accent p-6">
         <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Receipt />
-            </EmptyMedia>
-            <EmptyTitle>No orders yet</EmptyTitle>
-            <EmptyDescription>
-              Place a buy or sell order from any stock page and it will appear here.
-            </EmptyDescription>
-          </EmptyHeader>
+          <EmptyMedia>
+            <Receipt className="size-6 text-muted-foreground" />
+          </EmptyMedia>
+          <EmptyTitle>No orders yet</EmptyTitle>
+          <EmptyDescription>
+            Place a buy or sell order from any stock page and it will appear here.
+          </EmptyDescription>
         </Empty>
       </div>
     );
@@ -223,9 +221,8 @@ export const OrdersTable = ({
                             variant={
                               accountsById[o.trading_account_id]?.type === "crypto"
                                 ? "warning"
-                                : "secondary"
+                                : "default"
                             }
-                            size="sm"
                           >
                             {accountsById[o.trading_account_id]?.type === "crypto"
                               ? "Crypto"
@@ -245,8 +242,7 @@ export const OrdersTable = ({
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={o.side === "buy" ? "success" : "error"}
-                        size="sm"
+                        variant={o.side === "buy" ? "success" : "destructive"}
                       >
                         {o.side.toUpperCase()}
                       </Badge>
@@ -299,7 +295,7 @@ export const OrdersTable = ({
                           {CANCELLABLE.has(o.status) && (
                             <Button
                               type="button"
-                              variant="destructive-outline"
+                              variant="outline"
                               size="sm"
                               disabled={cancellingId === o.id}
                               onClick={(e) => {
@@ -307,10 +303,10 @@ export const OrdersTable = ({
                                 handleCancel(o.id, o.ticker);
                               }}
                               aria-label={`Cancel ${o.ticker} order`}
-                              className="h-7 px-3 text-xs"
+                              className="h-7 px-3 text-destructive text-xs hover:text-destructive"
                             >
                               {cancellingId === o.id && (
-                                <ArrowClockwise className="size-3 animate-spin" />
+                                <Spinner className="size-3" />
                               )}
                               Cancel order
                             </Button>
