@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { Spinner } from "@/components/ui/spinner";
 import {
   CandlestickSeries,
   ColorType,
@@ -158,7 +159,9 @@ export function StockChart({
   const seriesRef = useRef<ReturnType<IChartApi["addSeries"]> | null>(null);
   const [bars, setBars] = useState<HistoricalBar[]>([]);
   const [timeframe, setTimeframe] = useState<TimeframeValue>("15Min");
+  const [loadingBars, setLoadingBars] = useState(false);
   const currentCandleRef = useRef<CandlestickData | null>(null);
+  const requestIdRef = useRef(0);
 
   // Falling back to the page-load REST snapshot lets the in-progress
   // candle render at the same price the header shows from the very
@@ -179,6 +182,8 @@ export function StockChart({
   }, [bars]);
 
   useEffect(() => {
+    const requestId = ++requestIdRef.current;
+    setLoadingBars(true);
     async function fetchBars() {
       const startDate = timeframeToStartDate(timeframe);
       const endDate = new Date(); // current date
@@ -194,10 +199,22 @@ export function StockChart({
         throw new Error(result.error);
       }
 
+      if (requestId !== requestIdRef.current) return;
+
       setBars(result.data.bars);
       currentCandleRef.current = null;
     }
-    fetchBars();
+    fetchBars()
+      .catch((error) => {
+        if (requestId === requestIdRef.current) {
+          console.error("Failed to load historical bars", error);
+        }
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) {
+          setLoadingBars(false);
+        }
+      });
   }, [ticker, timeframe]);
 
   useEffect(() => {
@@ -228,6 +245,8 @@ export function StockChart({
       upColor: "#16a34a",
       downColor: "#dc2626",
       borderVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
       wickUpColor: "#16a34a",
       wickDownColor: "#dc2626",
     });
@@ -269,6 +288,7 @@ export function StockChart({
 
   useEffect(() => {
     if (!seriesRef.current) return;
+    if (loadingBars) return;
     // Quote ticks (bid/ask updates) don't carry a last-trade price, so they
     // shouldn't move the candle. Skip until a trade tick lands.
     if (quote.price == null) return;
@@ -337,14 +357,17 @@ export function StockChart({
       return; // don't try to update a candle older than historical data
     }
     seriesRef.current.update(currentCandleRef.current);
-  }, [quote, bars, timeframe]);
+  }, [quote, bars, timeframe, loadingBars]);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="max-w-full">
         <Tabs
           value={timeframe}
-          onValueChange={(value) => setTimeframe(value as TimeframeValue)}
+          onValueChange={(value) => {
+            if (loadingBars) return;
+            setTimeframe(value as TimeframeValue);
+          }}
         >
           <TabsList
             variant="ghost"
@@ -355,6 +378,7 @@ export function StockChart({
               <TabsTab
                 key={option.value}
                 value={option.value}
+                disabled={loadingBars}
                 className="h-7 min-w-0 flex-[1_1_calc((100%-1.25rem)/6)] px-2 text-xs uppercase sm:h-7 lg:flex-1"
               >
                 {option.label}
@@ -364,7 +388,18 @@ export function StockChart({
         </Tabs>
       </div>
 
-      <div ref={chartContainerRef} className="h-[400px] w-full min-w-0" />
+      <div className="relative">
+        <div
+          ref={chartContainerRef}
+          className="h-[400px] w-full min-w-0 transition-opacity"
+          data-loading={loadingBars ? "" : undefined}
+        />
+        {loadingBars && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-lg bg-background/40 backdrop-blur-[1px]">
+            <Spinner className="size-5 text-muted-foreground" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
