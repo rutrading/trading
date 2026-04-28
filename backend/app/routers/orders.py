@@ -1,5 +1,6 @@
 """Order endpoints: place, list, get, and cancel orders."""
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
@@ -189,12 +190,19 @@ async def place_order(
     # timeout when the DB has fewer than ATR_PERIODS+1 daily bars cached for
     # the ticker — and that call has no dependency on the locked row state.
     # Holding FOR UPDATE through a 10s network call would freeze every other
-    # writer on the same trading account. DailyBar reads stay inline below;
-    # quote resolution goes through the shared cache (Redis-first).
+    # writer on the same trading account. The thread hop also keeps the
+    # blocking httpx.Client off the asyncio loop so REST handlers, the WS
+    # broadcast, and the quote-flush task aren't frozen for the duration.
+    # DailyBar reads stay inline below; quote resolution goes through the
+    # shared cache (Redis-first).
     needs_atr = payload.side == "buy" and (
         payload.order_type == "stop" or deferred_market
     )
-    pre_atr: Decimal | None = compute_atr(payload.ticker, db) if needs_atr else None
+    pre_atr: Decimal | None = (
+        await asyncio.to_thread(compute_atr, payload.ticker, db)
+        if needs_atr
+        else None
+    )
 
     # Lock the account row first, then run validation (which may acquire the
     # holding row lock for sells). Standardizing on account-first-then-holding
