@@ -4,7 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -13,6 +13,7 @@ from app.db.models import Quote, Symbol, User, WatchlistItem
 from app.db.redis import get_redis
 from app.schemas import (
     WatchlistItemResponse,
+    WatchlistMutationRequest,
     WatchlistMutationResponse,
     WatchlistQuoteResponse,
     WatchlistResponse,
@@ -187,10 +188,14 @@ async def list_watchlist(
 
 @router.post("/watchlist", response_model=WatchlistMutationResponse)
 def add_to_watchlist(
-    ticker: str = Query(..., min_length=1, max_length=16),
+    payload: WatchlistMutationRequest | None = Body(default=None),
+    ticker: str | None = Query(default=None, min_length=1, max_length=16),
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WatchlistMutationResponse:
+    ticker = ticker or (payload.ticker if payload else None)
+    if ticker is None:
+        raise HTTPException(status_code=422, detail="ticker is required")
     ticker = ticker.upper().strip()
 
     user_id = _ensure_user_row(db, user)
