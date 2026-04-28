@@ -1439,7 +1439,7 @@ class TestExecuteFillReleasesReservedQuantity:
         assert holding.reserved_quantity == Decimal("6")
 
     def test_market_sell_fill_does_not_touch_reserved_quantity(self):
-        # market sells never had a reservation — reserved_quantity must stay unchanged
+        # sync market sells never had a reservation — reserved_quantity must stay unchanged
         account = make_account(balance="10000.00")
         order = make_order(side="sell", order_type="market", quantity="5")
         holding = make_holding(quantity="10", reserved_quantity="5")
@@ -1448,6 +1448,18 @@ class TestExecuteFillReleasesReservedQuantity:
         execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("5"))
 
         assert holding.reserved_quantity == Decimal("5")
+
+    def test_deferred_market_sell_fill_releases_reserved_quantity(self):
+        # deferred-market (market + opg/cls) sells DO reserve at placement
+        account = make_account(balance="10000.00")
+        order = make_order(side="sell", order_type="market", quantity="10")
+        order.time_in_force = "opg"
+        holding = make_holding(quantity="10", reserved_quantity="10")
+        db = make_db(holding=holding, account=account)
+
+        execute_fill(db=db, order=order, account=account, fill_price=Decimal("150.00"), fill_quantity=Decimal("10"))
+
+        assert holding.reserved_quantity == Decimal("0")
 
     def test_reserved_quantity_cannot_go_below_zero(self):
         account = make_account(balance="10000.00")

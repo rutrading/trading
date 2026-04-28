@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
-from app.db import AccountMember, TradingAccount, get_db
+from app.db import AccountMember, Order, TradingAccount, get_db
 
 
 def _load_trading_account(db: Session, trading_account_id: int) -> TradingAccount:
@@ -58,3 +58,19 @@ def get_trading_account(
         )
 
     return account
+
+
+def assert_owns_order(order: Order, user: dict, db: Session) -> TradingAccount:
+    """Membership check that maps 403 → 404 so order IDs cannot be enumerated
+    across tenants by watching the 403-vs-404 split.
+
+    Returns the trading account on success.
+    """
+    try:
+        return get_trading_account(
+            trading_account_id=order.trading_account_id, user=user, db=db
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            raise HTTPException(status_code=404, detail="Order not found") from exc
+        raise

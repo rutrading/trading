@@ -171,3 +171,24 @@ async def resolve_quote(ticker: str, db: Session | None = None) -> QuoteResponse
         cache_layer="alpaca_rest",
         age_seconds=0,
     )
+
+
+async def resolve_quote_or_400(
+    ticker: str,
+    db: Session | None = None,
+    *,
+    require_positive: bool = False,
+) -> QuoteResponse:
+    """resolve_quote with the standard "No current price available..." 400.
+
+    Raises HTTPException(400) on resolution failure, missing price, or
+    (when require_positive=True) non-positive price.
+    """
+    detail = f"No current price available for {ticker}. Try again in a moment."
+    try:
+        quote = await resolve_quote(ticker, db=db)
+    except HTTPException as exc:
+        raise HTTPException(status_code=400, detail=detail) from exc
+    if quote.price is None or (require_positive and quote.price <= 0):
+        raise HTTPException(status_code=400, detail=detail)
+    return quote
