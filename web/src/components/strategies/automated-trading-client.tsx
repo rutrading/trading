@@ -41,10 +41,7 @@ import { SymbolSearch } from "@/components/symbol-search";
 import { useStrategyStream } from "@/hooks/use-strategy-stream";
 import { toast } from "@/lib/toasts";
 
-type Account = { id: number; name: string };
-
 type Props = {
-  accounts: Account[];
   initialAccountId: number | null;
   initialStrategies: Strategy[];
   initialRuns: StrategyRun[];
@@ -138,7 +135,6 @@ function TemplateSelect({
 }
 
 export function AutomatedTradingClient({
-  accounts,
   initialAccountId,
   initialStrategies,
   initialRuns,
@@ -148,7 +144,7 @@ export function AutomatedTradingClient({
   defaultSection = "overview",
 }: Props) {
   const initialTemplate = initialCatalog[0];
-  const [accountId, setAccountId] = useState<number | null>(initialAccountId);
+  const [accountId] = useState<number | null>(initialAccountId);
   const [strategies, setStrategies] = useState<Strategy[]>(initialStrategies);
   const [runs, setRuns] = useState<StrategyRun[]>(initialRuns);
   const [snapshot, setSnapshot] = useState<StrategySnapshot | null>(initialSnapshot);
@@ -185,11 +181,6 @@ export function AutomatedTradingClient({
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [pending, startTransition] = useTransition();
 
-  const accountLabel = useMemo(() => {
-    if (!accountId) return "No account";
-    return accounts.find((a) => a.id === accountId)?.name ?? `Account ${accountId}`;
-  }, [accountId, accounts]);
-
   const template = useMemo(
     () => catalog.find((item) => item.id === selectedTemplate) ?? catalog[0],
     [catalog, selectedTemplate],
@@ -213,7 +204,7 @@ export function AutomatedTradingClient({
     );
   }
 
-  const streamStatus = useStrategyStream(accountId, (nextSnapshot) => {
+  useStrategyStream(accountId, (nextSnapshot) => {
     setSnapshot(nextSnapshot);
     setStrategies(nextSnapshot.strategies);
     setRuns(nextSnapshot.runs);
@@ -421,24 +412,6 @@ export function AutomatedTradingClient({
           <p className="text-sm text-muted-foreground">
             Strategy catalog, live monitoring, risk controls, and backtesting in one place.
           </p>
-        </div>
-        <div className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2 text-sm">
-          <Label htmlFor="account" className="text-xs uppercase text-muted-foreground">Account</Label>
-          <select
-            id="account"
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-            value={accountId ?? ""}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              setAccountId(Number.isFinite(next) ? next : null);
-            }}
-          >
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

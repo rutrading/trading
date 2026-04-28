@@ -7,14 +7,19 @@ import {
 } from "@/app/actions/strategies";
 import { getHoldings, getPortfolioTimeSeries } from "@/app/actions/portfolio";
 
-export async function loadAutomatedTradingData() {
+export async function loadAutomatedTradingData(accountParam?: string) {
   const accounts = await getAccounts();
   const investmentAccounts = accounts
     .map((member) => member.tradingAccount)
     .filter((account) => account.type === "investment")
     .map((account) => ({ id: account.id, name: account.name }));
 
-  const initialAccountId = investmentAccounts[0]?.id ?? null;
+  const requestedAccountId = accountParam ? Number(accountParam) || undefined : undefined;
+  const investmentAccountIds = investmentAccounts.map((account) => account.id);
+  const initialAccountId =
+    requestedAccountId && investmentAccountIds.includes(requestedAccountId)
+      ? requestedAccountId
+      : null;
   if (!initialAccountId) {
     return {
       accounts: investmentAccounts,
