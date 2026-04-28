@@ -841,6 +841,79 @@ class TestCancelOrderReservationRelease:
         assert response.status_code == 400
         assert "filled" in response.json()["detail"].lower()
 
+    def test_cancel_409_when_order_filled_after_lock_acquisition(
+        self, session_factory, monkeypatch
+    ):
+        """If an order's status flips to 'filled' between the unlocked
+        membership read and the FOR UPDATE re-fetch, cancel returns 409
+        — the inner status guard at orders.py:cancel_order. The 409
+        distinguishes 'lost the race to a fill' from 'never cancellable'.
+        """
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(
+                db,
+                "user-a",
+                balance="10000",
+                reserved_balance="1000",
+            )
+            order = seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="buy",
+                order_type="limit",
+                limit_price="100",
+                reserved_per_share="100",
+                quantity="10",
+                filled_quantity="0",
+                status="open",
+            )
+            account_id = account.id
+            order_id = order.id
+
+        # Wedge a concurrent commit between the unlocked membership read and
+        # the FOR UPDATE re-fetch. We patch _get_order_or_404 (the unlocked
+        # read) to return a detached object whose in-memory status='open'
+        # passes the outer guard, then commit a real status='filled' from a
+        # second session so the FOR UPDATE re-fetch loads the new state from
+        # the DB. The detached object means the request session's identity
+        # map is empty for this id, so the inner SELECT issues fresh SQL.
+        from app.db.models import Order
+        from app.routers import orders as orders_module
+
+        def racy_get_order(_db, oid):
+            with session_factory() as other:
+                target = other.query(Order).filter(Order.id == oid).first()
+                target.status = "filled"
+                target.filled_quantity = target.quantity
+                other.commit()
+            with session_factory() as snapshot_db:
+                snapshot = snapshot_db.query(Order).filter(Order.id == oid).first()
+                snapshot_db.expunge(snapshot)
+                snapshot.status = "open"
+                return snapshot
+
+        monkeypatch.setattr(orders_module, "_get_order_or_404", racy_get_order)
+
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(f"/api/orders/{order_id}/cancel")
+
+        assert response.status_code == 409, response.text
+        assert "filled" in response.json()["detail"].lower()
+
+        # The order's terminal state remains filled (the cancel did NOT
+        # overwrite it) and the reservation was NOT released (the executor's
+        # fill path owns reservation accounting on the racing side).
+        with session_factory() as db:
+            order = db.query(Order).filter(Order.id == order_id).first()
+            assert order.status == "filled"
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            assert account.reserved_balance == Decimal("1000")
+
 
 # ---------------------------------------------------------------------------
 # _mock_order_response parity check (Nit 15)
