@@ -1,46 +1,88 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowUpRight } from "@phosphor-icons/react/ssr";
+import { ArrowUpRight } from "@phosphor-icons/react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardPanel,
+  CardTitle,
+} from "@/components/ui/card";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import type { NewsArticle } from "@/app/actions/news";
 
 export const NewsCard = ({ item }: { item: NewsArticle }) => {
+  const symbols = item.symbols ?? [];
+  const visibleSymbols = symbols.slice(0, 3);
+  const hiddenSymbols = symbols.slice(visibleSymbols.length);
+
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="p-2">
-        <div className="flex h-40 w-full items-center justify-center rounded-xl bg-muted">
-          <span className="text-sm text-muted-foreground">No image available</span>
-        </div>
-      </div>
-      <div className="flex flex-1 flex-col p-4">
-        <div className="mb-1 flex flex-wrap items-center gap-1">
-          {item.symbols?.length ? (
-            item.symbols.map((symbol, index) => (
-              <Link key={`${symbol}-${index}`} href={`/news/${symbol}`}>
-                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[11px] font-semibold tracking-wide text-foreground transition-colors hover:bg-foreground/20">
-                  {symbol}
-                </span>
-              </Link>
-            ))
-          ) : null}
-        </div>
-        <div className="mb-1 flex items-center gap-2">
-          {item.source && (
-            <span className="text-xs text-muted-foreground">{item.source}</span>
+    <Card className="overflow-visible">
+      <CardHeader className="p-4 pb-3">
+        <div className="mb-1 flex min-h-5 flex-wrap items-center gap-1 overflow-visible">
+          {visibleSymbols.length ? (
+            <>
+              {visibleSymbols.map((symbol) => (
+                <Link key={symbol} href={`/news/${symbol}`} className="inline-flex">
+                  <Badge variant="default" className="text-[11px] tracking-wide transition-transform hover:-translate-y-px">
+                    {symbol}
+                  </Badge>
+                </Link>
+              ))}
+              {hiddenSymbols.length > 0 ? (
+                <Menu>
+                  <MenuTrigger
+                    openOnHover
+                    nativeButton={false}
+                    render={
+                      <Badge variant="default" className="inline-flex cursor-pointer text-[11px] tracking-wide transition-transform hover:-translate-y-px">
+                        +{hiddenSymbols.length}
+                      </Badge>
+                    }
+                  />
+                  <MenuPopup align="end" side="bottom" sideOffset={6} className="w-32">
+                    {hiddenSymbols.map((symbol) => (
+                      <MenuItem key={symbol} render={<Link href={`/news/${symbol}`} />}>
+                        {symbol}
+                      </MenuItem>
+                    ))}
+                  </MenuPopup>
+                </Menu>
+              ) : null}
+            </>
+          ) : (
+            <Badge variant="default" className="text-[11px] tracking-wide opacity-72">
+              Market
+            </Badge>
           )}
         </div>
-        <h3 className="mb-1 text-sm font-semibold leading-snug">
+        <CardTitle className="text-sm leading-snug">
           {item.headline}
-        </h3>
-        <p className="mb-4 flex-1 text-xs leading-relaxed text-muted-foreground">
+        </CardTitle>
+        {item.source ? (
+          <CardAction>
+            <span className="text-xs text-muted-foreground">{item.source}</span>
+          </CardAction>
+        ) : null}
+      </CardHeader>
+      <CardPanel className="flex flex-1 flex-col px-4 pb-0 pt-0">
+        <CardDescription className="line-clamp-4 text-xs leading-relaxed">
           {item.summary}
-        </p>
+        </CardDescription>
+      </CardPanel>
+      <CardFooter className="p-4 pt-4">
         <a href={item.url} target="_blank" rel="noopener noreferrer">
           <Button variant="outline" size="sm" className="w-fit">
             Read Article
             <ArrowUpRight size={14} />
           </Button>
         </a>
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 };

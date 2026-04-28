@@ -70,6 +70,7 @@ export async function getAllOrders(
   page = 1,
   perPage = 25,
   status?: OrderStatus | OrderStatus[],
+  ticker?: string,
 ): Promise<{ orders: Order[]; total: number; page: number; perPage: number }> {
   // Backend caps per_page at 100. Fetch all pages per account, merge, paginate.
   const BACKEND_MAX = 100;
@@ -78,7 +79,7 @@ export async function getAllOrders(
       const all: Order[] = [];
       let p = 1;
       while (true) {
-        const res = await getOrders(id, { page: p, perPage: BACKEND_MAX, status });
+        const res = await getOrders(id, { page: p, perPage: BACKEND_MAX, status, ticker });
         if (!res.ok) break;
         all.push(...res.data.orders);
         if (all.length >= res.data.total || res.data.orders.length === 0) break;

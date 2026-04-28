@@ -3,7 +3,6 @@ import { ListChecks } from "@phosphor-icons/react/ssr";
 import type { Order } from "@/app/actions/orders";
 import {
   Empty,
-  EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   EmptyDescription,
@@ -31,15 +30,13 @@ export const OpenOrdersList = ({
   if (orders.length === 0) {
     return (
       <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <ListChecks />
-          </EmptyMedia>
-          <EmptyTitle>No open orders</EmptyTitle>
-          <EmptyDescription>
-            Pending and working orders will show up here.
-          </EmptyDescription>
-        </EmptyHeader>
+        <EmptyMedia>
+          <ListChecks className="size-6 text-muted-foreground" />
+        </EmptyMedia>
+        <EmptyTitle>No open orders</EmptyTitle>
+        <EmptyDescription>
+          Pending and working orders will show up here.
+        </EmptyDescription>
       </Empty>
     );
   }

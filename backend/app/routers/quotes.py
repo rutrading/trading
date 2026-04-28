@@ -47,6 +47,15 @@ class BulkQuotesResponse(BaseModel):
     quotes: dict[str, QuoteResponse]
 
 
+class QuoteabilityItem(BaseModel):
+    quoteable: bool
+    reason: str | None = None
+
+
+class QuoteabilityResponse(BaseModel):
+    symbols: dict[str, QuoteabilityItem]
+
+
 @router.get("/quotes", response_model=BulkQuotesResponse)
 async def get_quotes(
     tickers: str = Query(..., min_length=1),
@@ -82,3 +91,54 @@ async def get_quotes(
 
     pairs = await asyncio.gather(*(_safe_resolve(t) for t in unique))
     return BulkQuotesResponse(quotes={t: q for t, q in pairs if q is not None})
+
+
+@router.get("/quoteability", response_model=QuoteabilityResponse)
+async def get_quoteability(
+    tickers: str = Query(..., min_length=1),
+    user: dict = Depends(get_current_user),
+) -> QuoteabilityResponse:
+    """Check whether symbols can currently be priced by the app's Alpaca feed.
+
+    This is intentionally softer than `/quote`: each symbol gets its own result
+    so trade search can filter unpriceable symbols like unsupported crypto pairs
+    without turning one Alpaca 401/404 into a failed whole request.
+    """
+    raw = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+    if not raw:
+        raise HTTPException(status_code=400, detail="At least one ticker is required")
+    seen: set[str] = set()
+    unique: list[str] = []
+    for t in raw:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    if len(unique) > _MAX_BULK_TICKERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum {_MAX_BULK_TICKERS} tickers per request",
+        )
+
+    async def _check(ticker: str) -> tuple[str, QuoteabilityItem]:
+        try:
+            quote = await resolve_quote(ticker)
+            if quote.price is None and quote.bid_price is None and quote.ask_price is None:
+                return ticker, QuoteabilityItem(
+                    quoteable=False,
+                    reason="No price data available",
+                )
+            return ticker, QuoteabilityItem(quoteable=True)
+        except HTTPException as exc:
+            logger.info(
+                "Quoteability: %s unavailable (%d %s)",
+                ticker,
+                exc.status_code,
+                exc.detail,
+            )
+            return ticker, QuoteabilityItem(
+                quoteable=False,
+                reason=str(exc.detail),
+            )
+
+    pairs = await asyncio.gather(*(_check(t) for t in unique))
+    return QuoteabilityResponse(symbols=dict(pairs))

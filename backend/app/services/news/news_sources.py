@@ -3,9 +3,14 @@ import httpx
 import pandas as pd
 from bs4 import BeautifulSoup
 import json
-import spacy
+import re
 
 class News_Source:
+    _EXPLICIT_TICKER_PATTERNS = (
+        re.compile(r"(?<![\w$])\$(?P<ticker>[A-Z][A-Z0-9.-]{0,9})\b"),
+        re.compile(r"\b(?:NASDAQ|NYSE|AMEX|ARCA|OTC|TSX):(?P<ticker>[A-Z][A-Z0-9.-]{0,9})\b"),
+        re.compile(r"(?<![A-Z0-9])\((?P<ticker>[A-Z][A-Z0-9.-]{0,9})\)(?![A-Z0-9])"),
+    )
 
     def __init__(self, feed_url: str, source_name: str = "General"):
         self.feed_url = feed_url
@@ -118,31 +123,22 @@ class News_Source:
     async def nlp_get_stock_tickers(article_text: str) -> list:
         if News_Source.stock_map is None:
             await News_Source.get_stock_map()
-        nlp = spacy.load("en_core_web_sm")
-        
-        doc = nlp(article_text)
+        if not article_text:
+            return []
 
-        blacklist = [
-            "AI",
-            "InvestingPro",
-            "InvestingPro Tips",
-            "Overvalued"
-        ]
+        valid_symbols = {
+            stock.get("symbol", "").upper()
+            for stock in News_Source.stock_map
+            if stock.get("symbol")
+        }
+        counts = {}
+        for pattern in News_Source._EXPLICIT_TICKER_PATTERNS:
+            for match in pattern.finditer(article_text):
+                ticker = match.group("ticker").upper().replace(".", "-")
+                if ticker in valid_symbols:
+                    counts[ticker] = counts.get(ticker, 0) + 1
 
-        companies = []
-        tickers = []
-        for ent in doc.ents:
-            if ent.label_ == "ORG":
-                if ent.text not in blacklist:
-                    companies.append(ent.text)
-        for company in companies:
-            for stock in News_Source.stock_map:
-                if company in stock["name"]:
-                    symbol = stock["symbol"]
-                    if symbol not in tickers:
-                        tickers.append(symbol)
-                    
-        return tickers
+        return sorted(counts, key=lambda ticker: (-counts[ticker], ticker))
 
 class News_Source_NBC(News_Source):
     

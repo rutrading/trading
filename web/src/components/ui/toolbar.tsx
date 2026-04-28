@@ -1,14 +1,18 @@
 "use client";
 
 import { Toolbar as ToolbarPrimitive } from "@base-ui/react/toolbar";
-
+import type React from "react";
 import { cn } from "@/lib/utils";
 
-function Toolbar({ className, ...props }: ToolbarPrimitive.Root.Props) {
+export function Toolbar({
+  className,
+  ...props
+}: ToolbarPrimitive.Root.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Root
       className={cn(
-        "relative flex gap-2 rounded-xl border bg-card not-dark:bg-clip-padding p-1 text-card-foreground",
+        "relative flex gap-2 rounded-xl bg-popover p-1 text-popover-foreground",
+        "shadow-[0_2px_8px_rgb(0_0_0/0.06),0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-[0_2px_8px_rgb(0_0_0/0.3),0_1px_2px_rgb(0_0_0/0.2),0_0_0_1px_rgb(255_255_255/0.06)]",
         className,
       )}
       data-slot="toolbar"
@@ -17,7 +21,10 @@ function Toolbar({ className, ...props }: ToolbarPrimitive.Root.Props) {
   );
 }
 
-function ToolbarButton({ className, ...props }: ToolbarPrimitive.Button.Props) {
+export function ToolbarButton({
+  className,
+  ...props
+}: ToolbarPrimitive.Button.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Button
       className={cn(className)}
@@ -27,7 +34,10 @@ function ToolbarButton({ className, ...props }: ToolbarPrimitive.Button.Props) {
   );
 }
 
-function ToolbarLink({ className, ...props }: ToolbarPrimitive.Link.Props) {
+export function ToolbarLink({
+  className,
+  ...props
+}: ToolbarPrimitive.Link.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Link
       className={cn(className)}
@@ -37,7 +47,10 @@ function ToolbarLink({ className, ...props }: ToolbarPrimitive.Link.Props) {
   );
 }
 
-function ToolbarInput({ className, ...props }: ToolbarPrimitive.Input.Props) {
+export function ToolbarInput({
+  className,
+  ...props
+}: ToolbarPrimitive.Input.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Input
       className={cn(className)}
@@ -47,7 +60,10 @@ function ToolbarInput({ className, ...props }: ToolbarPrimitive.Input.Props) {
   );
 }
 
-function ToolbarGroup({ className, ...props }: ToolbarPrimitive.Group.Props) {
+export function ToolbarGroup({
+  className,
+  ...props
+}: ToolbarPrimitive.Group.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Group
       className={cn("flex items-center gap-1", className)}
@@ -57,10 +73,10 @@ function ToolbarGroup({ className, ...props }: ToolbarPrimitive.Group.Props) {
   );
 }
 
-function ToolbarSeparator({
+export function ToolbarSeparator({
   className,
   ...props
-}: ToolbarPrimitive.Separator.Props) {
+}: ToolbarPrimitive.Separator.Props): React.ReactElement {
   return (
     <ToolbarPrimitive.Separator
       className={cn(
@@ -73,11 +89,4 @@ function ToolbarSeparator({
   );
 }
 
-export {
-  Toolbar,
-  ToolbarGroup,
-  ToolbarSeparator,
-  ToolbarButton,
-  ToolbarLink,
-  ToolbarInput,
-};
+export { ToolbarPrimitive };

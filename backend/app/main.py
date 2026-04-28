@@ -174,8 +174,10 @@ async def _log_alpaca_account_info() -> None:
 
 
 manager = ConnectionManager()
-feed: BaseFeed
-if _has_alpaca_credentials():
+feed: BaseFeed | None
+if config.market_data_transport.lower() == "rest":
+    feed = None
+elif _has_alpaca_credentials():
     feed = AlpacaFeed(manager, config)
 else:
     feed = MockFeed(manager)
@@ -187,14 +189,17 @@ async def lifespan(app: FastAPI):
     logger.info("Redis connected")
 
     set_manager(manager)
-    if _has_alpaca_credentials():
+    if feed is None:
+        logger.info("Market-data WebSocket feed disabled; REST quote endpoints remain active.")
+    elif _has_alpaca_credentials():
         await _log_alpaca_account_info()
     else:
         logger.warning(
             "Alpaca credentials not set, using mock market-data feed for local development."
         )
 
-    await feed.start()
+    if feed is not None:
+        await feed.start()
 
     symbol_sync_task = asyncio.create_task(symbols.run_symbol_sync_loop())
     logger.info("Symbol sync task started")
@@ -208,7 +213,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    await feed.stop()
+    if feed is not None:
+        await feed.stop()
     symbol_sync_task.cancel()
     flush_task.cancel()
     executor_task.cancel()

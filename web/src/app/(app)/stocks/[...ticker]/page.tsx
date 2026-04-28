@@ -5,10 +5,13 @@ import { StockChart } from "@/components/StockChart";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form";
 import { CompanyProfileCard } from "@/components/stocks/company-profile";
+import { PositionSummary } from "@/components/stocks/position-summary";
 import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
 import { getAccounts } from "@/app/actions/auth";
 import { getQuote } from "@/app/actions/quotes";
 import { getWatchlist } from "@/app/actions/watchlist";
+import { getAllHoldings } from "@/app/actions/portfolio";
+import { getAllOrders, type OrderStatus } from "@/app/actions/orders";
 import { STOCKS } from "@/components/stocks/stock-data";
 import { isUSMarketOpen } from "@/lib/market-hours";
 import {
@@ -56,6 +59,16 @@ export default async function StockPage({ params }: Props) {
     type: m.tradingAccount.type as BrokerageAccountType,
     balance: m.tradingAccount.balance,
   }));
+  const accountIds = accounts.map((account) => account.id);
+  const OPEN_STATUSES: OrderStatus[] = ["pending", "open", "partially_filled"];
+  const [{ holdings }, openOrderPage] = await Promise.all([
+    getAllHoldings(accountIds),
+    getAllOrders(accountIds, 1, 100, OPEN_STATUSES, symbol),
+  ]);
+  const stockHoldings = holdings.filter((holding) => holding.ticker === symbol);
+  const accountsById = Object.fromEntries(
+    accounts.map((account) => [account.id, { name: account.name }]),
+  );
 
   const stock = STOCKS[symbol] ?? {
     name: dbSymbol?.name ?? symbol,
@@ -88,26 +101,25 @@ export default async function StockPage({ params }: Props) {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      <div className="min-w-0">
         <StockHeader
           ticker={symbol}
           stock={stock}
           initialQuote={quoteRes.ok ? quoteRes.data : null}
           watched={watched}
         />
-        <div className="rounded-2xl bg-accent p-6">
-          <h2 className="mb-4 text-sm font-medium text-muted-foreground">Price Chart</h2>
-          <div className="rounded-xl bg-card p-4">
-            <StockChart
-              ticker={symbol}
-              initialQuote={quoteRes.ok ? quoteRes.data : null}
-            />
-          </div>
-        </div>
-        <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
       </div>
-      <div className="space-y-6">
+      <div className="min-w-0 rounded-2xl bg-accent p-6">
+        <h2 className="mb-4 text-sm font-medium text-muted-foreground">Price Chart</h2>
+        <div className="min-w-0 rounded-xl bg-card p-4">
+          <StockChart
+            ticker={symbol}
+            initialQuote={quoteRes.ok ? quoteRes.data : null}
+          />
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
         <OrderForm
           ticker={symbol}
           price={stock.price}
@@ -115,8 +127,16 @@ export default async function StockPage({ params }: Props) {
           accounts={accounts}
           marketOpen={isUSMarketOpen()}
         />
-        <CompanyProfileCard ticker={symbol} company={company} />
+        <PositionSummary
+          ticker={symbol}
+          holdings={stockHoldings}
+          openOrders={openOrderPage.orders}
+          accountsById={accountsById}
+          price={stock.price}
+        />
       </div>
+      <CompanyProfileCard ticker={symbol} company={company} />
+      <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
     </div>
   );
 }

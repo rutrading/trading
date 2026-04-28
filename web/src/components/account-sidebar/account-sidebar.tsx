@@ -150,7 +150,7 @@ function Section({
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{a.name}</span>
                   {a.isJoint && (
-                    <Badge variant="outline" size="sm">
+                    <Badge variant="default">
                       Joint
                     </Badge>
                   )}

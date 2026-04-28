@@ -6,11 +6,11 @@ import { getAllHoldings } from "@/app/actions/portfolio";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
-  EmptyHeader,
   EmptyMedia,
   EmptyTitle,
   EmptyDescription,
 } from "@/components/ui/empty";
+import { PageHeader } from "@/components/ui/page";
 import { Wallet } from "@phosphor-icons/react/ssr";
 import { TradeForm, type TradeAccount } from "@/components/trade/trade-form";
 import { isUSMarketOpen } from "@/lib/market-hours";
@@ -42,16 +42,13 @@ export default async function TradePage({ searchParams }: Props) {
     return (
       <div className="rounded-2xl bg-accent p-6">
         <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Wallet />
-            </EmptyMedia>
-            <EmptyTitle>No trading accounts yet</EmptyTitle>
-            <EmptyDescription>
-              You need at least one trading account before you can place
-              orders. Create one in onboarding or settings.
-            </EmptyDescription>
-          </EmptyHeader>
+          <EmptyMedia>
+            <Wallet className="size-6 text-muted-foreground" />
+          </EmptyMedia>
+          <EmptyTitle>No trading accounts yet</EmptyTitle>
+          <EmptyDescription>
+            You need at least one trading account before you can place orders.
+          </EmptyDescription>
           <Button variant="outline" render={<Link href="/onboarding" />}>
             Go to onboarding
           </Button>
@@ -74,6 +71,32 @@ export default async function TradePage({ searchParams }: Props) {
   const initialTicker = tickerParam
     ? tickerParam.toUpperCase()
     : undefined;
+
+  if (!initialAccountId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader divider={false} className="h-auto px-0 pb-2">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Trade</h1>
+            <p className="text-sm text-muted-foreground">
+              Select an account from the sidebar before placing an order.
+            </p>
+          </div>
+        </PageHeader>
+        <div className="rounded-2xl bg-accent p-6">
+          <Empty>
+            <EmptyMedia>
+              <Wallet className="size-6 text-muted-foreground" />
+            </EmptyMedia>
+            <EmptyTitle>Select an account</EmptyTitle>
+            <EmptyDescription>
+              Choose a trading account from the sidebar to continue.
+            </EmptyDescription>
+          </Empty>
+        </div>
+      </div>
+    );
+  }
 
   const { holdings } = await getAllHoldings(accounts.map((a) => a.id));
   const holdingsByAccount: Record<number, Record<string, string>> = {};

@@ -1,12 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowClockwise, Wallet } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
+import { Wallet } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+  NumberFieldRow,
+} from "@/components/ui/number-field";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -19,6 +28,7 @@ import { toastManager } from "@/components/ui/toast";
 import { useQuote } from "@/components/ws-provider";
 import { placeOrder, type PlaceOrderInput } from "@/app/actions/orders";
 import { fmtPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { BrokerageAccountType } from "@/lib/accounts";
 
 export type OrderFormAccount = {
@@ -47,6 +57,7 @@ export const OrderForm = ({
   accounts: OrderFormAccount[];
   marketOpen: boolean;
 }) => {
+  const router = useRouter();
   // Only accounts of the matching type can trade this asset. Stocks need an
   // investment account; crypto needs a crypto account. Filtering server-side
   // would also work, but doing it here keeps the page contract simple
@@ -87,7 +98,8 @@ export const OrderForm = ({
   // ask them to use Limit/Stop or jump to the full form.
   const offHoursStockGuard = assetClass === "us_equity" && !marketOpen;
 
-  const submit = () => {
+  const submit = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!accountId) return;
     if (!(qty > 0)) {
       toastManager.add({
@@ -136,6 +148,7 @@ export const OrderForm = ({
         setQuantity("");
         setLimitPrice("");
         setStopPrice("");
+        router.refresh();
       } else {
         toastManager.add({
           title: "Order failed",
@@ -147,11 +160,11 @@ export const OrderForm = ({
   };
 
   return (
-    <div className="rounded-2xl bg-accent p-6">
+    <div className="rounded-2xl bg-accent p-4 sm:p-6">
       <h2 className="mb-4 text-sm font-medium text-muted-foreground">
         Place Order
       </h2>
-      <div className="space-y-4 rounded-xl bg-card p-4">
+      <Form className="space-y-4 rounded-xl bg-card p-3 sm:p-4" onSubmit={submit}>
         {noMatchingAccount ? (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <Wallet className="size-8 text-muted-foreground" />
@@ -169,14 +182,19 @@ export const OrderForm = ({
         ) : (
           <>
             {matchingAccounts.length > 1 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Account</Label>
+              <Field>
+                <FieldLabel>Account</FieldLabel>
                 <Select
                   value={accountId != null ? String(accountId) : ""}
                   onValueChange={(v) => setAccountId(Number(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) =>
+                        matchingAccounts.find((a) => String(a.id) === value)?.name ??
+                        "Select account"
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {matchingAccounts.map((a) => (
@@ -186,51 +204,48 @@ export const OrderForm = ({
                     ))}
                   </SelectPopup>
                 </Select>
-              </div>
+              </Field>
             )}
 
             <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
-              <button
+              <Button
                 type="button"
+                variant={side === "buy" ? "success" : "ghost"}
+                size="default"
                 onClick={() => setSide("buy")}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  side === "buy"
-                    ? "bg-emerald-500 text-white"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={cn(side !== "buy" && "shadow-none")}
               >
                 Buy
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant={side === "sell" ? "destructive" : "ghost"}
+                size="default"
                 onClick={() => setSide("sell")}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  side === "sell"
-                    ? "bg-red-500 text-white"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={cn(side !== "sell" && "shadow-none")}
               >
                 Sell
-              </button>
+              </Button>
             </div>
 
             <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
               {(["market", "limit", "stop"] as const).map((type) => {
                 const disabled = type === "market" && offHoursStockGuard;
                 return (
-                  <button
+                  <Button
                     key={type}
                     type="button"
+                    variant={orderType === type ? "secondary" : "ghost"}
+                    size="sm"
                     disabled={disabled}
                     onClick={() => setOrderType(type)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                      orderType === type
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
+                    className={cn(
+                      "capitalize",
+                      orderType !== type && "shadow-none",
+                    )}
                   >
                     {type}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -249,53 +264,70 @@ export const OrderForm = ({
             )}
 
             <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="qty" className="text-xs">
-                  Quantity
-                </Label>
-                <Input
+              <Field>
+                <FieldLabel>Quantity</FieldLabel>
+                <NumberField
                   id="qty"
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  step="any"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-              </div>
+                  min={0}
+                  step={1}
+                  smallStep={0.000001}
+                  value={quantity === "" ? null : Number(quantity)}
+                  onValueChange={(value) => setQuantity(value == null ? "" : String(value))}
+                >
+                  <NumberFieldRow>
+                    <NumberFieldDecrement />
+                    <NumberFieldGroup>
+                      <NumberFieldInput placeholder="0" />
+                    </NumberFieldGroup>
+                    <NumberFieldIncrement />
+                  </NumberFieldRow>
+                </NumberField>
+              </Field>
 
               {orderType === "limit" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="limit-price" className="text-xs">
-                    Limit Price
-                  </Label>
-                  <Input
+                <Field>
+                  <FieldLabel>Limit Price</FieldLabel>
+                  <NumberField
                     id="limit-price"
-                    type="number"
-                    placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
-                    min="0"
-                    step="any"
-                    value={limitPrice}
-                    onChange={(e) => setLimitPrice(e.target.value)}
-                  />
-                </div>
+                    min={0}
+                    step={0.01}
+                    value={limitPrice === "" ? null : Number(limitPrice)}
+                    onValueChange={(value) => setLimitPrice(value == null ? "" : String(value))}
+                  >
+                    <NumberFieldRow>
+                      <NumberFieldDecrement />
+                      <NumberFieldGroup>
+                      <NumberFieldInput
+                        placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
+                      />
+                      </NumberFieldGroup>
+                      <NumberFieldIncrement />
+                    </NumberFieldRow>
+                  </NumberField>
+                </Field>
               )}
 
               {orderType === "stop" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="stop-price" className="text-xs">
-                    Stop Price
-                  </Label>
-                  <Input
+                <Field>
+                  <FieldLabel>Stop Price</FieldLabel>
+                  <NumberField
                     id="stop-price"
-                    type="number"
-                    placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
-                    min="0"
-                    step="any"
-                    value={stopPrice}
-                    onChange={(e) => setStopPrice(e.target.value)}
-                  />
-                </div>
+                    min={0}
+                    step={0.01}
+                    value={stopPrice === "" ? null : Number(stopPrice)}
+                    onValueChange={(value) => setStopPrice(value == null ? "" : String(value))}
+                  >
+                    <NumberFieldRow>
+                      <NumberFieldDecrement />
+                      <NumberFieldGroup>
+                      <NumberFieldInput
+                        placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
+                      />
+                      </NumberFieldGroup>
+                      <NumberFieldIncrement />
+                    </NumberFieldRow>
+                  </NumberField>
+                </Field>
               )}
             </div>
 
@@ -317,18 +349,17 @@ export const OrderForm = ({
             </div>
 
             <Button
-              type="button"
+              type="submit"
               className="w-full"
-              variant={side === "buy" ? "default" : "destructive"}
+              variant={side === "buy" ? "success" : "destructive"}
               disabled={pending || (orderType === "market" && offHoursStockGuard)}
-              onClick={submit}
+              loading={pending}
             >
-              {pending && <ArrowClockwise className="size-4 animate-spin" />}
               {side === "buy" ? "Buy" : "Sell"} {ticker}
             </Button>
           </>
         )}
-      </div>
+      </Form>
     </div>
   );
 };

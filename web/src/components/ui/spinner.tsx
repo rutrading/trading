@@ -1,12 +1,13 @@
-import { SpinnerGapIcon } from "@phosphor-icons/react";
+import { Loader2Icon } from "lucide-react";
+import type React from "react";
 import { cn } from "@/lib/utils";
 
-function Spinner({
+export function Spinner({
   className,
   ...props
-}: React.ComponentProps<typeof SpinnerGapIcon>) {
+}: React.ComponentProps<typeof Loader2Icon>): React.ReactElement {
   return (
-    <SpinnerGapIcon
+    <Loader2Icon
       aria-label="Loading"
       className={cn("animate-spin", className)}
       role="status"
@@ -14,5 +15,3 @@ function Spinner({
     />
   );
 }
-
-export { Spinner };

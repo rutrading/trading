@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_API_URL ?? "http://localhost:8000/api";
+  process.env.INTERNAL_BACKEND_API_URL ??
+  process.env.NEXT_PUBLIC_BACKEND_API_URL ??
+  "http://localhost:8000/api";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -48,14 +50,17 @@ export async function GET(req: Request) {
       } catch {
         // plain text
       }
-      return NextResponse.json({ ok: false, error: detail || `HTTP ${res.status}` });
+      return NextResponse.json(
+        { ok: false, error: detail || `HTTP ${res.status}` },
+        { status: res.status },
+      );
     }
     const data = await res.json();
     return NextResponse.json({ ok: true, data });
   } catch (err) {
-    return NextResponse.json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Network error",
-    });
+    return NextResponse.json(
+      { ok: false, error: "Network error" },
+      { status: 503 },
+    );
   }
 }

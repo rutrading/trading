@@ -2,6 +2,7 @@
 
 import { ArrowUp, ArrowDown } from "@phosphor-icons/react";
 import { WatchlistButton } from "./watchlist-button";
+import { Badge } from "@/components/ui/badge";
 import type { StockInfo } from "./stock-data";
 import { useQuote } from "@/components/ws-provider";
 import { mergeQuote, type Quote } from "@/lib/quote";
@@ -25,26 +26,28 @@ export const StockHeader = ({
   const isPositive = change >= 0;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="rounded bg-foreground/10 px-2 py-1 text-sm font-semibold">
+    <div className="space-y-4">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <h1 className="text-3xl font-bold tracking-tight">{stock.name}</h1>
+          <Badge variant="default" className="mt-1.5 px-2.5 py-1 text-sm">
             {ticker}
-          </span>
-          <WatchlistButton ticker={ticker} initialWatched={watched} />
+          </Badge>
         </div>
       </div>
-      <h1 className="text-3xl font-bold tracking-tight">{stock.name}</h1>
-      <div className="flex items-baseline gap-3">
-        <span className="text-4xl font-bold tabular-nums">${fmtPrice(price)}</span>
-        <span
-          className={`flex items-center gap-1 text-lg font-semibold tabular-nums ${
-            isPositive ? "text-emerald-500" : "text-red-500"
-          }`}
-        >
-          {isPositive ? <ArrowUp size={16} weight="bold" /> : <ArrowDown size={16} weight="bold" />}
-          {isPositive ? "+" : ""}{change}%
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <span className="text-4xl font-bold tabular-nums">${fmtPrice(price)}</span>
+          <span
+            className={`flex items-center gap-1 text-lg font-semibold tabular-nums ${
+              isPositive ? "text-emerald-500" : "text-red-500"
+            }`}
+          >
+            {isPositive ? <ArrowUp size={16} weight="bold" /> : <ArrowDown size={16} weight="bold" />}
+            {isPositive ? "+" : ""}{change}%
+          </span>
+        </div>
+        <WatchlistButton ticker={ticker} initialWatched={watched} />
       </div>
     </div>
   );

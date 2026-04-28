@@ -1,6 +1,8 @@
 "use client";
 
-import { Header } from "@/components/header/header";
+import { AppSidebar } from "@/components/sidebar/app-sidebar";
+import { Page, PageBody } from "@/components/ui/page";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { WebSocketProvider } from "@/components/ws-provider";
 import type { AccountType } from "@/lib/accounts";
 
@@ -32,12 +34,19 @@ export function AppShell({
 }) {
   return (
     <WebSocketProvider>
-      <div className="min-h-screen bg-background text-foreground">
-        <div className="mx-auto max-w-7xl px-6 py-4">
-          <Header userName={userName} userImage={userImage} />
-          {children}
-        </div>
-      </div>
+      <SidebarProvider defaultOpen>
+        <AppSidebar accounts={accounts} userName={userName} userImage={userImage} />
+        <SidebarInset className="md:peer-data-[variant=inset]:me-0 md:peer-data-[variant=inset]:mb-0 md:peer-data-[variant=inset]:rounded-e-none md:peer-data-[variant=inset]:rounded-b-none">
+          <Page className="min-h-screen bg-background text-foreground">
+            <PageBody>
+              <div className="mx-auto max-w-7xl">
+                <SidebarTrigger className="mb-4 md:hidden" />
+                {children}
+              </div>
+            </PageBody>
+          </Page>
+        </SidebarInset>
+      </SidebarProvider>
     </WebSocketProvider>
   );
 }

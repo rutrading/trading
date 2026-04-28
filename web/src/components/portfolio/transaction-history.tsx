@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import {
   Pagination,
   PaginationContent,
@@ -51,11 +51,9 @@ export const TransactionHistory = ({
     return (
       <div className="rounded-2xl bg-accent p-6">
         <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><ClockCounterClockwise /></EmptyMedia>
-            <EmptyTitle>No transactions</EmptyTitle>
-            <EmptyDescription>Your trade history will appear here.</EmptyDescription>
-          </EmptyHeader>
+          <EmptyMedia><ClockCounterClockwise className="size-6 text-muted-foreground" /></EmptyMedia>
+          <EmptyTitle>No transactions</EmptyTitle>
+          <EmptyDescription>Your trade history will appear here.</EmptyDescription>
         </Empty>
       </div>
     );
@@ -101,9 +99,8 @@ export const TransactionHistory = ({
                         variant={
                           accountsById[t.trading_account_id]?.type === "crypto"
                             ? "warning"
-                            : "secondary"
+                            : "default"
                         }
-                        size="sm"
                       >
                         {accountsById[t.trading_account_id]?.type === "crypto"
                           ? "Crypto"
@@ -115,15 +112,13 @@ export const TransactionHistory = ({
                 <TableCell>
                   {t.kind === "trade" && t.side ? (
                     <Badge
-                      variant={t.side === "buy" ? "success" : "error"}
-                      size="sm"
+                      variant={t.side === "buy" ? "success" : "destructive"}
                     >
                       {t.side.toUpperCase()}
                     </Badge>
                   ) : (
                     <Badge
-                      variant={t.kind === "withdrawal" ? "error" : "secondary"}
-                      size="sm"
+                      variant={t.kind === "withdrawal" ? "destructive" : "default"}
                     >
                       {t.kind.toUpperCase()}
                     </Badge>
