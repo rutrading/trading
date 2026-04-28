@@ -1,9 +1,11 @@
 """Order endpoints: place, list, get, and cancel orders."""
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -48,36 +50,27 @@ class PlaceOrderRequest(BaseModel):
     side: str  # "buy" | "sell"
     order_type: str  # "market" | "limit" | "stop" | "stop_limit"
     time_in_force: str = "gtc"  # "day" | "gtc" | "opg" | "cls"
-    quantity: str  # string to avoid float precision issues
-    limit_price: str | None = None  # required for limit / stop_limit
-    stop_price: str | None = None  # required for stop / stop_limit
+    # Precision matches the DB columns (Order.quantity numeric(16,8),
+    # Order.limit_price/stop_price numeric(20,10)) so a 15-decimal noise
+    # value from a direct API caller fails fast at the boundary instead of
+    # silently truncating on insert.
+    quantity: Annotated[Decimal, Field(max_digits=16, decimal_places=8)]
+    limit_price: Annotated[
+        Decimal | None, Field(max_digits=20, decimal_places=10)
+    ] = None
+    stop_price: Annotated[
+        Decimal | None, Field(max_digits=20, decimal_places=10)
+    ] = None
 
     @field_validator("ticker")
     @classmethod
     def clean_ticker(cls, v: str) -> str:
         return v.strip().upper()
 
-    @field_validator("quantity", "limit_price", "stop_price")
-    @classmethod
-    def validate_decimal(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        try:
-            Decimal(v)
-        except InvalidOperation:
-            raise ValueError(f"Invalid decimal value: {v}")
-        return v
 
-
-def _get_order_or_404(db: Session, order_id: int, *, for_update: bool = False) -> Order:
-    """Look up an order by id. Pass `for_update=True` when the caller
-    intends to mutate the row, so the lock is acquired before the
-    authz check rather than after — preventing a concurrent writer
-    from changing the row out from under the read-modify-write."""
-    query = db.query(Order).filter(Order.id == order_id)
-    if for_update:
-        query = query.with_for_update()
-    order = query.first()
+def _get_order_or_404(db: Session, order_id: int) -> Order:
+    """Look up an order by id, raising 404 if not found."""
+    order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
@@ -93,9 +86,9 @@ def _mock_order_response(payload: "PlaceOrderRequest") -> OrderResponse:
         side=payload.side,
         order_type=payload.order_type,
         time_in_force=payload.time_in_force,
-        quantity=payload.quantity,
-        limit_price=payload.limit_price,
-        stop_price=payload.stop_price,
+        quantity=str(payload.quantity),
+        limit_price=str(payload.limit_price) if payload.limit_price is not None else None,
+        stop_price=str(payload.stop_price) if payload.stop_price is not None else None,
         reference_price=None,
         filled_quantity="0",
         average_fill_price=None,
@@ -147,9 +140,9 @@ async def place_order(
             detail="Crypto accounts can only place crypto orders.",
         )
 
-    quantity = Decimal(payload.quantity)
-    limit_price = Decimal(payload.limit_price) if payload.limit_price else None
-    stop_price = Decimal(payload.stop_price) if payload.stop_price else None
+    quantity = payload.quantity
+    limit_price = payload.limit_price
+    stop_price = payload.stop_price
 
     # crypto trades 24/7 — always gtc regardless of what was sent
     time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
@@ -189,12 +182,19 @@ async def place_order(
     # timeout when the DB has fewer than ATR_PERIODS+1 daily bars cached for
     # the ticker — and that call has no dependency on the locked row state.
     # Holding FOR UPDATE through a 10s network call would freeze every other
-    # writer on the same trading account. DailyBar reads stay inline below;
-    # quote resolution goes through the shared cache (Redis-first).
+    # writer on the same trading account. The thread hop also keeps the
+    # blocking httpx.Client off the asyncio loop so REST handlers, the WS
+    # broadcast, and the quote-flush task aren't frozen for the duration.
+    # DailyBar reads stay inline below; quote resolution goes through the
+    # shared cache (Redis-first).
     needs_atr = payload.side == "buy" and (
         payload.order_type == "stop" or deferred_market
     )
-    pre_atr: Decimal | None = compute_atr(payload.ticker, db) if needs_atr else None
+    pre_atr: Decimal | None = (
+        await asyncio.to_thread(compute_atr, payload.ticker, db)
+        if needs_atr
+        else None
+    )
 
     # Lock the account row first, then run validation (which may acquire the
     # holding row lock for sells). Standardizing on account-first-then-holding
@@ -373,7 +373,6 @@ async def place_order(
             # across partial fills and the buying-power check sees a stale
             # higher-precision number.
             account.reserved_balance = to_money(account.reserved_balance + quantity * rps)
-            account.updated_at = datetime.now(timezone.utc)
 
         # for non-market sell orders, commit the shares so concurrent sell orders
         # cannot exceed the available position (mirrors reserved_balance for buys)
@@ -389,7 +388,6 @@ async def place_order(
             )
             if holding is not None:
                 holding.reserved_quantity += quantity
-                holding.updated_at = datetime.now(timezone.utc)
 
         order.status = "open"
         db.add(order)
@@ -511,6 +509,8 @@ async def cancel_order(
     # reservation-release math, so it needs the same cap as placement.
     await get_order_cancel_limiter().check(str(user.get("sub", "")))
 
+    # Two-step (unlocked read for membership/IDOR; locked re-read after the
+    # account lock) preserves the account → order lock ordering convention.
     order = _get_order_or_404(db, order_id)
     assert_owns_order(order, user, db)
 
@@ -564,8 +564,6 @@ async def cancel_order(
 
     if order.side == "buy":
         release_buy_reservation(account, order, remaining)
-        if order.reserved_per_share is not None:
-            account.updated_at = datetime.now(timezone.utc)
 
     if order.side == "sell":
         holding = (
@@ -578,8 +576,6 @@ async def cancel_order(
             .first()
         )
         release_sell_reservation(holding, order, remaining)
-        if holding is not None:
-            holding.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
     db.commit()

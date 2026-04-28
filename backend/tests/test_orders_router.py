@@ -499,14 +499,68 @@ class TestPlaceDeferredMarketOrder:
             f"got {call_order}"
         )
 
+    def test_deferred_market_buy_accepts_stale_quote_for_reference_only(
+        self, session_factory, monkeypatch
+    ):
+        """The deferred-market path uses the quote only as a placement-time
+        snapshot; the executor fills later against a fresh quote. Therefore
+        a quote whose data-event timestamp is older than the staleness
+        threshold should NOT cause rejection on placement (unlike the sync
+        market path which gates on `quote.timestamp` at orders.py:288-296).
+
+        Locks in the current behavior so a future change adding a staleness
+        gate to the deferred path requires updating this test consciously.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        from app.schemas import QuoteResponse
+
+        ten_minutes_ago = int(
+            (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
+        )
+
+        async def _stale_quote(_ticker, db=None, *, require_positive=False):
+            return QuoteResponse(
+                ticker="AAPL",
+                price=100.0,
+                timestamp=ten_minutes_ago,
+                cached=True,
+                cache_layer="postgres",
+                age_seconds=600,
+            )
+
+        monkeypatch.setattr(
+            "app.routers.orders.compute_atr", lambda _t, _db: Decimal("0")
+        )
+        monkeypatch.setattr("app.routers.orders.resolve_quote_or_400", _stale_quote)
+
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(db, "user-a", balance="10000")
+            account_id = account.id
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": "opg",
+            "quantity": "5",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "open"
+
 
 class TestPlaceOrderInputValidation:
-    def test_quantity_with_too_many_decimals_returns_clean_error(self, session_factory):
-        # Quantity is stored as numeric(16,8). A 16-digit-fraction value should
-        # not crash the route; the validator only verifies it parses as
-        # Decimal, so this currently makes it through to SQLAlchemy. SQLite
-        # is lax about precision so this may store with truncation, but the
-        # response must not be a 500.
+    def test_quantity_with_too_many_decimals_returns_422(self, session_factory):
+        # Quantity column is numeric(16,8); the Pydantic field caps at
+        # decimal_places=8 so a 15-decimal value is rejected at the boundary
+        # rather than silently truncated on insert.
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
@@ -528,11 +582,14 @@ class TestPlaceOrderInputValidation:
                     "quantity": "1.123456789012345",
                 },
             )
-        # Either a clean 200 (storage truncates) or a clean 400 — but never 500.
-        assert response.status_code in (200, 400), response.text
+        assert response.status_code == 422, response.text
+        body = response.json()
+        assert any(
+            "quantity" in str(err.get("loc", [])).lower() for err in body["detail"]
+        )
 
     def test_quantity_non_numeric_string_returns_422(self, session_factory):
-        # Pydantic field_validator validate_decimal raises ValueError → 422
+        # Pydantic Decimal parsing rejects non-numeric strings → 422
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
@@ -839,6 +896,79 @@ class TestCancelOrderReservationRelease:
             response = client.post(f"/api/orders/{order_id}/cancel")
         assert response.status_code == 400
         assert "filled" in response.json()["detail"].lower()
+
+    def test_cancel_409_when_order_filled_after_lock_acquisition(
+        self, session_factory, monkeypatch
+    ):
+        """If an order's status flips to 'filled' between the unlocked
+        membership read and the FOR UPDATE re-fetch, cancel returns 409
+        — the inner status guard at orders.py:cancel_order. The 409
+        distinguishes 'lost the race to a fill' from 'never cancellable'.
+        """
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(
+                db,
+                "user-a",
+                balance="10000",
+                reserved_balance="1000",
+            )
+            order = seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="buy",
+                order_type="limit",
+                limit_price="100",
+                reserved_per_share="100",
+                quantity="10",
+                filled_quantity="0",
+                status="open",
+            )
+            account_id = account.id
+            order_id = order.id
+
+        # Wedge a concurrent commit between the unlocked membership read and
+        # the FOR UPDATE re-fetch. We patch _get_order_or_404 (the unlocked
+        # read) to return a detached object whose in-memory status='open'
+        # passes the outer guard, then commit a real status='filled' from a
+        # second session so the FOR UPDATE re-fetch loads the new state from
+        # the DB. The detached object means the request session's identity
+        # map is empty for this id, so the inner SELECT issues fresh SQL.
+        from app.db.models import Order
+        from app.routers import orders as orders_module
+
+        def racy_get_order(_db, oid):
+            with session_factory() as other:
+                target = other.query(Order).filter(Order.id == oid).first()
+                target.status = "filled"
+                target.filled_quantity = target.quantity
+                other.commit()
+            with session_factory() as snapshot_db:
+                snapshot = snapshot_db.query(Order).filter(Order.id == oid).first()
+                snapshot_db.expunge(snapshot)
+                snapshot.status = "open"
+                return snapshot
+
+        monkeypatch.setattr(orders_module, "_get_order_or_404", racy_get_order)
+
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(f"/api/orders/{order_id}/cancel")
+
+        assert response.status_code == 409, response.text
+        assert "filled" in response.json()["detail"].lower()
+
+        # The order's terminal state remains filled (the cancel did NOT
+        # overwrite it) and the reservation was NOT released (the executor's
+        # fill path owns reservation accounting on the racing side).
+        with session_factory() as db:
+            order = db.query(Order).filter(Order.id == order_id).first()
+            assert order.status == "filled"
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            assert account.reserved_balance == Decimal("1000")
 
 
 # ---------------------------------------------------------------------------

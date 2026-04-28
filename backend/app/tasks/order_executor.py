@@ -204,8 +204,6 @@ def _process_open_orders() -> None:
                         .first()
                     )
                     release_buy_reservation(account, order, remaining)
-                    if account is not None:
-                        account.updated_at = datetime.now(timezone.utc)
                 if order.side == "sell":
                     holding = (
                         db.query(Holding)
@@ -217,8 +215,6 @@ def _process_open_orders() -> None:
                         .first()
                     )
                     release_sell_reservation(holding, order, remaining)
-                    if holding is not None:
-                        holding.updated_at = datetime.now(timezone.utc)
                 order.status = "cancelled"
                 db.commit()
                 logger.info(
