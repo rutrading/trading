@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.db import get_db
-from app.db.models import Quote, Symbol, WatchlistItem
+from app.db.models import Quote, Symbol, User, WatchlistItem
 from app.db.redis import get_redis
 from app.schemas import (
     WatchlistItemResponse,
@@ -28,6 +28,26 @@ from app.services.quote_cache import persist_quote
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _ensure_user_row(db: Session, user: dict) -> str:
+    """Return the auth subject and create the local dev user row if needed.
+
+    In normal auth, Better Auth owns the `user` table and the row already
+    exists. In local `SKIP_AUTH` mode the backend emits a synthetic `dev` user,
+    so watchlist inserts need a matching FK target first.
+    """
+    user_id = user["sub"]
+    if db.get(User, user_id) is None:
+        db.add(
+            User(
+                id=user_id,
+                name=user.get("name") or "Dev User",
+                email=user.get("email") or f"{user_id}@localhost",
+            )
+        )
+        db.flush()
+    return user_id
 
 
 def _quote_to_watchlist(quote: QuoteData, source: str) -> WatchlistQuoteResponse:
@@ -168,7 +188,7 @@ def add_to_watchlist(
 ) -> WatchlistMutationResponse:
     ticker = ticker.upper().strip()
 
-    user_id = user["sub"]
+    user_id = _ensure_user_row(db, user)
 
     symbol = db.query(Symbol).filter(Symbol.ticker == ticker).first()
     if not symbol:
