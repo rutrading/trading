@@ -501,12 +501,10 @@ class TestPlaceDeferredMarketOrder:
 
 
 class TestPlaceOrderInputValidation:
-    def test_quantity_with_too_many_decimals_returns_clean_error(self, session_factory):
-        # Quantity is stored as numeric(16,8). A 16-digit-fraction value should
-        # not crash the route; the validator only verifies it parses as
-        # Decimal, so this currently makes it through to SQLAlchemy. SQLite
-        # is lax about precision so this may store with truncation, but the
-        # response must not be a 500.
+    def test_quantity_with_too_many_decimals_returns_422(self, session_factory):
+        # Quantity column is numeric(16,8); the Pydantic field caps at
+        # decimal_places=8 so a 15-decimal value is rejected at the boundary
+        # rather than silently truncated on insert.
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
@@ -528,11 +526,14 @@ class TestPlaceOrderInputValidation:
                     "quantity": "1.123456789012345",
                 },
             )
-        # Either a clean 200 (storage truncates) or a clean 400 — but never 500.
-        assert response.status_code in (200, 400), response.text
+        assert response.status_code == 422, response.text
+        body = response.json()
+        assert any(
+            "quantity" in str(err.get("loc", [])).lower() for err in body["detail"]
+        )
 
     def test_quantity_non_numeric_string_returns_422(self, session_factory):
-        # Pydantic field_validator validate_decimal raises ValueError → 422
+        # Pydantic Decimal parsing rejects non-numeric strings → 422
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")

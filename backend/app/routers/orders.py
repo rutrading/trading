@@ -4,7 +4,8 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -49,25 +50,22 @@ class PlaceOrderRequest(BaseModel):
     side: str  # "buy" | "sell"
     order_type: str  # "market" | "limit" | "stop" | "stop_limit"
     time_in_force: str = "gtc"  # "day" | "gtc" | "opg" | "cls"
-    quantity: str  # string to avoid float precision issues
-    limit_price: str | None = None  # required for limit / stop_limit
-    stop_price: str | None = None  # required for stop / stop_limit
+    # Precision matches the DB columns (Order.quantity numeric(16,8),
+    # Order.limit_price/stop_price numeric(20,10)) so a 15-decimal noise
+    # value from a direct API caller fails fast at the boundary instead of
+    # silently truncating on insert.
+    quantity: Annotated[Decimal, Field(max_digits=16, decimal_places=8)]
+    limit_price: Annotated[
+        Decimal | None, Field(max_digits=20, decimal_places=10)
+    ] = None
+    stop_price: Annotated[
+        Decimal | None, Field(max_digits=20, decimal_places=10)
+    ] = None
 
     @field_validator("ticker")
     @classmethod
     def clean_ticker(cls, v: str) -> str:
         return v.strip().upper()
-
-    @field_validator("quantity", "limit_price", "stop_price")
-    @classmethod
-    def validate_decimal(cls, v: str | None) -> str | None:
-        if v is None:
-            return None
-        try:
-            Decimal(v)
-        except InvalidOperation:
-            raise ValueError(f"Invalid decimal value: {v}")
-        return v
 
 
 def _get_order_or_404(db: Session, order_id: int) -> Order:
@@ -88,9 +86,9 @@ def _mock_order_response(payload: "PlaceOrderRequest") -> OrderResponse:
         side=payload.side,
         order_type=payload.order_type,
         time_in_force=payload.time_in_force,
-        quantity=payload.quantity,
-        limit_price=payload.limit_price,
-        stop_price=payload.stop_price,
+        quantity=str(payload.quantity),
+        limit_price=str(payload.limit_price) if payload.limit_price is not None else None,
+        stop_price=str(payload.stop_price) if payload.stop_price is not None else None,
         reference_price=None,
         filled_quantity="0",
         average_fill_price=None,
@@ -142,9 +140,9 @@ async def place_order(
             detail="Crypto accounts can only place crypto orders.",
         )
 
-    quantity = Decimal(payload.quantity)
-    limit_price = Decimal(payload.limit_price) if payload.limit_price else None
-    stop_price = Decimal(payload.stop_price) if payload.stop_price else None
+    quantity = payload.quantity
+    limit_price = payload.limit_price
+    stop_price = payload.stop_price
 
     # crypto trades 24/7 — always gtc regardless of what was sent
     time_in_force = "gtc" if payload.asset_class == "crypto" else payload.time_in_force
