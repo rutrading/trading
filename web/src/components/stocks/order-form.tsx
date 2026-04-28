@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowClockwise, Wallet } from "@phosphor-icons/react";
+import { Wallet } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import { toastManager } from "@/components/ui/toast";
 import { useQuote } from "@/components/ws-provider";
 import { placeOrder, type PlaceOrderInput } from "@/app/actions/orders";
 import { fmtPrice } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export type OrderFormAccount = {
   id: number;
@@ -146,11 +147,11 @@ export const OrderForm = ({
   };
 
   return (
-    <div className="rounded-2xl bg-accent p-6">
+    <div className="rounded-2xl bg-accent p-4 sm:p-6">
       <h2 className="mb-4 text-sm font-medium text-muted-foreground">
         Place Order
       </h2>
-      <div className="space-y-4 rounded-xl bg-card p-4">
+      <div className="space-y-4 rounded-xl bg-card p-3 sm:p-4">
         {noMatchingAccount ? (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <Wallet className="size-8 text-muted-foreground" />
@@ -175,7 +176,12 @@ export const OrderForm = ({
                   onValueChange={(v) => setAccountId(Number(v))}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) =>
+                        matchingAccounts.find((a) => String(a.id) === value)?.name ??
+                        "Select account"
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {matchingAccounts.map((a) => (
@@ -189,47 +195,44 @@ export const OrderForm = ({
             )}
 
             <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
-              <button
+              <Button
                 type="button"
+                variant={side === "buy" ? "success" : "ghost"}
+                size="default"
                 onClick={() => setSide("buy")}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  side === "buy"
-                    ? "bg-emerald-500 text-white"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={cn(side !== "buy" && "shadow-none")}
               >
                 Buy
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant={side === "sell" ? "destructive" : "ghost"}
+                size="default"
                 onClick={() => setSide("sell")}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                  side === "sell"
-                    ? "bg-red-500 text-white"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className={cn(side !== "sell" && "shadow-none")}
               >
                 Sell
-              </button>
+              </Button>
             </div>
 
             <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
               {(["market", "limit", "stop"] as const).map((type) => {
                 const disabled = type === "market" && offHoursStockGuard;
                 return (
-                  <button
+                  <Button
                     key={type}
                     type="button"
+                    variant={orderType === type ? "secondary" : "ghost"}
+                    size="sm"
                     disabled={disabled}
                     onClick={() => setOrderType(type)}
-                    className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                      orderType === type
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
+                    className={cn(
+                      "capitalize",
+                      orderType !== type && "shadow-none",
+                    )}
                   >
                     {type}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -318,11 +321,11 @@ export const OrderForm = ({
             <Button
               type="button"
               className="w-full"
-              variant={side === "buy" ? "default" : "destructive"}
+              variant={side === "buy" ? "success" : "destructive"}
               disabled={pending || (orderType === "market" && offHoursStockGuard)}
+              loading={pending}
               onClick={submit}
             >
-              {pending && <ArrowClockwise className="size-4 animate-spin" />}
               {side === "buy" ? "Buy" : "Sell"} {ticker}
             </Button>
           </>

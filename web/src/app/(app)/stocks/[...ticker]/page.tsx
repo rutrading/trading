@@ -84,26 +84,25 @@ export default async function StockPage({ params }: Props) {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <div className="space-y-6">
+    <div className="space-y-6">
+      <div className="min-w-0">
         <StockHeader
           ticker={symbol}
           stock={stock}
           initialQuote={quoteRes.ok ? quoteRes.data : null}
           watched={watched}
         />
-        <div className="rounded-2xl bg-accent p-6">
-          <h2 className="mb-4 text-sm font-medium text-muted-foreground">Price Chart</h2>
-          <div className="rounded-xl bg-card p-4">
-            <StockChart
-              ticker={symbol}
-              initialQuote={quoteRes.ok ? quoteRes.data : null}
-            />
-          </div>
-        </div>
-        <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
       </div>
-      <div className="space-y-6">
+      <div className="min-w-0 rounded-2xl bg-accent p-6">
+        <h2 className="mb-4 text-sm font-medium text-muted-foreground">Price Chart</h2>
+        <div className="min-w-0 rounded-xl bg-card p-4">
+          <StockChart
+            ticker={symbol}
+            initialQuote={quoteRes.ok ? quoteRes.data : null}
+          />
+        </div>
+      </div>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
         <OrderForm
           ticker={symbol}
           price={stock.price}
@@ -113,6 +112,7 @@ export default async function StockPage({ params }: Props) {
         />
         <CompanyProfileCard ticker={symbol} company={company} />
       </div>
+      <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
     </div>
   );
 }

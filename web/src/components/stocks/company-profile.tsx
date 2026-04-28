@@ -54,13 +54,6 @@ export const CompanyProfileCard = ({
               className="hidden size-12 rounded-md object-cover dark:block"
               unoptimized
             />
-            <a
-              href="https://logo.dev"
-              className="text-[10px] font-medium text-muted-foreground underline-offset-2 hover:underline"
-              title="Logo API"
-            >
-              Logos provided by Logo.dev
-            </a>
           </div>
         )}
         {(company?.sector || company?.industry) && (
@@ -87,6 +80,16 @@ export const CompanyProfileCard = ({
           <p className="text-sm text-muted-foreground">
             We couldn't pull any company details yet, check again later.
           </p>
+        )}
+
+        {lightLogoUrl && darkLogoUrl && (
+          <a
+            href="https://logo.dev"
+            className="block border-t border-border/64 pt-3 text-[10px] font-medium text-muted-foreground underline-offset-2 hover:underline"
+            title="Logo API"
+          >
+            Logos provided by Logo.dev
+          </a>
         )}
       </div>
     </div>
