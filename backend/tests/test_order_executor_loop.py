@@ -10,16 +10,18 @@ import os
 
 os.environ["SKIP_AUTH"] = "false"
 
+from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock
 
-from app.db.models import Order, TradingAccount
+from app.db.models import Holding, Order, TradingAccount, Transaction
 from app.tasks import order_executor
 from tests.integration_helpers import (
     make_session_factory,
     make_test_engine,
     seed_account,
     seed_daily_bar,
+    seed_holding,
     seed_order,
     seed_quote,
     seed_symbol,
@@ -275,3 +277,220 @@ class TestSyncSystemTickersInLoop:
 
         order_executor._process_open_orders()
         fake_manager.sync_system_tickers.assert_called_once_with(set())
+
+
+# ---------------------------------------------------------------------------
+# Multi-cycle partial fill — large orders on thin volume drain across cycles
+# ---------------------------------------------------------------------------
+
+
+class TestMultiCyclePartialFill:
+    def test_thin_volume_order_fills_across_multiple_cycles(self, monkeypatch):
+        """A 250-share buy on a name with 200K daily volume (cap = 100/cycle
+        per VOLUME_FILL_RATE) should partial-fill 100/100/50 across three
+        cycles and reach status='filled' at the end, with one Transaction
+        per cycle and reserved_balance drained proportionally.
+        """
+        engine = make_test_engine()
+        factory = make_session_factory(engine)
+        _patch_session_factory(monkeypatch, factory)
+        _stub_ws_manager(monkeypatch)
+        monkeypatch.setattr(
+            order_executor, "is_stock_market_open", lambda now_et: True
+        )
+
+        with factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=99.0)  # below limit, fills
+            seed_daily_bar(db, "AAPL", volume=200_000)  # → cap 100 / cycle
+            account = seed_account(
+                db,
+                "user-a",
+                balance="50000",
+                reserved_balance="25000",  # 250 × $100
+            )
+            seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="buy",
+                order_type="limit",
+                limit_price="100",
+                reserved_per_share="100",
+                quantity="250",
+                status="open",
+            )
+            account_id = account.id
+
+        order_executor._process_open_orders()
+        with factory() as db:
+            order = db.query(Order).first()
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            assert order.filled_quantity == Decimal("100")
+            assert order.status == "partially_filled"
+            assert account.reserved_balance == Decimal("15000")  # 150 × $100
+
+        order_executor._process_open_orders()
+        with factory() as db:
+            order = db.query(Order).first()
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            assert order.filled_quantity == Decimal("200")
+            assert order.status == "partially_filled"
+            assert account.reserved_balance == Decimal("5000")  # 50 × $100
+
+        order_executor._process_open_orders()
+        with factory() as db:
+            order = db.query(Order).first()
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            assert order.filled_quantity == Decimal("250")
+            assert order.status == "filled"
+            assert account.reserved_balance == Decimal("0")
+            txns = db.query(Transaction).filter(Transaction.order_id == order.id).all()
+            assert len(txns) == 3
+            # Limit fills land at the quote, not the limit — no slippage
+            for txn in txns:
+                assert txn.price == Decimal("99")
+
+
+# ---------------------------------------------------------------------------
+# Deferred-market executor fill — opg/cls market orders inside the window
+# ---------------------------------------------------------------------------
+
+
+class _FrozenDatetime:
+    """Stand-in for `datetime` whose `.now(tz)` returns a pinned ET moment."""
+
+    pinned: datetime
+
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return cls.pinned.replace(tzinfo=None)
+        return cls.pinned.astimezone(tz)
+
+
+def _pin_now_et(monkeypatch, year: int, month: int, day: int, hour: int, minute: int):
+    """Pin order_executor's `datetime.now(ET)` to a fixed trading-day moment."""
+    pinned = datetime(year, month, day, hour, minute, tzinfo=order_executor.ET)
+    frozen = type("FrozenDatetime", (_FrozenDatetime,), {"pinned": pinned})
+    monkeypatch.setattr(order_executor, "datetime", frozen)
+
+
+class TestDeferredMarketExecutorFill:
+    def test_opg_market_buy_fills_with_slippage_in_open_window(self, monkeypatch):
+        """A market+opg buy reached by the executor in the 9:30-9:35 ET
+        window should fill at a slippage-adjusted price (compute_market_fill_price),
+        not the raw quote. Reservation is released and the holding row is created.
+        """
+        engine = make_test_engine()
+        factory = make_session_factory(engine)
+        _patch_session_factory(monkeypatch, factory)
+        _stub_ws_manager(monkeypatch)
+        # 2025-01-15 is a Wednesday; not in NYSE_HOLIDAYS for 2025.
+        _pin_now_et(monkeypatch, 2025, 1, 15, 9, 32)
+
+        with factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=100.0)
+            seed_daily_bar(db, "AAPL", volume=10_000_000)
+            account = seed_account(
+                db,
+                "user-a",
+                balance="10000",
+                reserved_balance="510",  # 5 × $102 rps
+            )
+            seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="buy",
+                order_type="market",
+                limit_price=None,
+                time_in_force="opg",
+                reserved_per_share="102",
+                quantity="5",
+                status="open",
+            )
+            account_id = account.id
+
+        order_executor._process_open_orders()
+
+        with factory() as db:
+            order = db.query(Order).first()
+            account = (
+                db.query(TradingAccount).filter(TradingAccount.id == account_id).first()
+            )
+            holding = (
+                db.query(Holding)
+                .filter(Holding.trading_account_id == account_id, Holding.ticker == "AAPL")
+                .first()
+            )
+            assert order.status == "filled"
+            assert order.filled_quantity == Decimal("5")
+            # Slippage flips the buy fill price strictly above the quote
+            assert order.average_fill_price > Decimal("100")
+            assert account.reserved_balance == Decimal("0")
+            assert holding is not None
+            assert holding.quantity == Decimal("5")
+
+    def test_cls_market_sell_fills_with_slippage_in_close_window(self, monkeypatch):
+        """Mirror for the close window: a market+cls sell at 16:02 ET fills
+        below the quote (slippage works against the seller). Regression check
+        for the 01_bug_deferred_market_sell fix in commit f99fdd3 — without
+        that fix, reserved_quantity stays inflated after the fill.
+        """
+        engine = make_test_engine()
+        factory = make_session_factory(engine)
+        _patch_session_factory(monkeypatch, factory)
+        _stub_ws_manager(monkeypatch)
+        _pin_now_et(monkeypatch, 2025, 1, 15, 16, 2)
+
+        with factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            seed_quote(db, "AAPL", price=100.0)
+            seed_daily_bar(db, "AAPL", volume=10_000_000)
+            account = seed_account(db, "user-a", balance="10000")
+            seed_holding(
+                db,
+                account.id,
+                "AAPL",
+                quantity="5",
+                reserved_quantity="5",
+            )
+            seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="sell",
+                order_type="market",
+                limit_price=None,
+                time_in_force="cls",
+                quantity="5",
+                status="open",
+            )
+            account_id = account.id
+
+        order_executor._process_open_orders()
+
+        with factory() as db:
+            order = db.query(Order).first()
+            holding = (
+                db.query(Holding)
+                .filter(Holding.trading_account_id == account_id, Holding.ticker == "AAPL")
+                .first()
+            )
+            assert order.status == "filled"
+            assert order.filled_quantity == Decimal("5")
+            # Slippage flips the sell fill price strictly below the quote
+            assert order.average_fill_price < Decimal("100")
+            # Holding row is deleted once quantity drains to zero
+            assert holding is None
