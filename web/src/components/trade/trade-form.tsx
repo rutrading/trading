@@ -3,13 +3,16 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowClockwise, WarningCircle } from "@phosphor-icons/react";
+import { WarningCircle } from "@phosphor-icons/react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Select,
   SelectTrigger,
@@ -17,7 +20,6 @@ import {
   SelectPopup,
   SelectItem,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { toastManager } from "@/components/ui/toast";
 import { SymbolSearch, type SymbolItem } from "@/components/symbol-search";
 import { useQuote } from "@/components/ws-provider";
@@ -41,6 +43,27 @@ type OrderType = "market" | "limit" | "stop" | "stop_limit";
 type TimeInForce = "day" | "gtc" | "opg" | "cls";
 
 const fmtUsd = (n: number) => `$${fmtPrice(n)}`;
+const SIDE_LABELS: Record<Side, string> = { buy: "Buy", sell: "Sell" };
+const QUANTITY_UNIT_LABELS: Record<"shares" | "dollars", string> = {
+  shares: "Shares",
+  dollars: "Dollars",
+};
+const ORDER_TYPE_LABELS: Record<OrderType, string> = {
+  market: "Market",
+  limit: "Limit",
+  stop: "Stop",
+  stop_limit: "Stop Limit",
+};
+const TIF_LABELS: Record<TimeInForce, string> = {
+  day: "Day",
+  gtc: "Good-til-Canceled",
+  opg: "On the Open",
+  cls: "On the Close",
+};
+
+function oneOf<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
 
 export function TradeForm({
   accounts,
@@ -58,22 +81,26 @@ export function TradeForm({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Account selection is the single source of truth for asset class.
-  const initialAccount = accounts.find((a) => a.id === initialAccountId);
-  const [accountId, setAccountId] = useState<number | undefined>(
-    initialAccount?.id,
-  );
+  const accountId = initialAccountId;
 
   const [ticker, setTicker] = useState<string | undefined>(initialTicker);
   const [tickerName, setTickerName] = useState<string | undefined>(undefined);
 
-  const [side, setSide] = useState<Side>("buy");
-  const [orderType, setOrderType] = useState<OrderType>("market");
-  const [timeInForce, setTimeInForce] = useState<TimeInForce>("gtc");
-  const [quantity, setQuantity] = useState("");
-  const [quantityUnit, setQuantityUnit] = useState<"shares" | "dollars">("shares");
-  const [limitPrice, setLimitPrice] = useState("");
-  const [stopPrice, setStopPrice] = useState("");
+  const [side, setSide] = useState<Side>(() =>
+    oneOf(searchParams.get("side"), ["buy", "sell"], "buy"),
+  );
+  const [orderType, setOrderType] = useState<OrderType>(() =>
+    oneOf(searchParams.get("orderType"), ["market", "limit", "stop", "stop_limit"], "market"),
+  );
+  const [timeInForce, setTimeInForce] = useState<TimeInForce>(() =>
+    oneOf(searchParams.get("tif"), ["day", "gtc", "opg", "cls"], "gtc"),
+  );
+  const [quantity, setQuantity] = useState(() => searchParams.get("qty") ?? "");
+  const [quantityUnit, setQuantityUnit] = useState<"shares" | "dollars">(() =>
+    oneOf(searchParams.get("unit"), ["shares", "dollars"], "shares"),
+  );
+  const [limitPrice, setLimitPrice] = useState(() => searchParams.get("limit") ?? "");
+  const [stopPrice, setStopPrice] = useState(() => searchParams.get("stop") ?? "");
 
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -184,31 +211,35 @@ export function TradeForm({
   })();
 
   function syncUrl(next: {
-    account?: number | null;
     ticker?: string | null;
+    side?: Side;
+    orderType?: OrderType;
+    timeInForce?: TimeInForce;
+    quantity?: string;
+    quantityUnit?: "shares" | "dollars";
+    limitPrice?: string;
+    stopPrice?: string;
   }) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next.account === null) params.delete("account");
-    else if (next.account !== undefined) params.set("account", String(next.account));
     if (next.ticker === null) params.delete("ticker");
     else if (next.ticker !== undefined) params.set("ticker", next.ticker);
-    router.replace(`/trade?${params.toString()}`);
-  }
-
-  function handleAccountChange(nextId: number) {
-    const next = accounts.find((a) => a.id === nextId);
-    if (!next) return;
-    const classChanged = account && next.type !== account.type;
-    setAccountId(next.id);
-    if (classChanged) {
-      setTicker(undefined);
-      setTickerName(undefined);
-      setTimeInForce("gtc");
-      syncUrl({ account: next.id, ticker: null });
-    } else {
-      if (!account) setTimeInForce("gtc");
-      syncUrl({ account: next.id });
+    if (next.side !== undefined) params.set("side", next.side);
+    if (next.orderType !== undefined) params.set("orderType", next.orderType);
+    if (next.timeInForce !== undefined) params.set("tif", next.timeInForce);
+    if (next.quantity !== undefined) {
+      if (next.quantity) params.set("qty", next.quantity);
+      else params.delete("qty");
     }
+    if (next.quantityUnit !== undefined) params.set("unit", next.quantityUnit);
+    if (next.limitPrice !== undefined) {
+      if (next.limitPrice) params.set("limit", next.limitPrice);
+      else params.delete("limit");
+    }
+    if (next.stopPrice !== undefined) {
+      if (next.stopPrice) params.set("stop", next.stopPrice);
+      else params.delete("stop");
+    }
+    router.replace(`/trade?${params.toString()}`);
   }
 
   function handleSymbolSelect(item: SymbolItem) {
@@ -385,80 +416,28 @@ export function TradeForm({
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Trade</h1>
+      <PageHeader divider={false} className="h-auto px-0 pb-2">
+        <div className="flex w-full items-baseline justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Trade</h1>
+            <p className="text-sm text-muted-foreground">
+              Place an order against real-time Alpaca data.
+            </p>
+          </div>
           {account && <MarketStatus account={account} marketOpen={marketOpen} />}
         </div>
-        <p className="text-sm text-muted-foreground">
-          Place an order against real-time Alpaca data.
-        </p>
-      </div>
+      </PageHeader>
 
       <div className="rounded-2xl bg-accent p-6">
         <Form
           className="space-y-5 rounded-xl bg-card p-6"
           onSubmit={handleSubmit}
         >
-          {/* Row 1: Account picker */}
-          <Field>
-            <FieldLabel>Account</FieldLabel>
-            <Select
-              value={accountId ? String(accountId) : ""}
-              onValueChange={(v) => handleAccountChange(Number(v))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an account">
-                  {(v) => {
-                    const a = accounts.find((x) => String(x.id) === v);
-                    if (!a) return "Select an account";
-                    return (
-                      <span className="flex items-center gap-2">
-                        <span className="font-medium">{a.name}</span>
-                        <Badge
-                          variant={a.type === "crypto" ? "warning" : "secondary"}
-                          size="sm"
-                        >
-                          {a.type === "crypto" ? "Crypto" : "Stock"}
-                        </Badge>
-                        {a.isJoint && (
-                          <Badge variant="outline" size="sm">
-                            Joint
-                          </Badge>
-                        )}
-                      </span>
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={String(a.id)}>
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium">{a.name}</span>
-                      <Badge
-                        variant={a.type === "crypto" ? "warning" : "secondary"}
-                        size="sm"
-                      >
-                        {a.type === "crypto" ? "Crypto" : "Stock"}
-                      </Badge>
-                      {a.isJoint && (
-                        <Badge variant="outline" size="sm">
-                          Joint
-                        </Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {fmtUsd(parseFloat(a.balance))}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </Field>
-
           {account && (
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                Account: <span className="font-medium text-foreground">{account.name}</span>
+              </span>
               <span>
                 Cash:{" "}
                 <span className="font-medium text-foreground tabular-nums">
@@ -497,6 +476,7 @@ export function TradeForm({
                 }
                 size="default"
                 assetClass={account ? assetClass : undefined}
+                requireQuoteable={Boolean(account)}
                 filter={(item) => {
                   if (!account) return true;
                   return account.type === "crypto"
@@ -537,16 +517,19 @@ export function TradeForm({
 
           <Separator />
 
-          {/* Row 3: Action / Qty / Order type / prices.
-              Quantity gets 2fr because it holds an Input + a w-28 unit
-              Select side-by-side; at 1fr the Input collapsed to ~20px wide
-              and only the last digits of a four-digit amount were visible. */}
-          <div className="grid gap-4 md:grid-cols-[1fr_2fr_1fr_1fr_1fr]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(9rem,0.8fr)_minmax(22rem,2fr)]">
             <Field>
               <FieldLabel>Action</FieldLabel>
-              <Select value={side} onValueChange={(v) => setSide(v as Side)}>
+              <Select
+                value={side}
+                onValueChange={(v) => {
+                  const next = v as Side;
+                  setSide(next);
+                  syncUrl({ side: next });
+                }}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>{(value) => SIDE_LABELS[value as Side]}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   <SelectItem value="buy">Buy</SelectItem>
@@ -559,21 +542,25 @@ export function TradeForm({
               <FieldLabel>
                 {quantityUnit === "dollars" ? "Amount (USD)" : "Quantity"}
               </FieldLabel>
-              <div className="flex gap-2">
+              <div className="flex min-w-0 gap-2">
                 <Input
                   type="number"
                   step="any"
                   min="0"
                   placeholder={quantityUnit === "dollars" ? "$0.00" : "0"}
                   value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  className="flex-1"
+                  onChange={(e) => {
+                    setQuantity(e.target.value);
+                    syncUrl({ quantity: e.target.value });
+                  }}
+                  className="min-w-0 flex-1"
                 />
                 <Select
                   value={quantityUnit}
                   onValueChange={(v) => {
                     const nextUnit = v as "shares" | "dollars";
                     if (nextUnit === quantityUnit) return;
+                    let nextQuantity = "";
                     // Convert the existing value across units so the user
                     // doesn't lose their typed amount on a unit toggle.
                     if (
@@ -583,21 +570,22 @@ export function TradeForm({
                       Number.isFinite(referencePrice) &&
                       referencePrice > 0
                     ) {
-                      const converted =
+                      nextQuantity =
                         nextUnit === "dollars"
                           ? (qtyNum * referencePrice).toFixed(2)
                           : (qtyNum / referencePrice)
                               .toFixed(8)
                               .replace(/\.?0+$/, "");
-                      setQuantity(converted || "");
-                    } else {
-                      setQuantity("");
                     }
+                    setQuantity(nextQuantity);
                     setQuantityUnit(nextUnit);
+                    syncUrl({ quantity: nextQuantity, quantityUnit: nextUnit });
                   }}
                 >
                   <SelectTrigger className="w-28">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) => QUANTITY_UNIT_LABELS[value as "shares" | "dollars"]}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     <SelectItem value="shares">Shares</SelectItem>
@@ -643,9 +631,13 @@ export function TradeForm({
                       className="text-primary hover:underline"
                       onClick={() => {
                         if (quantityUnit === "dollars" && ownedDollars != null) {
-                          setQuantity(ownedDollars.toFixed(2));
+                          const nextQuantity = ownedDollars.toFixed(2);
+                          setQuantity(nextQuantity);
+                          syncUrl({ quantity: nextQuantity });
                         } else {
-                          setQuantity(String(owned));
+                          const nextQuantity = String(owned);
+                          setQuantity(nextQuantity);
+                          syncUrl({ quantity: nextQuantity });
                         }
                       }}
                     >
@@ -656,6 +648,9 @@ export function TradeForm({
               })()}
             </Field>
 
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
             <Field>
               <FieldLabel>Order Type</FieldLabel>
               <Select
@@ -663,6 +658,7 @@ export function TradeForm({
                 onValueChange={(v) => {
                   const next = v as OrderType;
                   setOrderType(next);
+                  syncUrl({ orderType: next });
                   // off-hours: switching TO market while TIF is GTC would be
                   // an invalid combo — pick OPG as a sensible default.
                   if (offHoursStockGuard && next === "market" && timeInForce === "gtc") {
@@ -671,7 +667,9 @@ export function TradeForm({
                 }}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue>
+                    {(value) => ORDER_TYPE_LABELS[value as OrderType]}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {availableOrderTypes.map((ot) => (
@@ -692,7 +690,10 @@ export function TradeForm({
                   min="0"
                   placeholder="0.00"
                   value={stopPrice}
-                  onChange={(e) => setStopPrice(e.target.value)}
+                  onChange={(e) => {
+                    setStopPrice(e.target.value);
+                    syncUrl({ stopPrice: e.target.value });
+                  }}
                 />
               </Field>
             )}
@@ -706,7 +707,10 @@ export function TradeForm({
                   min="0"
                   placeholder="0.00"
                   value={limitPrice}
-                  onChange={(e) => setLimitPrice(e.target.value)}
+                  onChange={(e) => {
+                    setLimitPrice(e.target.value);
+                    syncUrl({ limitPrice: e.target.value });
+                  }}
                 />
               </Field>
             )}
@@ -714,7 +718,7 @@ export function TradeForm({
 
           {/* Row 4: TIF (equity only) */}
           {!isCrypto && (
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr]">
+            <div className="grid gap-4 md:grid-cols-3">
               <Field>
                 <FieldLabel>Time in Force</FieldLabel>
                 <Select
@@ -722,6 +726,7 @@ export function TradeForm({
                   onValueChange={(v) => {
                     const next = v as TimeInForce;
                     setTimeInForce(next);
+                    syncUrl({ timeInForce: next });
                     // off-hours: switching TO GTC while order type is Market
                     // would be an invalid combo — drop to Limit.
                     if (offHoursStockGuard && next === "gtc" && orderType === "market") {
@@ -729,8 +734,10 @@ export function TradeForm({
                     }
                   }}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
+                <SelectTrigger>
+                    <SelectValue>
+                      {(value) => TIF_LABELS[value as TimeInForce]}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectPopup>
                     {availableTifs.map((t) => (
@@ -759,6 +766,11 @@ export function TradeForm({
                   : "—"}
               </span>
             </div>
+            {orderType === "market" && (marketOpen || isCrypto) ? (
+              <p className="text-xs text-muted-foreground">
+                Market prices can move before the order fills; purchasing power is checked again when submitted.
+              </p>
+            ) : null}
 
             {error && (
               <div
@@ -782,12 +794,12 @@ export function TradeForm({
               <Button
                 type="submit"
                 size="lg"
-                variant={side === "buy" ? "default" : "destructive"}
+                variant={side === "buy" ? "success" : "destructive"}
                 disabled={disabled}
+                loading={pending}
                 aria-describedby={error ? "trade-form-error" : undefined}
                 className={cn(disabled && "opacity-64")}
               >
-                {pending && <ArrowClockwise className="size-4 animate-spin" />}
                 Place {side} order
               </Button>
             </div>
@@ -819,33 +831,37 @@ function QuoteStrip({
 }) {
   const up = (change ?? 0) >= 0;
   return (
-    <div className="rounded-xl bg-muted/40 px-4 py-3">
-      <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-        <div className="flex items-baseline gap-2">
+    <div className="rounded-xl border border-border/64 bg-muted/28 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <Link
             href={`/stocks/${ticker}`}
-            className="text-lg font-semibold hover:underline"
+            className="text-base font-semibold tracking-tight hover:underline"
           >
             {ticker}
           </Link>
           {name && (
-            <span className="text-xs text-muted-foreground">{name}</span>
+            <p className="truncate text-xs text-muted-foreground">{name}</p>
           )}
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-semibold tabular-nums">
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-3 sm:justify-end">
+          <div className="text-right sm:min-w-32">
+            <div className="text-[0.625rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              Last
+            </div>
+            <div className="text-xl font-semibold tabular-nums">
             {loading ? (
-              <span className="inline-flex items-center gap-2 text-base text-muted-foreground">
-                <ArrowClockwise className="size-4 animate-spin" /> Loading…
+              <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="size-4" /> Loading
               </span>
             ) : price != null ? (
               fmtUsd(price)
             ) : (
               "—"
             )}
-          </span>
+            </div>
           {change != null && changePercent != null && (
-            <span
+            <div
               className={cn(
                 "text-xs font-medium tabular-nums",
                 up ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400",
@@ -854,22 +870,27 @@ function QuoteStrip({
               {up ? "+" : ""}
               {change.toFixed(2)} ({up ? "+" : ""}
               {changePercent.toFixed(2)}%)
-            </span>
+            </div>
           )}
-        </div>
-        <div className="flex items-baseline gap-3 text-xs text-muted-foreground tabular-nums">
-          <span>
-            Bid{" "}
-            <span className="text-foreground">
-              {bid != null ? fmtUsd(bid) : "—"}
-            </span>
-          </span>
-          <span>
-            Ask{" "}
-            <span className="text-foreground">
-              {ask != null ? fmtUsd(ask) : "—"}
-            </span>
-          </span>
+          </div>
+          <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-border/64 bg-background/60 text-xs tabular-nums">
+            <div className="min-w-24 px-3 py-2">
+              <div className="font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Bid
+              </div>
+              <div className="mt-0.5 font-semibold text-foreground">
+                {bid != null ? fmtUsd(bid) : "—"}
+              </div>
+            </div>
+            <div className="min-w-24 border-l border-border/64 px-3 py-2">
+              <div className="font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Ask
+              </div>
+              <div className="mt-0.5 font-semibold text-foreground">
+                {ask != null ? fmtUsd(ask) : "—"}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -885,33 +906,22 @@ function MarketStatus({
 }) {
   if (account.type === "crypto") {
     return (
-      <div className="flex flex-col items-end gap-0.5 text-xs">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60" />
-            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-          </span>
-          <span className="font-medium text-foreground">Open</span>
-        </span>
-        <span className="text-muted-foreground">Crypto trades 24/7</span>
+      <div className="flex flex-col items-end gap-1 text-right">
+        <div className="text-xs font-medium text-foreground">Crypto market</div>
+        <Badge variant="success">Open 24/7</Badge>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-end gap-0.5 text-xs">
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          className={cn(
-            "size-2 rounded-full",
-            marketOpen ? "bg-emerald-500" : "bg-muted-foreground/48",
-          )}
-        />
-        <span className="font-medium text-foreground">
-          {marketOpen ? "US markets open" : "US markets closed"}
-        </span>
-      </span>
-      <span className="text-muted-foreground">Mon–Fri, 9:30 AM–4:00 PM ET</span>
+    <div className="flex flex-col items-end gap-1 text-right">
+      <div className="text-xs font-medium text-foreground">US markets</div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Badge variant={marketOpen ? "success" : "zinc"}>
+          {marketOpen ? "Open" : "Closed"}
+        </Badge>
+        <span className="text-xs text-muted-foreground">9:30 AM-4:00 PM ET</span>
+      </div>
     </div>
   );
 }
