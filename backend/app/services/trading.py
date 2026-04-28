@@ -20,7 +20,6 @@ the holding via ``with_for_update()`` itself.
 """
 
 import logging
-from datetime import datetime, timezone
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from sqlalchemy.orm import Session
@@ -235,7 +234,6 @@ def release_buy_reservation(
     No-op when `account` is None or `order.reserved_per_share` is None (plain
     market buy never reserved). Floor-clamped at 0; logs a warning when the
     pre-clamp value goes negative — defense-in-depth against rounding drift.
-    Caller still owns `account.updated_at`.
     """
     if account is None or order.reserved_per_share is None:
         return
@@ -260,7 +258,7 @@ def release_sell_reservation(
 
     No-op when `holding` is None or this is a sync market sell (which never
     reserved at placement — gate mirrors `place_order`'s immediate-fill
-    branch). Floor-clamped at 0. Caller still owns `holding.updated_at`.
+    branch). Floor-clamped at 0.
     """
     if holding is None:
         return
@@ -312,7 +310,6 @@ def execute_fill(
             order.status = "cancelled"
             order.rejection_reason = "Insufficient buying power at fill time"
             release_buy_reservation(account, order, remaining)
-            account.updated_at = datetime.now(timezone.utc)
             return None
 
     # update order fill tracking
@@ -335,8 +332,6 @@ def execute_fill(
         order.status = "filled"
     else:
         order.status = "partially_filled"
-
-    order.updated_at = datetime.now(timezone.utc)
 
     # find or create holding for this ticker. Take an explicit row lock —
     # the caller already holds the trading_account lock above (account →
@@ -374,7 +369,6 @@ def execute_fill(
                 (old_qty * old_cost) + (fill_quantity * fill_price)
             ) / (old_qty + fill_quantity)
             holding.quantity = old_qty + fill_quantity
-            holding.updated_at = datetime.now(timezone.utc)
 
         # deduct from balance — quantize so the in-memory value matches what
         # numeric(14,2) will store on flush
@@ -388,12 +382,10 @@ def execute_fill(
             # cancel rather than ghost-crediting proceeds for shares not owned
             order.status = "cancelled"
             order.rejection_reason = "Position no longer exists at fill time"
-            order.updated_at = datetime.now(timezone.utc)
             return None
 
         holding.quantity -= fill_quantity
         release_sell_reservation(holding, order, fill_quantity)
-        holding.updated_at = datetime.now(timezone.utc)
         # remove holding row if fully sold
         if holding.quantity <= 0:
             db.delete(holding)
@@ -401,8 +393,6 @@ def execute_fill(
         # add proceeds to balance — quantize so the in-memory value matches
         # what numeric(14,2) will store on flush
         account.balance = to_money(account.balance + total)
-
-    account.updated_at = datetime.now(timezone.utc)
 
     # create transaction record
     txn = Transaction(

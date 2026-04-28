@@ -373,7 +373,6 @@ async def place_order(
             # across partial fills and the buying-power check sees a stale
             # higher-precision number.
             account.reserved_balance = to_money(account.reserved_balance + quantity * rps)
-            account.updated_at = datetime.now(timezone.utc)
 
         # for non-market sell orders, commit the shares so concurrent sell orders
         # cannot exceed the available position (mirrors reserved_balance for buys)
@@ -389,7 +388,6 @@ async def place_order(
             )
             if holding is not None:
                 holding.reserved_quantity += quantity
-                holding.updated_at = datetime.now(timezone.utc)
 
         order.status = "open"
         db.add(order)
@@ -564,8 +562,6 @@ async def cancel_order(
 
     if order.side == "buy":
         release_buy_reservation(account, order, remaining)
-        if order.reserved_per_share is not None:
-            account.updated_at = datetime.now(timezone.utc)
 
     if order.side == "sell":
         holding = (
@@ -578,8 +574,6 @@ async def cancel_order(
             .first()
         )
         release_sell_reservation(holding, order, remaining)
-        if holding is not None:
-            holding.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
     db.commit()
