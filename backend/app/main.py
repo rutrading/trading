@@ -19,6 +19,7 @@ from app.routers import (
     health,
     historical_bars,
     holdings,
+    kalshi,
     news,
     orders,
     quotes,
@@ -215,6 +216,25 @@ async def lifespan(app: FastAPI):
     logger.info("News refresh task started")
     logger.info("Strategy executor task started")
 
+    # Bot task is gated on KALSHI_BOT_ENABLED. The local import is intentional
+    # — keep ``app.tasks.kalshi_bot`` (and its transitive
+    # ``app.services.kalshi_rest``) out of ``sys.modules`` when disabled.
+    from app.config import env_bool
+
+    kalshi_task: asyncio.Task | None = None
+    if env_bool("KALSHI_BOT_ENABLED", default=False):
+        from app.tasks.kalshi_bot import run_kalshi_bot
+
+        kalshi_task = asyncio.create_task(run_kalshi_bot())
+        logger.info(
+            "Kalshi bot enabled (origin=%s, rate_limit=%d, poll=%ds)",
+            config.kalshi_api_origin,
+            config.kalshi_rate_limit,
+            config.kalshi_poll_interval_seconds,
+        )
+    else:
+        logger.info("Kalshi bot disabled")
+
     yield
 
     if feed is not None:
@@ -224,6 +244,12 @@ async def lifespan(app: FastAPI):
     executor_task.cancel()
     strategy_task.cancel()
     news_task.cancel()
+    if kalshi_task is not None:
+        kalshi_task.cancel()
+        try:
+            await kalshi_task
+        except asyncio.CancelledError:
+            pass
     try:
         await symbol_sync_task
     except asyncio.CancelledError:
@@ -268,3 +294,4 @@ app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(company.router, prefix="/api")
 app.include_router(accounts.router, prefix="/api")
+app.include_router(kalshi.router, prefix="/api")
