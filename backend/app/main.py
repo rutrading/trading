@@ -22,11 +22,13 @@ from app.routers import (
     news,
     orders,
     quotes,
+    strategies,
     symbols,
     transactions,
     watchlist,
 )
 from app.tasks.order_executor import run_order_executor
+from app.tasks.strategy_executor import run_strategy_executor
 from app.tasks.get_news import run_news_loop
 from app.ws.feeds.alpaca import AlpacaFeed
 from app.ws.feeds.base import BaseFeed
@@ -208,8 +210,10 @@ async def lifespan(app: FastAPI):
     logger.info("Quote flush task started")
 
     executor_task = asyncio.create_task(run_order_executor())
+    strategy_task = asyncio.create_task(run_strategy_executor())
     news_task = asyncio.create_task(run_news_loop())
     logger.info("News refresh task started")
+    logger.info("Strategy executor task started")
 
     yield
 
@@ -218,6 +222,7 @@ async def lifespan(app: FastAPI):
     symbol_sync_task.cancel()
     flush_task.cancel()
     executor_task.cancel()
+    strategy_task.cancel()
     news_task.cancel()
     try:
         await symbol_sync_task
@@ -232,6 +237,7 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     try:
+        await strategy_task
         await news_task
     except asyncio.CancelledError:
         pass
@@ -254,6 +260,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(quotes.router, prefix="/api")
 app.include_router(historical_bars.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
+app.include_router(strategies.router, prefix="/api")
 app.include_router(holdings.router, prefix="/api")
 app.include_router(symbols.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")

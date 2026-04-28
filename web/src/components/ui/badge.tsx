@@ -14,6 +14,8 @@ const BADGE_BASE =
 const SOLID: Record<BadgeVariant, string> = {
   default:
     "text-foreground bg-[linear-gradient(180deg,color-mix(in_srgb,var(--foreground)_14%,var(--background)),color-mix(in_srgb,var(--foreground)_6%,var(--background)))] shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_28%,var(--background)),0_1px_2px_rgb(0_0_0/0.08)] inset-shadow-[0_1px_0_rgb(255_255_255/0.45),0_-1px_0_rgb(0_0_0/0.05)] dark:bg-[linear-gradient(180deg,color-mix(in_srgb,var(--foreground)_22%,var(--background)),color-mix(in_srgb,var(--foreground)_8%,var(--background)))] dark:shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_1px_2px_rgb(0_0_0/0.3)] dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.14),0_-1px_0_rgb(0_0_0/0.18)]",
+  outline:
+    "text-foreground bg-transparent shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_18%,var(--background))] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.12)]",
   info: "text-white bg-[linear-gradient(180deg,var(--color-sky-500),var(--color-sky-600))] shadow-[0_0_0_1px_var(--color-sky-700),0_1px_2px_color-mix(in_srgb,var(--color-sky-500)_30%,transparent)] inset-shadow-[0_1px_0_rgb(255_255_255/0.3),0_-1px_0_rgb(0_0_0/0.15)]",
   success:
     "text-white bg-[linear-gradient(180deg,var(--color-emerald-500),var(--color-emerald-600))] shadow-[0_0_0_1px_var(--color-emerald-700),0_1px_2px_color-mix(in_srgb,var(--color-emerald-500)_30%,transparent)] inset-shadow-[0_1px_0_rgb(255_255_255/0.3),0_-1px_0_rgb(0_0_0/0.15)]",
@@ -55,6 +57,8 @@ const SOLID: Record<BadgeVariant, string> = {
 const SOFT: Record<BadgeVariant, string> = {
   default:
     "text-foreground bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))] shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_18%,var(--background))] inset-shadow-[0_1px_0_rgb(255_255_255/0.35)] dark:bg-white/5 dark:shadow-[0_0_0_1px_rgb(255_255_255/0.1)] dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.06)]",
+  outline:
+    "text-foreground bg-transparent shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_18%,var(--background))] dark:shadow-[0_0_0_1px_rgb(255_255_255/0.12)]",
   info: "text-sky-800 dark:text-sky-300 bg-sky-500/10 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-sky-500)_30%,transparent)] inset-shadow-[0_1px_0_rgb(255_255_255/0.4)] dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]",
   success:
     "text-emerald-800 dark:text-emerald-300 bg-emerald-500/10 shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-emerald-500)_30%,transparent)] inset-shadow-[0_1px_0_rgb(255_255_255/0.4)] dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]",
@@ -93,6 +97,7 @@ const SOFT: Record<BadgeVariant, string> = {
 
 export type BadgeVariant =
   | "default"
+  | "outline"
   | "info"
   | "success"
   | "warning"

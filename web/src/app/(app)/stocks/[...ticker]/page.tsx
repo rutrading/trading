@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { StockHeader } from "@/components/stocks/stock-header";
+import { getAccounts } from "@/app/actions/auth";
+import { getAllOrders, type OrderStatus } from "@/app/actions/orders";
+import { getAllHoldings } from "@/app/actions/portfolio";
+import { getQuote } from "@/app/actions/quotes";
+import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
+import { getWatchlist } from "@/app/actions/watchlist";
+import { RelatedNews } from "@/components/news/related-news";
 import { StockChart } from "@/components/StockChart";
+import { CompanyProfileCard } from "@/components/stocks/company-profile";
 import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form";
-import { CompanyProfileCard } from "@/components/stocks/company-profile";
 import { PositionSummary } from "@/components/stocks/position-summary";
-import { getCompanyProfile, getSymbol } from "@/app/actions/symbols";
-import { getAccounts } from "@/app/actions/auth";
-import { getQuote } from "@/app/actions/quotes";
-import { getWatchlist } from "@/app/actions/watchlist";
-import { getAllHoldings } from "@/app/actions/portfolio";
-import { getAllOrders, type OrderStatus } from "@/app/actions/orders";
+import { StockHeader } from "@/components/stocks/stock-header";
 import { STOCKS } from "@/components/stocks/stock-data";
 import { isUSMarketOpen } from "@/lib/market-hours";
 import {
@@ -50,8 +51,7 @@ export default async function StockPage({ params }: Props) {
   // it can filter the user's accounts down to compatible ones (a crypto
   // account can't buy AAPL and vice versa). Fall back to "us_equity" for
   // demo-only `STOCKS` entries that aren't in the symbol table yet.
-  const assetClass: "us_equity" | "crypto" =
-    dbSymbol?.assetClass ?? "us_equity";
+  const assetClass: "us_equity" | "crypto" = dbSymbol?.assetClass ?? "us_equity";
 
   const accounts: OrderFormAccount[] = filterBrokerageMembers(members).map((m) => ({
     id: m.tradingAccount.id,
@@ -137,6 +137,7 @@ export default async function StockPage({ params }: Props) {
       </div>
       <CompanyProfileCard ticker={symbol} company={company} />
       <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
+      <RelatedNews ticker={symbol} />
     </div>
   );
 }

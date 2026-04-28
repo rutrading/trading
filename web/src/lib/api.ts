@@ -25,11 +25,14 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 type QueryParams = Record<string, string | undefined>;
+type JsonBody = Record<string, unknown>;
 
 type RequestOpts = {
   body?: unknown;
   query?: QueryParams;
 };
+
+type RequestArg = QueryParams | RequestOpts | JsonBody | undefined;
 
 export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
@@ -54,23 +57,24 @@ function isRequestOpts(x: unknown): x is RequestOpts {
 }
 
 async function request<T>(
-  method: "GET" | "POST" | "PUT" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
-  paramsOrOpts?: QueryParams | RequestOpts,
+  arg?: RequestArg,
 ): Promise<ApiResult<T>> {
   let query: QueryParams | undefined;
   let body: unknown | undefined;
 
-  if (isRequestOpts(paramsOrOpts)) {
-    query = paramsOrOpts.query;
-    body = paramsOrOpts.body;
+  if (method === "GET" || method === "DELETE") {
+    query = isRequestOpts(arg) ? arg.query : (arg as QueryParams | undefined);
+  } else if (isRequestOpts(arg)) {
+    query = arg.query;
+    body = arg.body;
   } else {
-    query = paramsOrOpts;
+    body = arg as JsonBody | undefined;
   }
 
   try {
-    const authHeaders = await authHeader();
-    const headers: Record<string, string> = { ...authHeaders };
+    const headers: Record<string, string> = { ...(await authHeader()) };
     if (body !== undefined) headers["Content-Type"] = "application/json";
 
     const res = await fetch(buildUrl(path, query), {
@@ -95,6 +99,10 @@ async function request<T>(
             .map((d: { msg?: string }) => d?.msg)
             .filter(Boolean)
             .join("; ");
+        } else if (parsed && typeof parsed.message === "string") {
+          detail = parsed.message;
+        } else if (parsed && typeof parsed.error === "string") {
+          detail = parsed.error;
         }
       } catch {
         // text was not JSON — keep raw
@@ -113,12 +121,20 @@ export function get<T>(path: string, params?: QueryParams) {
   return request<T>("GET", path, params);
 }
 
-export function post<T>(path: string, paramsOrOpts?: QueryParams | RequestOpts) {
-  return request<T>("POST", path, paramsOrOpts);
+export function post<T>(path: string, paramsOrBody?: RequestArg) {
+  return request<T>("POST", path, paramsOrBody);
 }
 
-export function put<T>(path: string, paramsOrOpts?: QueryParams | RequestOpts) {
-  return request<T>("PUT", path, paramsOrOpts);
+export function postJson<T>(path: string, body: JsonBody, params?: QueryParams) {
+  return request<T>("POST", path, { query: params, body });
+}
+
+export function put<T>(path: string, paramsOrBody?: RequestArg) {
+  return request<T>("PUT", path, paramsOrBody);
+}
+
+export function patchJson<T>(path: string, body: JsonBody, params?: QueryParams) {
+  return request<T>("PATCH", path, { query: params, body });
 }
 
 export function del<T>(path: string, params?: QueryParams) {

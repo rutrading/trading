@@ -113,7 +113,6 @@ async def place_order(
     # DB. Raises HTTPException(429) when the user exceeds 5/sec or 30/min.
     await get_order_placement_limiter().check(str(user.get("sub", "")))
 
-    # verify the user is a member of this trading account
     account = get_trading_account(
         trading_account_id=payload.trading_account_id,
         user=user,
@@ -207,7 +206,8 @@ async def place_order(
         .with_for_update()
         .first()
     )
-
+    if account is None:
+        raise HTTPException(status_code=500, detail="Trading account not found")
     try:
         validate_order_request(
             account=account,
@@ -224,8 +224,6 @@ async def place_order(
     except OrderValidationError as exc:
         raise HTTPException(status_code=400, detail=exc.detail)
 
-    # create order record (after locking + validating so the in-memory object
-    # only exists once we know the order will be persisted)
     order = Order(
         trading_account_id=account.id,
         ticker=payload.ticker,
@@ -238,6 +236,8 @@ async def place_order(
         stop_price=stop_price,
     )
 
+    # create order record (after locking + validating so the in-memory object
+    # only exists once we know the order will be persisted)
     # for any non-immediate buy, compute rps before the buying power check so
     # the check validates against the actual reservation amount — not just the
     # raw stop/limit price. for stop orders rps > stop_price (ATR buffer); for

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Wallet } from "@phosphor-icons/react";
 
+import { placeOrder, type PlaceOrderInput } from "@/app/actions/orders";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Form } from "@/components/ui/form";
@@ -26,7 +27,6 @@ import {
 } from "@/components/ui/select";
 import { toastManager } from "@/components/ui/toast";
 import { useQuote } from "@/components/ws-provider";
-import { placeOrder, type PlaceOrderInput } from "@/app/actions/orders";
 import { fmtPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BrokerageAccountType } from "@/lib/accounts";
@@ -172,8 +172,7 @@ export const OrderForm = ({
               No {accountTypeLabel} account
             </p>
             <p className="text-xs text-muted-foreground">
-              You need a {accountTypeLabel} account before you can trade{" "}
-              {ticker}.
+              You need a {accountTypeLabel} account before you can trade {ticker}.
             </p>
             <Button variant="outline" size="sm" render={<Link href="/onboarding" />}>
               Create {accountTypeLabel} account

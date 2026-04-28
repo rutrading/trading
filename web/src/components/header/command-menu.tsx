@@ -9,9 +9,11 @@ import {
   Newspaper,
   Binoculars,
   GearSix,
+  Robot,
   SignOut,
   MagnifyingGlass,
   Star,
+  TrendUp,
 } from "@phosphor-icons/react";
 import {
   CommandDialog,
@@ -67,6 +69,8 @@ const PAGES: PageItem[] = [
   { kind: "page", value: "portfolio chart performance allocation", label: "Portfolio", href: "/portfolio", icon: ChartLine },
   { kind: "page", value: "holdings positions stocks", label: "Holdings", href: "/holdings", icon: Briefcase },
   { kind: "page", value: "activity transactions history", label: "Activity", href: "/activity", icon: ClockCounterClockwise },
+  { kind: "page", value: "strategies automated trading bots runtime", label: "Automated Trading", href: "/automated-trading", icon: Robot },
+  { kind: "page", value: "backtest strategy lab equity drawdown", label: "Backtest Lab", href: "/automated-trading/backtest", icon: TrendUp },
   { kind: "page", value: "news articles headlines market", label: "News", href: "/news", icon: Newspaper },
   { kind: "page", value: "watchlist tracked favorites saved", label: "Watchlist", href: "/watchlist", icon: Binoculars },
   { kind: "page", value: "settings account profile preferences", label: "Settings", href: "/settings", icon: GearSix },
@@ -90,7 +94,7 @@ export function CommandMenu({ trigger = "icon" }: { trigger?: "icon" | "sidebar"
   const [open, setOpen] = useState(false);
   const [watchlistTickers, setWatchlistTickers] = useState<Set<string>>(new Set());
   const [stocks, setStocks] = useState<StockItem[]>([]);
-  const [hasMore, setHasMore] = useState(false);
+  const [, setHasMore] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const mounted = useIsMounted();
@@ -202,75 +206,75 @@ export function CommandMenu({ trigger = "icon" }: { trigger?: "icon" | "sidebar"
               placeholder="Search stocks, pages..."
               onChange={(e) => handleSearch(e.target.value)}
             />
-              <CommandEmpty>No results found.</CommandEmpty>
-              <CommandList>
-                {(group: Group) => (
-                  <Fragment key={group.value}>
-                    <CommandGroup items={group.items}>
-                      <CommandGroupLabel>{group.value}</CommandGroupLabel>
-                      <CommandCollection>
-                        {(item: GroupItem) => {
-                          if (item.kind === "page") {
-                            const Icon = item.icon;
-                            return (
-                              <CommandItem
-                                key={item.value}
-                                value={item.value}
-                                onClick={() => navigate(item.href)}
-                              >
-                                <span className="inline-flex size-4 shrink-0 items-center justify-center">
-                                  <Icon size={16} className="opacity-60" />
-                                </span>
-                                <span>{item.label}</span>
-                              </CommandItem>
-                            );
-                          }
-                          if (item.kind === "action") {
-                            return (
-                              <CommandItem
-                                key={item.value}
-                                value={item.value}
-                                onClick={handleSignOut}
-                                className="text-destructive-foreground data-highlighted:bg-destructive/12 data-highlighted:text-destructive-foreground"
-                              >
-                                <span className="inline-flex size-4 shrink-0 items-center justify-center">
-                                  <SignOut size={16} />
-                                </span>
-                                <span>{item.label}</span>
-                              </CommandItem>
-                            );
-                          }
-                          const isWatched = watchlistTickers.has(item.ticker);
+            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandList>
+              {(group: Group) => (
+                <Fragment key={group.value}>
+                  <CommandGroup items={group.items}>
+                    <CommandGroupLabel>{group.value}</CommandGroupLabel>
+                    <CommandCollection>
+                      {(item: GroupItem) => {
+                        if (item.kind === "page") {
+                          const Icon = item.icon;
                           return (
                             <CommandItem
-                              key={item.ticker}
+                              key={item.value}
                               value={item.value}
-                              onClick={() => navigate(`/stocks/${item.ticker}`)}
+                              onClick={() => navigate(item.href)}
                             >
                               <span className="inline-flex size-4 shrink-0 items-center justify-center">
-                                {isWatched && (
-                                  <Star
-                                    size={14}
-                                    weight="fill"
-                                    className="text-amber-400"
-                                  />
-                                )}
+                                <Icon size={16} className="opacity-60" />
                               </span>
-                              <span className="w-20 shrink-0 truncate text-xs font-semibold tabular-nums">
-                                {item.ticker}
-                              </span>
-                              <span className="truncate text-muted-foreground">
-                                {item.name}
-                              </span>
+                              <span>{item.label}</span>
                             </CommandItem>
                           );
-                        }}
-                      </CommandCollection>
-                    </CommandGroup>
-                    <CommandSeparator />
-                  </Fragment>
-                )}
-              </CommandList>
+                        }
+                        if (item.kind === "action") {
+                          return (
+                            <CommandItem
+                              key={item.value}
+                              value={item.value}
+                              onClick={handleSignOut}
+                              className="text-destructive-foreground data-highlighted:bg-destructive/12 data-highlighted:text-destructive-foreground"
+                            >
+                              <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                                <SignOut size={16} />
+                              </span>
+                              <span>{item.label}</span>
+                            </CommandItem>
+                          );
+                        }
+                        const isWatched = watchlistTickers.has(item.ticker);
+                        return (
+                          <CommandItem
+                            key={item.ticker}
+                            value={item.value}
+                            onClick={() => navigate(`/stocks/${item.ticker}`)}
+                          >
+                            <span className="inline-flex size-4 shrink-0 items-center justify-center">
+                              {isWatched && (
+                                <Star
+                                  size={14}
+                                  weight="fill"
+                                  className="text-amber-400"
+                                />
+                              )}
+                            </span>
+                            <span className="w-20 shrink-0 truncate text-xs font-semibold tabular-nums">
+                              {item.ticker}
+                            </span>
+                            <span className="truncate text-muted-foreground">
+                              {item.name}
+                            </span>
+                          </CommandItem>
+                        );
+                      }}
+                    </CommandCollection>
+                  </CommandGroup>
+                  <CommandSeparator />
+                </Fragment>
+              )}
+            </CommandList>
             <CommandFooter>
               <span className="flex items-center gap-1.5">
                 Navigate with

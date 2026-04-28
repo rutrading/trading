@@ -1,6 +1,10 @@
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
+type EmptyMediaProps = React.ComponentProps<"div"> & {
+  variant?: "icon";
+};
+
 export const Empty = (props: React.ComponentProps<"div">) => (
   <div
     data-slot="empty"
@@ -17,7 +21,15 @@ export const Empty = (props: React.ComponentProps<"div">) => (
  * the title with consistent spacing. No built-in chrome — pass an icon, an
  * SVG, a custom decorated block, or omit the slot entirely.
  */
-export const EmptyMedia = (props: React.ComponentProps<"div">) => (
+export const EmptyHeader = (props: React.ComponentProps<"div">) => (
+  <div
+    data-slot="empty-header"
+    {...props}
+    className={cn("flex flex-col items-center gap-2", props.className)}
+  />
+);
+
+export const EmptyMedia = ({ variant: _variant, ...props }: EmptyMediaProps) => (
   <div
     data-slot="empty-media"
     {...props}
