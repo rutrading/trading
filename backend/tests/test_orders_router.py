@@ -506,24 +506,37 @@ class TestPlaceDeferredMarketOrder:
         snapshot; the executor fills later against a fresh quote. Therefore
         a quote whose data-event timestamp is older than the staleness
         threshold should NOT cause rejection on placement (unlike the sync
-        market path).
+        market path which gates on `quote.timestamp` at orders.py:288-296).
 
         Locks in the current behavior so a future change adding a staleness
         gate to the deferred path requires updating this test consciously.
         """
         from datetime import datetime, timedelta, timezone
 
+        from app.schemas import QuoteResponse
+
+        ten_minutes_ago = int(
+            (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
+        )
+
+        async def _stale_quote(_ticker, db=None, *, require_positive=False):
+            return QuoteResponse(
+                ticker="AAPL",
+                price=100.0,
+                timestamp=ten_minutes_ago,
+                cached=True,
+                cache_layer="postgres",
+                age_seconds=600,
+            )
+
         monkeypatch.setattr(
             "app.routers.orders.compute_atr", lambda _t, _db: Decimal("0")
         )
+        monkeypatch.setattr("app.routers.orders.resolve_quote_or_400", _stale_quote)
+
         with session_factory() as db:
             seed_user(db, "user-a")
             seed_symbol(db, "AAPL")
-            quote = seed_quote(db, "AAPL", price=100.0)
-            quote.timestamp = int(
-                (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
-            )
-            db.commit()
             account = seed_account(db, "user-a", balance="10000")
             account_id = account.id
 
