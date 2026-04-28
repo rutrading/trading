@@ -4,7 +4,6 @@ import logging
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -24,7 +23,7 @@ from app.schemas import (
     OrderTransactionResponse,
 )
 from app.services.atr import compute_atr
-from app.services.market_calendar import is_stock_market_open
+from app.services.market_calendar import ET, is_stock_market_open
 from app.services.quote_cache import resolve_quote
 from app.services.trading import (
     OrderValidationError,
@@ -38,8 +37,6 @@ from app.services.trading import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-_ET = ZoneInfo("America/New_York")
 
 
 class PlaceOrderRequest(BaseModel):
@@ -173,7 +170,7 @@ async def place_order(
         payload.asset_class == "us_equity"
         and payload.order_type == "market"
         and not deferred_market
-        and not is_stock_market_open(datetime.now(timezone.utc).astimezone(_ET))
+        and not is_stock_market_open(datetime.now(timezone.utc).astimezone(ET))
     ):
         raise HTTPException(
             status_code=400,
@@ -301,7 +298,7 @@ async def place_order(
             )
         is_live_market = (
             payload.asset_class == "crypto"
-            or is_stock_market_open(datetime.now(timezone.utc).astimezone(_ET))
+            or is_stock_market_open(datetime.now(timezone.utc).astimezone(ET))
         )
         if is_live_market and quote.timestamp is not None:
             # Defence-in-depth: `resolve_quote` already enforces this on

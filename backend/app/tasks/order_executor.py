@@ -8,20 +8,22 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
-from app.services.market_calendar import NYSE_HOLIDAYS, is_stock_market_open
+from app.services.market_calendar import (
+    ET,
+    MARKET_CLOSE,
+    MARKET_OPEN,
+    NYSE_HOLIDAYS,
+    is_stock_market_open,
+)
 from app.services.trading import to_money, compute_market_fill_price, execute_fill
 
-ET = ZoneInfo("America/New_York")
 POLL_INTERVAL = 5  # seconds between executor cycles
-MARKET_OPEN = (9, 30)
-MARKET_CLOSE = (16, 0)
 FILL_WINDOW_MINUTES = 5  # window around open/close for opg/cls fills
 
 # 0.05% of daily volume is fillable per poll cycle.
@@ -270,7 +272,7 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
     # Without this guard, a day/gtc limit could fill against a stale after-hours
     # quote (e.g. 10pm matching against a 4pm close price).
     if order.asset_class == "us_equity" and tif not in ("opg", "cls"):
-        if not _is_stock_market_open(now_et):
+        if not is_stock_market_open(now_et):
             return False
 
     # opg/cls equities must also respect the trading-day calendar. _in_window
@@ -400,10 +402,6 @@ def _is_trading_day(now_et: datetime) -> bool:
     if now_et.weekday() >= 5:
         return False
     return now_et.date() not in NYSE_HOLIDAYS
-
-
-# Thin alias so existing tests importing `_is_stock_market_open` keep working.
-_is_stock_market_open = is_stock_market_open
 
 
 def _in_window(now_et: datetime, target: tuple[int, int]) -> bool:

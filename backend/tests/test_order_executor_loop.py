@@ -108,7 +108,7 @@ class TestCancelVsExecutorRace:
 
         # Force market hours so _should_fill doesn't bail on the off-hours guard
         monkeypatch.setattr(
-            order_executor, "_is_stock_market_open", lambda now_et: True
+            order_executor, "is_stock_market_open", lambda now_et: True
         )
 
         # Mutate the order status from a separate session BEFORE the executor
@@ -197,7 +197,7 @@ class TestCancelVsExecutorRace:
         _patch_session_factory(monkeypatch, factory)
         _stub_ws_manager(monkeypatch)
         monkeypatch.setattr(
-            order_executor, "_is_stock_market_open", lambda now_et: True
+            order_executor, "is_stock_market_open", lambda now_et: True
         )
 
         with factory() as db:
@@ -241,7 +241,7 @@ class TestSyncSystemTickersInLoop:
         _patch_session_factory(monkeypatch, factory)
         fake_manager = _stub_ws_manager(monkeypatch)
         monkeypatch.setattr(
-            order_executor, "_is_stock_market_open", lambda now_et: True
+            order_executor, "is_stock_market_open", lambda now_et: True
         )
 
         with factory() as db:
