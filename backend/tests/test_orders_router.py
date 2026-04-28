@@ -779,6 +779,47 @@ class TestCancelOrderReservationRelease:
             assert account.reserved_balance == Decimal("0")
             assert order.status == "cancelled"
 
+    def test_cancel_deferred_market_sell_releases_reserved_quantity(
+        self, session_factory
+    ):
+        # deferred-market (market + opg/cls) sells reserve at placement
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            account = seed_account(db, "user-a")
+            seed_holding(
+                db,
+                account.id,
+                "AAPL",
+                quantity="10",
+                reserved_quantity="10",
+            )
+            order = seed_order(
+                db,
+                account.id,
+                "AAPL",
+                side="sell",
+                order_type="market",
+                limit_price=None,
+                time_in_force="opg",
+                quantity="10",
+                status="open",
+            )
+            account_id = account.id
+            order_id = order.id
+
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post(f"/api/orders/{order_id}/cancel")
+        assert response.status_code == 200
+
+        with session_factory() as db:
+            holding = db.query(Holding).filter(
+                Holding.trading_account_id == account_id, Holding.ticker == "AAPL"
+            ).first()
+            order = db.query(Order).filter(Order.id == order_id).first()
+            assert holding.reserved_quantity == Decimal("0")
+            assert order.status == "cancelled"
+
     def test_cannot_cancel_filled_order(self, session_factory):
         with session_factory() as db:
             seed_user(db, "user-a")
