@@ -70,15 +70,9 @@ class PlaceOrderRequest(BaseModel):
         return v
 
 
-def _get_order_or_404(db: Session, order_id: int, *, for_update: bool = False) -> Order:
-    """Look up an order by id. Pass `for_update=True` when the caller
-    intends to mutate the row, so the lock is acquired before the
-    authz check rather than after — preventing a concurrent writer
-    from changing the row out from under the read-modify-write."""
-    query = db.query(Order).filter(Order.id == order_id)
-    if for_update:
-        query = query.with_for_update()
-    order = query.first()
+def _get_order_or_404(db: Session, order_id: int) -> Order:
+    """Look up an order by id, raising 404 if not found."""
+    order = db.query(Order).filter(Order.id == order_id).first()
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
@@ -517,6 +511,8 @@ async def cancel_order(
     # reservation-release math, so it needs the same cap as placement.
     await get_order_cancel_limiter().check(str(user.get("sub", "")))
 
+    # Two-step (unlocked read for membership/IDOR; locked re-read after the
+    # account lock) preserves the account → order lock ordering convention.
     order = _get_order_or_404(db, order_id)
     assert_owns_order(order, user, db)
 

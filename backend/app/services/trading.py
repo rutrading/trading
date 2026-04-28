@@ -281,18 +281,13 @@ def execute_fill(
     (order is cancelled and reservation released). Caller must not commit in that case since
     execute_fill already updates the order and account — just commit to persist the cancellation.
 
+    Caller contract: ``account`` must already be locked via ``with_for_update()``
+    before calling. Both production callers (``place_order`` sync-market path and
+    the executor's fill branch) acquire the lock first per the module-level lock
+    ordering convention; passing an unlocked account is undefined.
+
     Must be called within a db transaction (caller handles commit).
     """
-    # re-fetch with a row lock so the balance check and mutations below always
-    # see the latest committed state, even when called from a background worker
-    # that didn't lock the account itself
-    account = (
-        db.query(TradingAccount)
-        .filter(TradingAccount.id == account.id)
-        .with_for_update()
-        .first()
-    )
-
     # `total` lands in transaction.total (numeric(14,2)) and drives the
     # account.balance update — quantize once here so every downstream consumer
     # sees the same value Postgres will store.
