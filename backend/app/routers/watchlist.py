@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -39,11 +40,15 @@ def _ensure_user_row(db: Session, user: dict) -> str:
     """
     user_id = user["sub"]
     if db.get(User, user_id) is None:
+        now = datetime.now(timezone.utc)
         db.add(
             User(
                 id=user_id,
                 name=user.get("name") or "Dev User",
                 email=user.get("email") or f"{user_id}@localhost",
+                email_verified=False,
+                created_at=now,
+                updated_at=now,
             )
         )
         db.flush()
