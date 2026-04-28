@@ -28,9 +28,9 @@ export const StockHeader = ({
   return (
     <div className="space-y-4">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
           <h1 className="text-3xl font-bold tracking-tight">{stock.name}</h1>
-          <Badge variant="default" className="px-2.5 py-1 text-sm">
+          <Badge variant="default" className="mt-1.5 px-2.5 py-1 text-sm">
             {ticker}
           </Badge>
         </div>

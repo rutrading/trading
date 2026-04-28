@@ -1,12 +1,21 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Wallet } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Form } from "@/components/ui/form";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+  NumberFieldRow,
+} from "@/components/ui/number-field";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -47,6 +56,7 @@ export const OrderForm = ({
   accounts: OrderFormAccount[];
   marketOpen: boolean;
 }) => {
+  const router = useRouter();
   // Only accounts of the matching type can trade this asset. Stocks need an
   // investment account; crypto needs a crypto account. Filtering server-side
   // would also work, but doing it here keeps the page contract simple
@@ -87,7 +97,8 @@ export const OrderForm = ({
   // ask them to use Limit/Stop or jump to the full form.
   const offHoursStockGuard = assetClass === "us_equity" && !marketOpen;
 
-  const submit = () => {
+  const submit = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     if (!accountId) return;
     if (!(qty > 0)) {
       toastManager.add({
@@ -136,6 +147,7 @@ export const OrderForm = ({
         setQuantity("");
         setLimitPrice("");
         setStopPrice("");
+        router.refresh();
       } else {
         toastManager.add({
           title: "Order failed",
@@ -151,7 +163,7 @@ export const OrderForm = ({
       <h2 className="mb-4 text-sm font-medium text-muted-foreground">
         Place Order
       </h2>
-      <div className="space-y-4 rounded-xl bg-card p-3 sm:p-4">
+      <Form className="space-y-4 rounded-xl bg-card p-3 sm:p-4" onSubmit={submit}>
         {noMatchingAccount ? (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <Wallet className="size-8 text-muted-foreground" />
@@ -169,8 +181,8 @@ export const OrderForm = ({
         ) : (
           <>
             {matchingAccounts.length > 1 && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Account</Label>
+              <Field>
+                <FieldLabel>Account</FieldLabel>
                 <Select
                   value={accountId != null ? String(accountId) : ""}
                   onValueChange={(v) => setAccountId(Number(v))}
@@ -191,7 +203,7 @@ export const OrderForm = ({
                     ))}
                   </SelectPopup>
                 </Select>
-              </div>
+              </Field>
             )}
 
             <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
@@ -251,53 +263,70 @@ export const OrderForm = ({
             )}
 
             <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="qty" className="text-xs">
-                  Quantity
-                </Label>
-                <Input
+              <Field>
+                <FieldLabel>Quantity</FieldLabel>
+                <NumberField
                   id="qty"
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  step="any"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-              </div>
+                  min={0}
+                  step={1}
+                  smallStep={0.000001}
+                  value={quantity === "" ? null : Number(quantity)}
+                  onValueChange={(value) => setQuantity(value == null ? "" : String(value))}
+                >
+                  <NumberFieldRow>
+                    <NumberFieldDecrement />
+                    <NumberFieldGroup>
+                      <NumberFieldInput placeholder="0" />
+                    </NumberFieldGroup>
+                    <NumberFieldIncrement />
+                  </NumberFieldRow>
+                </NumberField>
+              </Field>
 
               {orderType === "limit" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="limit-price" className="text-xs">
-                    Limit Price
-                  </Label>
-                  <Input
+                <Field>
+                  <FieldLabel>Limit Price</FieldLabel>
+                  <NumberField
                     id="limit-price"
-                    type="number"
-                    placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
-                    min="0"
-                    step="any"
-                    value={limitPrice}
-                    onChange={(e) => setLimitPrice(e.target.value)}
-                  />
-                </div>
+                    min={0}
+                    step={0.01}
+                    value={limitPrice === "" ? null : Number(limitPrice)}
+                    onValueChange={(value) => setLimitPrice(value == null ? "" : String(value))}
+                  >
+                    <NumberFieldRow>
+                      <NumberFieldDecrement />
+                      <NumberFieldGroup>
+                      <NumberFieldInput
+                        placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
+                      />
+                      </NumberFieldGroup>
+                      <NumberFieldIncrement />
+                    </NumberFieldRow>
+                  </NumberField>
+                </Field>
               )}
 
               {orderType === "stop" && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="stop-price" className="text-xs">
-                    Stop Price
-                  </Label>
-                  <Input
+                <Field>
+                  <FieldLabel>Stop Price</FieldLabel>
+                  <NumberField
                     id="stop-price"
-                    type="number"
-                    placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
-                    min="0"
-                    step="any"
-                    value={stopPrice}
-                    onChange={(e) => setStopPrice(e.target.value)}
-                  />
-                </div>
+                    min={0}
+                    step={0.01}
+                    value={stopPrice === "" ? null : Number(stopPrice)}
+                    onValueChange={(value) => setStopPrice(value == null ? "" : String(value))}
+                  >
+                    <NumberFieldRow>
+                      <NumberFieldDecrement />
+                      <NumberFieldGroup>
+                      <NumberFieldInput
+                        placeholder={referencePrice > 0 ? fmtPrice(referencePrice) : "0.00"}
+                      />
+                      </NumberFieldGroup>
+                      <NumberFieldIncrement />
+                    </NumberFieldRow>
+                  </NumberField>
+                </Field>
               )}
             </div>
 
@@ -319,18 +348,17 @@ export const OrderForm = ({
             </div>
 
             <Button
-              type="button"
+              type="submit"
               className="w-full"
               variant={side === "buy" ? "success" : "destructive"}
               disabled={pending || (orderType === "market" && offHoursStockGuard)}
               loading={pending}
-              onClick={submit}
             >
               {side === "buy" ? "Buy" : "Sell"} {ticker}
             </Button>
           </>
         )}
-      </div>
+      </Form>
     </div>
   );
 };
