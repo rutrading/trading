@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useTransition, Fragment } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CaretRight, Receipt } from "@phosphor-icons/react";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -28,9 +27,13 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { toastManager } from "@/components/ui/toast";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 import { OrderStatusBadge } from "./order-status-badge";
 import { cancelOrder, type Order, type OrderStatus } from "@/app/actions/orders";
 import type { AccountType } from "@/lib/accounts";
@@ -66,15 +69,7 @@ export type FormattedOrderDates = {
   lastFillAt: string | null;
 };
 
-export const OrdersTable = ({
-  orders,
-  accountsById,
-  page,
-  perPage,
-  total,
-  scopedAccountId,
-  formattedDates,
-}: {
+type OrdersTableProps = {
   orders: Order[];
   accountsById?: Record<number, { name: string; type: AccountType }>;
   page: number;
@@ -84,20 +79,157 @@ export const OrdersTable = ({
   // Pre-formatted on the server so SSR + client agree on the rendered string
   // (Node's ICU locale would otherwise differ from the browser's TZ/locale).
   formattedDates: Record<number, FormattedOrderDates>;
-}) => {
+};
+
+type OrderRowsProps = {
+  order: Order;
+  accountsById?: Record<number, { name: string; type: AccountType }>;
+  formattedDates: Record<number, FormattedOrderDates>;
+  colCount: number;
+  cancellingId: number | null;
+  onCancel: (id: number, ticker: string) => void;
+};
+
+function OrderRows({
+  order: o,
+  accountsById,
+  formattedDates,
+  colCount,
+  cancellingId,
+  onCancel,
+}: OrderRowsProps) {
+  const [open, setOpen] = useState(false);
+  const filled = parseFloat(o.filled_quantity);
+  const remaining = parseFloat(o.quantity) - filled;
+
+  return (
+    <Collapsible key={o.id} open={open} onOpenChange={setOpen} render={<tbody />}>
+      <TableRow
+        className="cursor-pointer hover:bg-muted/30"
+        data-state={open ? "open" : "closed"}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <TableCell className="w-8 pl-3 pr-0">
+          <CollapsibleTrigger
+            type="button"
+            aria-label={`Toggle details for order ${o.ticker}`}
+            onClick={(event) => event.stopPropagation()}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&[data-panel-open]_.order-chevron]:rotate-90"
+          >
+            <CaretRight size={14} className="order-chevron transition-transform" />
+          </CollapsibleTrigger>
+        </TableCell>
+        <TableCell className="text-muted-foreground whitespace-nowrap">
+          {formattedDates[o.id]?.date ?? "—"}
+        </TableCell>
+        {accountsById && (
+          <TableCell className="whitespace-nowrap">
+            <span className="flex items-center gap-2">
+              <span className="text-sm">
+                {accountsById[o.trading_account_id]?.name ?? `#${o.trading_account_id}`}
+              </span>
+              <Badge
+                variant={
+                  accountsById[o.trading_account_id]?.type === "crypto"
+                    ? "warning"
+                    : "default"
+                }
+              >
+                {accountsById[o.trading_account_id]?.type === "crypto"
+                  ? "Crypto"
+                  : "Stock"}
+              </Badge>
+            </span>
+          </TableCell>
+        )}
+        <TableCell className="font-medium">
+          <Link
+            href={`/stocks/${o.ticker}`}
+            onClick={(e) => e.stopPropagation()}
+            className="hover:underline"
+          >
+            {o.ticker}
+          </Link>
+        </TableCell>
+        <TableCell>
+          <Badge variant={o.side === "buy" ? "success" : "destructive"}>
+            {o.side.toUpperCase()}
+          </Badge>
+        </TableCell>
+        <TableCell className="capitalize">
+          {o.order_type.replace("_", " ")}
+        </TableCell>
+        <TableCell className="text-right tabular-nums">{fmt(filled)}</TableCell>
+        <TableCell className="text-right tabular-nums">{fmt(remaining)}</TableCell>
+        <TableCell className="text-right tabular-nums">{priceCell(o)}</TableCell>
+        <TableCell className="text-right tabular-nums">
+          {o.average_fill_price ? `$${fmt(parseFloat(o.average_fill_price))}` : "—"}
+        </TableCell>
+        <TableCell className="text-right tabular-nums">{totalCell(o)}</TableCell>
+        <TableCell className="uppercase text-xs text-muted-foreground">
+          {o.time_in_force}
+        </TableCell>
+        <TableCell>
+          <OrderStatusBadge status={o.status} />
+        </TableCell>
+      </TableRow>
+      <CollapsibleContent
+        id={`order-${o.id}-detail`}
+        render={<TableRow />}
+        className="bg-muted/20"
+      >
+        <TableCell colSpan={colCount} className="py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2 px-2 text-xs">
+            <div className="flex flex-wrap gap-x-8 gap-y-1">
+              <span>
+                <span className="text-muted-foreground">Order placed: </span>
+                <span className="tabular-nums">
+                  {formattedDates[o.id]?.createdAt ?? "—"}
+                </span>
+              </span>
+              <span>
+                <span className="text-muted-foreground">Order executed: </span>
+                <span className="tabular-nums">
+                  {formattedDates[o.id]?.lastFillAt ?? "Not executed"}
+                </span>
+              </span>
+            </div>
+            {CANCELLABLE.has(o.status) && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={cancellingId === o.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancel(o.id, o.ticker);
+                }}
+                aria-label={`Cancel ${o.ticker} order`}
+                className="h-7 px-3 text-destructive text-xs hover:text-destructive"
+              >
+                {cancellingId === o.id && <Spinner className="size-3" />}
+                Cancel order
+              </Button>
+            )}
+          </div>
+        </TableCell>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+export const OrdersTable = ({
+  orders,
+  accountsById,
+  page,
+  perPage,
+  total,
+  scopedAccountId,
+  formattedDates,
+}: OrdersTableProps) => {
   const router = useRouter();
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [, startTransition] = useTransition();
-
-  const toggleRow = (id: number) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleCancel = (id: number, ticker: string) => {
     if (cancellingId !== null) return;
@@ -171,155 +303,17 @@ export const OrdersTable = ({
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
-            {orders.map((o) => {
-              const expanded = expandedIds.has(o.id);
-              const filled = parseFloat(o.filled_quantity);
-              const remaining = parseFloat(o.quantity) - filled;
-              return (
-                <Fragment key={o.id}>
-                  <TableRow
-                    className="cursor-pointer hover:bg-muted/30"
-                    onClick={() => toggleRow(o.id)}
-                  >
-                    <TableCell className="w-8 pl-3 pr-0">
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-controls={`order-${o.id}-detail`}
-                        aria-label={
-                          expanded
-                            ? `Collapse details for order ${o.ticker}`
-                            : `Expand details for order ${o.ticker}`
-                        }
-                        onClick={(e) => {
-                          // Row already toggles; stop the bubble so we don't
-                          // toggle twice.
-                          e.stopPropagation();
-                          toggleRow(o.id);
-                        }}
-                        className="flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                      >
-                        <CaretRight
-                          size={14}
-                          className={cn(
-                            "transition-transform",
-                            expanded && "rotate-90",
-                          )}
-                        />
-                      </button>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {formattedDates[o.id]?.date ?? "—"}
-                    </TableCell>
-                    {accountsById && (
-                      <TableCell className="whitespace-nowrap">
-                        <span className="flex items-center gap-2">
-                          <span className="text-sm">
-                            {accountsById[o.trading_account_id]?.name ?? `#${o.trading_account_id}`}
-                          </span>
-                          <Badge
-                            variant={
-                              accountsById[o.trading_account_id]?.type === "crypto"
-                                ? "warning"
-                                : "default"
-                            }
-                          >
-                            {accountsById[o.trading_account_id]?.type === "crypto"
-                              ? "Crypto"
-                              : "Stock"}
-                          </Badge>
-                        </span>
-                      </TableCell>
-                    )}
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/stocks/${o.ticker}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:underline"
-                      >
-                        {o.ticker}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={o.side === "buy" ? "success" : "destructive"}
-                      >
-                        {o.side.toUpperCase()}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="capitalize">
-                      {o.order_type.replace("_", " ")}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmt(filled)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {fmt(remaining)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {priceCell(o)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {o.average_fill_price
-                        ? `$${fmt(parseFloat(o.average_fill_price))}`
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {totalCell(o)}
-                    </TableCell>
-                    <TableCell className="uppercase text-xs text-muted-foreground">
-                      {o.time_in_force}
-                    </TableCell>
-                    <TableCell>
-                      <OrderStatusBadge status={o.status} />
-                    </TableCell>
-                  </TableRow>
-                  {expanded && (
-                    <TableRow className="bg-muted/20" id={`order-${o.id}-detail`}>
-                      <TableCell colSpan={colCount} className="py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-2 px-2 text-xs">
-                          <div className="flex flex-wrap gap-x-8 gap-y-1">
-                            <span>
-                              <span className="text-muted-foreground">Order placed: </span>
-                              <span className="tabular-nums">
-                                {formattedDates[o.id]?.createdAt ?? "—"}
-                              </span>
-                            </span>
-                            <span>
-                              <span className="text-muted-foreground">Order executed: </span>
-                              <span className="tabular-nums">
-                                {formattedDates[o.id]?.lastFillAt ?? "Not executed"}
-                              </span>
-                            </span>
-                          </div>
-                          {CANCELLABLE.has(o.status) && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={cancellingId === o.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleCancel(o.id, o.ticker);
-                              }}
-                              aria-label={`Cancel ${o.ticker} order`}
-                              className="h-7 px-3 text-destructive text-xs hover:text-destructive"
-                            >
-                              {cancellingId === o.id && (
-                                <Spinner className="size-3" />
-                              )}
-                              Cancel order
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              );
-            })}
-          </TableBody>
+          {orders.map((order) => (
+            <OrderRows
+              key={order.id}
+              order={order}
+              accountsById={accountsById}
+              formattedDates={formattedDates}
+              colCount={colCount}
+              cancellingId={cancellingId}
+              onCancel={handleCancel}
+            />
+          ))}
         </Table>
       </div>
       {totalPages > 1 && (
