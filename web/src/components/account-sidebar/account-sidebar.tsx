@@ -6,11 +6,12 @@ import { GearSix, SidebarSimple } from "@phosphor-icons/react/ssr";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import type { BrokerageAccountType } from "@/lib/accounts";
 
 export type SidebarAccount = {
   id: number;
   name: string;
-  type: "investment" | "crypto";
+  type: BrokerageAccountType;
   balance: string;
   isJoint: boolean;
 };

@@ -8,20 +8,27 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import DailyBar, Holding, Order, Quote, TradingAccount
 from app.db.session import get_session_factory
-from app.services.market_calendar import NYSE_HOLIDAYS, is_stock_market_open
-from app.services.trading import to_money, compute_market_fill_price, execute_fill
+from app.services.market_calendar import (
+    ET,
+    MARKET_CLOSE,
+    MARKET_OPEN,
+    NYSE_HOLIDAYS,
+    is_stock_market_open,
+)
+from app.services.trading import (
+    compute_market_fill_price,
+    execute_fill,
+    release_buy_reservation,
+    release_sell_reservation,
+)
 
-ET = ZoneInfo("America/New_York")
 POLL_INTERVAL = 5  # seconds between executor cycles
-MARKET_OPEN = (9, 30)
-MARKET_CLOSE = (16, 0)
 FILL_WINDOW_MINUTES = 5  # window around open/close for opg/cls fills
 
 # 0.05% of daily volume is fillable per poll cycle.
@@ -151,7 +158,7 @@ def _process_open_orders() -> None:
                 # has since revoked.
                 if not _should_fill(order, price, now_et):
                     continue
-                remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+                remaining = order.remaining_quantity
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
                 # The only `market` orders that reach the executor are those
                 # whose placement deferred them to the next session boundary
@@ -188,8 +195,7 @@ def _process_open_orders() -> None:
                         fill_price,
                     )
             elif _should_expire(order, now_et, expiry_boundaries):
-                remaining = order.quantity - (order.filled_quantity or Decimal("0"))
-                # release reserved balance for buy orders
+                remaining = order.remaining_quantity
                 if order.side == "buy" and order.reserved_per_share is not None:
                     account = (
                         db.query(TradingAccount)
@@ -197,16 +203,10 @@ def _process_open_orders() -> None:
                         .with_for_update()
                         .first()
                     )
+                    release_buy_reservation(account, order, remaining)
                     if account is not None:
-                        account.reserved_balance = to_money(
-                            max(
-                                Decimal("0"),
-                                account.reserved_balance - remaining * order.reserved_per_share,
-                            )
-                        )
                         account.updated_at = datetime.now(timezone.utc)
-                # release reserved_quantity for non-market sell orders
-                if order.side == "sell" and order.order_type != "market":
+                if order.side == "sell":
                     holding = (
                         db.query(Holding)
                         .filter(
@@ -216,11 +216,8 @@ def _process_open_orders() -> None:
                         .with_for_update()
                         .first()
                     )
+                    release_sell_reservation(holding, order, remaining)
                     if holding is not None:
-                        holding.reserved_quantity = max(
-                            Decimal("0"),
-                            holding.reserved_quantity - remaining,
-                        )
                         holding.updated_at = datetime.now(timezone.utc)
                 order.status = "cancelled"
                 db.commit()
@@ -267,7 +264,7 @@ def _should_fill(order: Order, price: Decimal, now_et: datetime) -> bool:
     # Without this guard, a day/gtc limit could fill against a stale after-hours
     # quote (e.g. 10pm matching against a 4pm close price).
     if order.asset_class == "us_equity" and tif not in ("opg", "cls"):
-        if not _is_stock_market_open(now_et):
+        if not is_stock_market_open(now_et):
             return False
 
     # opg/cls equities must also respect the trading-day calendar. _in_window
@@ -397,10 +394,6 @@ def _is_trading_day(now_et: datetime) -> bool:
     if now_et.weekday() >= 5:
         return False
     return now_et.date() not in NYSE_HOLIDAYS
-
-
-# Thin alias so existing tests importing `_is_stock_market_open` keep working.
-_is_stock_market_open = is_stock_market_open
 
 
 def _in_window(now_et: datetime, target: tuple[int, int]) -> bool:

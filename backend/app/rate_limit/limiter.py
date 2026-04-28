@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
-    def __init__(self, calls_per_minute: int) -> None:
+    def __init__(self, calls_per_minute: int, label: str = "API") -> None:
         self.limit = max(1, calls_per_minute)
         self.window = 60.0
         self._timestamps: deque[float] = deque()
         self._lock = asyncio.Lock()
         self._warn_threshold = int(self.limit * 0.9)
         self._warned = False
+        self._label = label
 
     def _purge_old(self, now: float) -> None:
         """Remove timestamps older than the sliding window."""
@@ -60,7 +61,7 @@ class RateLimiter:
             # log a warning when approaching the limit
             if count >= self._warn_threshold and not self._warned:
                 logger.warning(
-                    "Alpaca rate limit at 90%% (%d/%d requests in current window)",
+                    f"{self._label} rate limit at 90%% (%d/%d requests in current window)",
                     count,
                     self.limit,
                 )

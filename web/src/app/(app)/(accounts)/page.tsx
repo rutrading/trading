@@ -17,7 +17,7 @@ import {
 import { getOpenOrdersAcrossAccounts } from "@/app/actions/orders";
 import { getQuotes } from "@/app/actions/quotes";
 import { getWatchlist } from "@/app/actions/watchlist";
-import { resolveAccountScope } from "@/lib/accounts";
+import { resolveBrokerageScope } from "@/lib/accounts";
 
 export const metadata: Metadata = { title: "Dashboard - R U Trading" };
 
@@ -33,10 +33,8 @@ type Props = {
 export default async function DashboardPage({ searchParams }: Props) {
   const { account: accountParam } = await searchParams;
   const accounts = await getAccounts();
-  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
-    accounts,
-    accountParam,
-  );
+  const { scopedId, scopedAccount, activeIds, allAccountIds, accountsById } =
+    resolveBrokerageScope(accounts, accountParam);
 
   // Holdings first because every other downstream fetch (quotes, historical
   // bars, time-series chart) needs the unique-ticker list. Doing it as a
@@ -182,7 +180,7 @@ export default async function DashboardPage({ searchParams }: Props) {
             </div>
             {!scopedAccount && (
               <div>
-                <p className="text-2xl font-semibold tabular-nums">{accounts.length}</p>
+                <p className="text-2xl font-semibold tabular-nums">{allAccountIds.length}</p>
                 <p className="text-xs text-muted-foreground">Accounts</p>
               </div>
             )}

@@ -22,7 +22,16 @@ def list_transactions(
 ):
     """List transaction history for a trading account with optional ticker filter."""
 
-    get_trading_account(trading_account_id=trading_account_id, user=user, db=db)
+    account = get_trading_account(
+        trading_account_id=trading_account_id, user=user, db=db
+    )
+
+    # Mirror /api/holdings: a stale dashboard fan-out may include kalshi ids;
+    # transactions for kalshi flows live in kalshi_fill, not `transaction`.
+    if account.type == "kalshi":
+        return TransactionsResponse(
+            transactions=[], total=0, page=page, per_page=per_page,
+        )
 
     query = db.query(Transaction).filter(
         Transaction.trading_account_id == trading_account_id

@@ -43,6 +43,7 @@ import {
 import { AccountScopeMenu } from "@/components/sidebar/account-scope-menu";
 import { CommandMenu } from "@/components/header/command-menu";
 import { authClient } from "@/lib/auth-client";
+import type { AccountType } from "@/lib/accounts";
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/", icon: ChartLineIcon },
@@ -62,7 +63,7 @@ type Account = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
     balance: string;
     isJoint: boolean;
     createdAt: Date;

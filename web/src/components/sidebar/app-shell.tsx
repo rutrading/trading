@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { Page, PageBody } from "@/components/ui/page";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { WebSocketProvider } from "@/components/ws-provider";
+import type { AccountType } from "@/lib/accounts";
 
 type Account = {
   id: number;
@@ -12,7 +13,7 @@ type Account = {
   tradingAccount: {
     id: number;
     name: string;
-    type: "investment" | "crypto";
+    type: AccountType;
     balance: string;
     isJoint: boolean;
     createdAt: Date;
