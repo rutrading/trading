@@ -16,4 +16,20 @@ const proc = Bun.spawn(
   },
 );
 
+let shuttingDown = false;
+
+async function shutdown(signal: "SIGINT" | "SIGTERM") {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  proc.kill(signal);
+  const forceKill = setTimeout(() => proc.kill("SIGKILL"), 3000);
+  const code = await proc.exited;
+  clearTimeout(forceKill);
+  process.exit(code);
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
 process.exit(await proc.exited);
