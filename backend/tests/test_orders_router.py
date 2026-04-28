@@ -499,6 +499,49 @@ class TestPlaceDeferredMarketOrder:
             f"got {call_order}"
         )
 
+    def test_deferred_market_buy_accepts_stale_quote_for_reference_only(
+        self, session_factory, monkeypatch
+    ):
+        """The deferred-market path uses the quote only as a placement-time
+        snapshot; the executor fills later against a fresh quote. Therefore
+        a quote whose data-event timestamp is older than the staleness
+        threshold should NOT cause rejection on placement (unlike the sync
+        market path).
+
+        Locks in the current behavior so a future change adding a staleness
+        gate to the deferred path requires updating this test consciously.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        monkeypatch.setattr(
+            "app.routers.orders.compute_atr", lambda _t, _db: Decimal("0")
+        )
+        with session_factory() as db:
+            seed_user(db, "user-a")
+            seed_symbol(db, "AAPL")
+            quote = seed_quote(db, "AAPL", price=100.0)
+            quote.timestamp = int(
+                (datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp()
+            )
+            db.commit()
+            account = seed_account(db, "user-a", balance="10000")
+            account_id = account.id
+
+        payload = {
+            "trading_account_id": account_id,
+            "ticker": "AAPL",
+            "asset_class": "us_equity",
+            "side": "buy",
+            "order_type": "market",
+            "time_in_force": "opg",
+            "quantity": "5",
+        }
+        with db_override(session_factory), auth_as("user-a"):
+            response = client.post("/api/orders", json=payload)
+
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "open"
+
 
 class TestPlaceOrderInputValidation:
     def test_quantity_with_too_many_decimals_returns_422(self, session_factory):

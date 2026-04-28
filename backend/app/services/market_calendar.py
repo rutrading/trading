@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo
 ET = ZoneInfo("America/New_York")
 
 # Observed NYSE full-day holidays. Keep in sync with
-# https://www.nyse.com/markets/hours-calendars
+# https://www.nyse.com/markets/hours-calendars — extend through at least
+# one year ahead of `today` (see
+# tests/test_nyse_holidays_mirror.py::test_nyse_holiday_set_covers_at_least_one_year_ahead).
 NYSE_HOLIDAYS: frozenset[date] = frozenset(
     date(y, m, d)
     for y, m, d in [
