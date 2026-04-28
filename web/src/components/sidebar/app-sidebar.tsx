@@ -71,6 +71,17 @@ type Account = {
   };
 };
 
+type BrokerageAccount = Account & {
+  tradingAccount: Account["tradingAccount"] & { type: "investment" | "crypto" };
+};
+
+function isBrokerageAccount(account: Account): account is BrokerageAccount {
+  return (
+    account.tradingAccount.type === "investment" ||
+    account.tradingAccount.type === "crypto"
+  );
+}
+
 export function AppSidebar({
   accounts,
   userName,
@@ -85,6 +96,7 @@ export function AppSidebar({
   const searchParams = useSearchParams();
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark";
+  const brokerageAccounts = accounts.filter(isBrokerageAccount);
 
   const navHref = (href: string) => {
     const account = searchParams.get("account");
@@ -112,7 +124,7 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5">
               <SidebarMenuItem>
-                <AccountScopeMenu accounts={accounts} />
+                <AccountScopeMenu accounts={brokerageAccounts} />
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <CommandMenu trigger="sidebar" />
