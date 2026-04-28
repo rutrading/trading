@@ -1,9 +1,7 @@
 "use client";
 
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
-import { MagnifyingGlass } from "@phosphor-icons/react";
-import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useRef, type RefObject } from "react";
+import { SearchIcon } from "lucide-react";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -12,19 +10,25 @@ import {
   AutocompleteEmpty,
   AutocompleteGroup,
   AutocompleteGroupLabel,
-  AutocompleteInput,
   AutocompleteItem,
   AutocompleteList,
+  AutocompletePrimitive,
   AutocompleteSeparator,
 } from "@/components/ui/autocomplete";
+import { Kbd } from "@/components/ui/kbd";
 
-const CommandDialog = CommandDialogPrimitive.Root;
+export const CommandDialog: typeof CommandDialogPrimitive.Root =
+  CommandDialogPrimitive.Root;
 
-const CommandDialogPortal = CommandDialogPrimitive.Portal;
+export const CommandDialogPortal: typeof CommandDialogPrimitive.Portal =
+  CommandDialogPrimitive.Portal;
 
-const CommandCreateHandle = CommandDialogPrimitive.createHandle;
+export const CommandCreateHandle: typeof CommandDialogPrimitive.createHandle =
+  CommandDialogPrimitive.createHandle;
 
-function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
+export function CommandDialogTrigger(
+  props: CommandDialogPrimitive.Trigger.Props,
+): React.ReactElement {
   return (
     <CommandDialogPrimitive.Trigger
       data-slot="command-dialog-trigger"
@@ -33,10 +37,10 @@ function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
   );
 }
 
-function CommandDialogBackdrop({
+export function CommandDialogBackdrop({
   className,
   ...props
-}: CommandDialogPrimitive.Backdrop.Props) {
+}: CommandDialogPrimitive.Backdrop.Props): React.ReactElement {
   return (
     <CommandDialogPrimitive.Backdrop
       className={cn(
@@ -49,10 +53,10 @@ function CommandDialogBackdrop({
   );
 }
 
-function CommandDialogViewport({
+export function CommandDialogViewport({
   className,
   ...props
-}: CommandDialogPrimitive.Viewport.Props) {
+}: CommandDialogPrimitive.Viewport.Props): React.ReactElement {
   return (
     <CommandDialogPrimitive.Viewport
       className={cn(
@@ -65,18 +69,21 @@ function CommandDialogViewport({
   );
 }
 
-function CommandDialogPopup({
+export function CommandDialogPopup({
   className,
   children,
+  portalProps,
   ...props
-}: CommandDialogPrimitive.Popup.Props) {
+}: CommandDialogPrimitive.Popup.Props & {
+  portalProps?: CommandDialogPrimitive.Portal.Props;
+}): React.ReactElement {
   return (
-    <CommandDialogPortal>
+    <CommandDialogPortal {...portalProps}>
       <CommandDialogBackdrop />
       <CommandDialogViewport>
         <CommandDialogPrimitive.Popup
           className={cn(
-            "-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] shadow-lg/5 outline-none transition-[scale,opacity,translate,filter] duration-200 ease-out will-change-transform before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:bg-muted/72 before:shadow-[0_1px_--theme(--color-black/4%)] data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-starting-style:blur-[2px] data-ending-style:blur-[2px] **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl -translate-y-[calc(1.25rem*var(--nested-dialogs))] scale-[calc(1-0.1*var(--nested-dialogs))] flex-col overflow-hidden rounded-2xl bg-popover text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform shadow-[0_8px_24px_rgb(0_0_0/0.08),0_2px_8px_rgb(0_0_0/0.05)] data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 dark:shadow-[0_8px_24px_rgb(0_0_0/0.4),0_2px_8px_rgb(0_0_0/0.3),0_0_0_1px_rgb(255_255_255/0.06)]",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -89,11 +96,11 @@ function CommandDialogPopup({
   );
 }
 
-function Command({
+export function Command({
   autoHighlight = "always",
   keepHighlight = true,
   ...props
-}: React.ComponentProps<typeof Autocomplete>) {
+}: React.ComponentProps<typeof Autocomplete>): React.ReactElement {
   return (
     <Autocomplete
       autoHighlight={autoHighlight}
@@ -105,69 +112,71 @@ function Command({
   );
 }
 
-function CommandInput({
+export function CommandInput({
   className,
-  placeholder = undefined,
+  hint = "⌘/",
+  placeholder = "Type a command or search",
   ...props
-}: React.ComponentProps<typeof AutocompleteInput>) {
+}: Omit<AutocompletePrimitive.Input.Props, "size"> & {
+  hint?: React.ReactNode | null;
+}): React.ReactElement {
   return (
-    <div className="px-2.5 py-1.5">
-      <AutocompleteInput
+    <div className="relative border-b border-border" data-slot="command-input-row">
+      {/* Aligned to the icon-chip column: list px-1 (4) + item px-2.5 (10) +
+          chip half-width (12) = center at 26px → start-[18px] + size-4/2. */}
+      <SearchIcon className="pointer-events-none absolute start-[18px] top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <AutocompletePrimitive.Input
         autoFocus
         className={cn(
-          "border-transparent! bg-transparent! shadow-none before:hidden has-focus-visible:ring-0",
+          // ps-12 lines placeholder + caret with item text:
+          // list px-1 (4) + item px-2.5 (10) + chip (24) + gap-2.5 (10) = 48.
+          "h-11 w-full bg-transparent ps-12 text-sm text-foreground outline-none placeholder:text-muted-foreground",
+          hint ? "pe-14" : "pe-4",
           className,
         )}
+        data-slot="command-input"
         placeholder={placeholder}
-        size="lg"
-        startAddon={<MagnifyingGlass />}
         {...props}
       />
+      {hint ? (
+        <div className="pointer-events-none absolute end-3 top-1/2 -translate-y-1/2">
+          <CommandHintPill>{hint}</CommandHintPill>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function CommandList({
+export function CommandList({
   className,
-  viewportRef,
   ...props
-}: React.ComponentProps<typeof AutocompleteList>) {
+}: React.ComponentProps<typeof AutocompleteList>): React.ReactElement {
   return (
     <AutocompleteList
-      className={cn("not-empty:scroll-py-2 not-empty:p-2", className)}
+      className={cn("not-empty:scroll-py-2 not-empty:py-2 not-empty:px-1", className)}
       data-slot="command-list"
-      viewportRef={viewportRef}
       {...props}
     />
   );
 }
 
-function CommandEmpty({
+export function CommandEmpty({
   className,
   ...props
-}: React.ComponentProps<typeof AutocompleteEmpty>) {
+}: React.ComponentProps<typeof AutocompleteEmpty>): React.ReactElement {
   return (
     <AutocompleteEmpty
-      className={cn("not-empty:py-6", className)}
+      className={cn("not-empty:py-8 not-empty:text-center", className)}
       data-slot="command-empty"
       {...props}
     />
   );
 }
 
-function CommandPanel({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      className="-mx-px not-has-[+[data-slot=command-footer]]:-mb-px relative min-h-0 rounded-t-xl not-has-[+[data-slot=command-footer]]:rounded-b-2xl border border-b-0 bg-popover bg-clip-padding shadow-xs/5 [clip-path:inset(0_1px)] not-has-[+[data-slot=command-footer]]:[clip-path:inset(0_1px_1px_1px_round_0_0_calc(var(--radius-2xl)-1px)_calc(var(--radius-2xl)-1px))] before:pointer-events-none before:absolute before:inset-0 before:rounded-t-[calc(var(--radius-xl)-1px)] **:data-[slot=scroll-area-scrollbar]:mt-2"
-      {...props}
-    />
-  );
-}
-
-function CommandGroup({
+export function CommandGroup({
   className,
   ...props
-}: React.ComponentProps<typeof AutocompleteGroup>) {
+}: React.ComponentProps<typeof AutocompleteGroup>): React.ReactElement {
   return (
     <AutocompleteGroup
       className={className}
@@ -177,52 +186,90 @@ function CommandGroup({
   );
 }
 
-function CommandGroupLabel({
+export function CommandGroupLabel({
   className,
   ...props
-}: React.ComponentProps<typeof AutocompleteGroupLabel>) {
+}: React.ComponentProps<typeof AutocompleteGroupLabel>): React.ReactElement {
   return (
     <AutocompleteGroupLabel
-      className={className}
+      className={cn("px-2.5 py-1 text-xs font-medium text-muted-foreground", className)}
       data-slot="command-group-label"
       {...props}
     />
   );
 }
 
-function CommandCollection({
+export function CommandGroupHeader({
+  className,
   ...props
-}: React.ComponentProps<typeof AutocompleteCollection>) {
+}: React.ComponentProps<"div">): React.ReactElement {
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between gap-2 px-2.5 py-1",
+        className,
+      )}
+      data-slot="command-group-header"
+      {...props}
+    />
+  );
+}
+
+export function CommandCollection({
+  ...props
+}: React.ComponentProps<typeof AutocompleteCollection>): React.ReactElement {
   return <AutocompleteCollection data-slot="command-collection" {...props} />;
 }
 
-function CommandItem({
+export function CommandItem({
   className,
   ...props
-}: React.ComponentProps<typeof AutocompleteItem>) {
+}: React.ComponentProps<typeof AutocompleteItem>): React.ReactElement {
   return (
     <AutocompleteItem
-      className={cn("gap-2 py-1.5", className)}
+      className={cn(
+        "min-h-8 gap-2.5 rounded-md px-2.5 py-1 text-sm",
+        className,
+      )}
       data-slot="command-item"
       {...props}
     />
   );
 }
 
-function CommandSeparator({
+export function CommandIconChip({
   className,
   ...props
-}: React.ComponentProps<typeof AutocompleteSeparator>) {
+}: React.ComponentProps<"span">): React.ReactElement {
+  return (
+    <span
+      className={cn(
+        "inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-background text-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_24%,var(--background))] inset-shadow-[0_1px_0_rgb(255_255_255/0.3),0_-1px_0_rgb(0_0_0/0.04)] [&>svg]:size-3.5 [&>svg]:opacity-90 dark:bg-transparent dark:shadow-[0_0_0_1px_rgb(0_0_0/0.36)] dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.08),0_-1px_0_rgb(0_0_0/0.12)]",
+        className,
+      )}
+      data-slot="command-icon-chip"
+      {...props}
+    />
+  );
+}
+
+export function CommandSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof AutocompleteSeparator>): React.ReactElement {
   return (
     <AutocompleteSeparator
-      className={cn("my-2", className)}
+      className={cn("my-1.5", className)}
       data-slot="command-separator"
       {...props}
     />
   );
 }
 
-function CommandShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
+export function CommandShortcut({
+  className,
+  ...props
+}: React.ComponentProps<"kbd">): React.ReactElement {
   return (
     <kbd
       className={cn(
@@ -235,119 +282,30 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
   );
 }
 
-
-type CommandVirtualizer = Virtualizer<HTMLDivElement, Element>;
-
-type CommandVirtualListProps<T> = {
-  items: T[];
-  renderItem: (
-    item: T,
-    virtualItem: ReturnType<CommandVirtualizer["getVirtualItems"]>[number],
-  ) => React.ReactNode;
-  estimateSize?: number;
-  overscan?: number;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
-  loadMore?: () => void;
-  virtualizerRef?: RefObject<CommandVirtualizer | null>;
-  className?: string;
-  renderLoader?: () => React.ReactNode;
-};
-
-function CommandVirtualList<T>({
-  items,
-  renderItem,
-  estimateSize = 32,
-  overscan = 20,
-  hasMore = false,
-  isLoadingMore = false,
-  loadMore,
-  virtualizerRef,
+export function CommandHintPill({
   className,
-  renderLoader,
-}: CommandVirtualListProps<T>) {
-  const scrollElementRef = useRef<HTMLDivElement | null>(null);
-
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => scrollElementRef.current,
-    estimateSize: () => estimateSize,
-    overscan,
-    paddingStart: 8,
-    paddingEnd: 8,
-    scrollPaddingEnd: 8,
-    scrollPaddingStart: 8,
-    useFlushSync: false,
-  });
-
-  useEffect(() => {
-    if (virtualizerRef) {
-      virtualizerRef.current = virtualizer;
-    }
-  }, [virtualizer, virtualizerRef]);
-
-  const handleScrollElementRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      scrollElementRef.current = element;
-      if (element) {
-        virtualizer.measure();
-      }
-    },
-    [virtualizer],
-  );
-
-  const virtualItems = virtualizer.getVirtualItems();
-  const lastIndex = virtualItems.at(-1)?.index ?? -1;
-
-  useEffect(() => {
-    if (!hasMore || !loadMore || isLoadingMore) return;
-    if (items.length === 0) return;
-    if (lastIndex >= items.length - 1) {
-      loadMore();
-    }
-  }, [lastIndex, items.length, hasMore, isLoadingMore, loadMore]);
-
-  const totalSize = virtualizer.getTotalSize();
-
-  if (items.length === 0) {
-    return null;
-  }
-
+  ...props
+}: React.ComponentProps<typeof Kbd>): React.ReactElement {
   return (
-    <div
-      role="presentation"
-      ref={handleScrollElementRef}
-      data-slot="command-virtual-list"
+    <Kbd
       className={cn(
-        "max-h-64 overflow-auto overscroll-contain scroll-p-2 px-2",
+        "h-5.5 min-w-5.5 rounded-md bg-transparent px-1.5 text-[11px] font-medium text-muted-foreground shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_14%,var(--background))] dark:bg-transparent dark:shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground)_22%,var(--background))]",
         className,
       )}
-    >
-      <div
-        role="presentation"
-        className="relative w-full"
-        style={{ height: totalSize }}
-      >
-        {virtualItems.map((vi) => {
-          const item = items[vi.index];
-          if (!item) return null;
-          return renderItem(item, vi);
-        })}
-        {hasMore && isLoadingMore && (
-          <div className="absolute inset-x-0 flex items-center justify-center py-2 text-xs text-muted-foreground">
-            {renderLoader?.() ?? "Loading more…"}
-          </div>
-        )}
-      </div>
-    </div>
+      data-slot="command-hint-pill"
+      {...props}
+    />
   );
 }
 
-function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
+export function CommandFooter({
+  className,
+  ...props
+}: React.ComponentProps<"div">): React.ReactElement {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-2 rounded-b-[calc(var(--radius-2xl)-1px)] border-t px-5 py-3 text-muted-foreground text-xs",
+        "flex items-center gap-4 border-t border-border px-4 py-2.5 text-xs text-muted-foreground",
         className,
       )}
       data-slot="command-footer"
@@ -356,23 +314,24 @@ function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-export {
-  CommandCreateHandle,
-  Command,
-  CommandCollection,
-  CommandDialog,
-  CommandDialogPopup,
-  CommandDialogTrigger,
-  CommandEmpty,
-  CommandFooter,
-  CommandGroup,
-  CommandGroupLabel,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandPanel,
-  CommandSeparator,
-  CommandShortcut,
-  CommandVirtualList,
-};
-export type { CommandVirtualizer };
+export function CommandFooterHint({
+  kbd,
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"span"> & {
+  kbd: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <span
+      className={cn("flex items-center gap-1.5", className)}
+      data-slot="command-footer-hint"
+      {...props}
+    >
+      <CommandHintPill>{kbd}</CommandHintPill>
+      {children}
+    </span>
+  );
+}
+
+export { CommandDialogPrimitive };
