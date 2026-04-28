@@ -617,8 +617,10 @@ async def cancel_order(
         )
         account.updated_at = datetime.now(timezone.utc)
 
-    # release reserved_quantity for open non-market sell orders
-    if order.side == "sell" and order.order_type != "market":
+    # mirrors placement: every sell reserves except sync market (order_type='market' + non-opg/cls TIF)
+    if order.side == "sell" and (
+        order.order_type != "market" or order.time_in_force in ("opg", "cls")
+    ):
         holding = (
             db.query(Holding)
             .filter(

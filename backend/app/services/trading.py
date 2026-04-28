@@ -372,8 +372,8 @@ def execute_fill(
             return None
 
         holding.quantity -= fill_quantity
-        # release the reserved_quantity for the filled shares (non-market sell orders)
-        if order.order_type != "market":
+        # mirrors placement: every sell reserves except sync market (order_type='market' + non-opg/cls TIF)
+        if order.order_type != "market" or order.time_in_force in ("opg", "cls"):
             holding.reserved_quantity = max(
                 Decimal("0"),
                 holding.reserved_quantity - fill_quantity,
