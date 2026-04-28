@@ -21,7 +21,12 @@ from app.services.market_calendar import (
     NYSE_HOLIDAYS,
     is_stock_market_open,
 )
-from app.services.trading import to_money, compute_market_fill_price, execute_fill
+from app.services.trading import (
+    compute_market_fill_price,
+    execute_fill,
+    release_buy_reservation,
+    release_sell_reservation,
+)
 
 POLL_INTERVAL = 5  # seconds between executor cycles
 FILL_WINDOW_MINUTES = 5  # window around open/close for opg/cls fills
@@ -191,7 +196,6 @@ def _process_open_orders() -> None:
                     )
             elif _should_expire(order, now_et, expiry_boundaries):
                 remaining = order.quantity - (order.filled_quantity or Decimal("0"))
-                # release reserved balance for buy orders
                 if order.side == "buy" and order.reserved_per_share is not None:
                     account = (
                         db.query(TradingAccount)
@@ -199,19 +203,10 @@ def _process_open_orders() -> None:
                         .with_for_update()
                         .first()
                     )
+                    release_buy_reservation(account, order, remaining)
                     if account is not None:
-                        account.reserved_balance = to_money(
-                            max(
-                                Decimal("0"),
-                                account.reserved_balance - remaining * order.reserved_per_share,
-                            )
-                        )
                         account.updated_at = datetime.now(timezone.utc)
-                # mirrors placement: every sell reserves except sync market (order_type='market' + non-opg/cls TIF)
-                if order.side == "sell" and (
-                    order.order_type != "market"
-                    or order.time_in_force in ("opg", "cls")
-                ):
+                if order.side == "sell":
                     holding = (
                         db.query(Holding)
                         .filter(
@@ -221,11 +216,8 @@ def _process_open_orders() -> None:
                         .with_for_update()
                         .first()
                     )
+                    release_sell_reservation(holding, order, remaining)
                     if holding is not None:
-                        holding.reserved_quantity = max(
-                            Decimal("0"),
-                            holding.reserved_quantity - remaining,
-                        )
                         holding.updated_at = datetime.now(timezone.utc)
                 order.status = "cancelled"
                 db.commit()

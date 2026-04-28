@@ -227,6 +227,48 @@ def validate_buying_power(
             )
 
 
+def release_buy_reservation(
+    account: TradingAccount | None, order: Order, units: Decimal
+) -> None:
+    """Release `units * order.reserved_per_share` from `account.reserved_balance`.
+
+    No-op when `account` is None or `order.reserved_per_share` is None (plain
+    market buy never reserved). Floor-clamped at 0; logs a warning when the
+    pre-clamp value goes negative — defense-in-depth against rounding drift.
+    Caller still owns `account.updated_at`.
+    """
+    if account is None or order.reserved_per_share is None:
+        return
+    release = units * order.reserved_per_share
+    new_reserved = account.reserved_balance - release
+    if new_reserved < 0:
+        logger.warning(
+            "Reserved balance underflow on release: account=%d order=%d "
+            "release=%s reserved_before=%s — clamping to 0",
+            account.id,
+            order.id,
+            release,
+            account.reserved_balance,
+        )
+    account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
+
+
+def release_sell_reservation(
+    holding: Holding | None, order: Order, units: Decimal
+) -> None:
+    """Release `units` from `holding.reserved_quantity`.
+
+    No-op when `holding` is None or this is a sync market sell (which never
+    reserved at placement — gate mirrors `place_order`'s immediate-fill
+    branch). Floor-clamped at 0. Caller still owns `holding.updated_at`.
+    """
+    if holding is None:
+        return
+    if order.order_type == "market" and order.time_in_force not in ("opg", "cls"):
+        return
+    holding.reserved_quantity = max(Decimal("0"), holding.reserved_quantity - units)
+
+
 def execute_fill(
     *,
     db: Session,
@@ -269,12 +311,7 @@ def execute_fill(
         if available < total:
             order.status = "cancelled"
             order.rejection_reason = "Insufficient buying power at fill time"
-            account.reserved_balance = to_money(
-                max(
-                    Decimal("0"),
-                    account.reserved_balance - remaining * per_share,
-                )
-            )
+            release_buy_reservation(account, order, remaining)
             account.updated_at = datetime.now(timezone.utc)
             return None
 
@@ -343,24 +380,7 @@ def execute_fill(
         # numeric(14,2) will store on flush
         account.balance = to_money(account.balance - total)
 
-        # release the per-share reservation for the filled quantity
-        if order.reserved_per_share is not None:
-            release = fill_quantity * order.reserved_per_share
-            new_reserved = account.reserved_balance - release
-            if new_reserved < 0:
-                # Clamp is defense-in-depth; with explicit money quantize in
-                # place this should not fire under normal operation. If it
-                # does, surface it so we can investigate the underlying
-                # accounting drift.
-                logger.warning(
-                    "Reserved balance underflow on fill: account=%d order=%d "
-                    "release=%s reserved_before=%s — clamping to 0",
-                    account.id,
-                    order.id,
-                    release,
-                    account.reserved_balance,
-                )
-            account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
+        release_buy_reservation(account, order, fill_quantity)
 
     elif order.side == "sell":
         if holding is None:
@@ -372,12 +392,7 @@ def execute_fill(
             return None
 
         holding.quantity -= fill_quantity
-        # mirrors placement: every sell reserves except sync market (order_type='market' + non-opg/cls TIF)
-        if order.order_type != "market" or order.time_in_force in ("opg", "cls"):
-            holding.reserved_quantity = max(
-                Decimal("0"),
-                holding.reserved_quantity - fill_quantity,
-            )
+        release_sell_reservation(holding, order, fill_quantity)
         holding.updated_at = datetime.now(timezone.utc)
         # remove holding row if fully sold
         if holding.quantity <= 0:

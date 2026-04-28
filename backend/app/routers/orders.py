@@ -27,10 +27,12 @@ from app.services.market_calendar import ET, is_stock_market_open
 from app.services.quote_cache import resolve_quote
 from app.services.trading import (
     OrderValidationError,
-    to_money,
     compute_market_fill_price,
     compute_stop_reservation_per_share,
     execute_fill,
+    release_buy_reservation,
+    release_sell_reservation,
+    to_money,
     validate_buying_power,
     validate_order_request,
 )
@@ -604,20 +606,12 @@ async def cancel_order(
 
     remaining = order.quantity - (order.filled_quantity or Decimal("0"))
 
-    # release reserved balance for open buy orders
-    if order.side == "buy" and order.reserved_per_share is not None:
-        account.reserved_balance = to_money(
-            max(
-                Decimal("0"),
-                account.reserved_balance - remaining * order.reserved_per_share,
-            )
-        )
-        account.updated_at = datetime.now(timezone.utc)
+    if order.side == "buy":
+        release_buy_reservation(account, order, remaining)
+        if order.reserved_per_share is not None:
+            account.updated_at = datetime.now(timezone.utc)
 
-    # mirrors placement: every sell reserves except sync market (order_type='market' + non-opg/cls TIF)
-    if order.side == "sell" and (
-        order.order_type != "market" or order.time_in_force in ("opg", "cls")
-    ):
+    if order.side == "sell":
         holding = (
             db.query(Holding)
             .filter(
@@ -627,11 +621,8 @@ async def cancel_order(
             .with_for_update()
             .first()
         )
+        release_sell_reservation(holding, order, remaining)
         if holding is not None:
-            holding.reserved_quantity = max(
-                Decimal("0"),
-                holding.reserved_quantity - remaining,
-            )
             holding.updated_at = datetime.now(timezone.utc)
 
     order.status = "cancelled"
