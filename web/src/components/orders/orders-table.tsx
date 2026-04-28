@@ -175,7 +175,7 @@ function OrderRows({
       </TableRow>
       <CollapsibleContent
         id={`order-${o.id}-detail`}
-        render={<TableRow />}
+        render={<tr />}
         className="bg-muted/20"
       >
         <TableCell colSpan={colCount} className="py-3">
