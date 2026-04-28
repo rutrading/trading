@@ -1,31 +1,36 @@
 "use client";
 
 import { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
-
+import type React from "react";
 import { cn } from "@/lib/utils";
 
-const PreviewCard = PreviewCardPrimitive.Root;
+export const PreviewCard: typeof PreviewCardPrimitive.Root =
+  PreviewCardPrimitive.Root;
 
-function PreviewCardTrigger({ ...props }: PreviewCardPrimitive.Trigger.Props) {
+export function PreviewCardTrigger({
+  ...props
+}: PreviewCardPrimitive.Trigger.Props): React.ReactElement {
   return (
     <PreviewCardPrimitive.Trigger data-slot="preview-card-trigger" {...props} />
   );
 }
 
-function PreviewCardPopup({
+export function PreviewCardPopup({
   className,
   children,
   align = "center",
   sideOffset = 4,
   anchor,
+  portalProps,
   ...props
 }: PreviewCardPrimitive.Popup.Props & {
   align?: PreviewCardPrimitive.Positioner.Props["align"];
   sideOffset?: PreviewCardPrimitive.Positioner.Props["sideOffset"];
   anchor?: PreviewCardPrimitive.Positioner.Props["anchor"];
-}) {
+  portalProps?: PreviewCardPrimitive.Portal.Props;
+}): React.ReactElement {
   return (
-    <PreviewCardPrimitive.Portal>
+    <PreviewCardPrimitive.Portal {...portalProps}>
       <PreviewCardPrimitive.Positioner
         align={align}
         anchor={anchor}
@@ -35,7 +40,9 @@ function PreviewCardPopup({
       >
         <PreviewCardPrimitive.Popup
           className={cn(
-            "relative flex w-64 origin-(--transform-origin) text-balance rounded-lg border bg-popover not-dark:bg-clip-padding p-4 text-popover-foreground text-sm shadow-lg/5 transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex w-64 origin-(--transform-origin) flex-col gap-3 rounded-xl bg-popover p-4 text-popover-foreground text-sm",
+            "shadow-[0_2px_8px_rgb(0_0_0/0.06),0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-[0_2px_8px_rgb(0_0_0/0.3),0_1px_2px_rgb(0_0_0/0.2),0_0_0_1px_rgb(255_255_255/0.06)]",
+            "transition-[scale,opacity] duration-[200ms] ease-[cubic-bezier(0.16,1,0.3,1)] data-ending-style:duration-[140ms] data-ending-style:ease-[cubic-bezier(0.4,0,1,1)] data-starting-style:scale-[0.92] data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-instant:transition-none",
             className,
           )}
           data-slot="preview-card-content"
@@ -49,10 +56,8 @@ function PreviewCardPopup({
 }
 
 export {
-  PreviewCard,
+  PreviewCardPrimitive,
   PreviewCard as HoverCard,
-  PreviewCardTrigger,
   PreviewCardTrigger as HoverCardTrigger,
-  PreviewCardPopup,
   PreviewCardPopup as HoverCardContent,
 };

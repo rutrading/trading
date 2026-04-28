@@ -1,12 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useTheme } from "next-themes";
 import {
-  GearSixIcon,
-  PlusIcon,
+  BinocularsIcon,
+  BriefcaseIcon,
+  ChartLineIcon,
+  ClockCounterClockwiseIcon,
   CurrencyCircleDollarIcon,
-  BankIcon,
+  CaretUpDownIcon,
+  GearSixIcon,
+  MoonIcon,
+  NewspaperIcon,
+  QuestionIcon,
+  ReceiptIcon,
+  SignOutIcon,
+  TrendUpIcon,
 } from "@phosphor-icons/react";
 import {
   Sidebar,
@@ -20,8 +30,31 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { SignOutButton } from "@/components/sign-out-button";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "@/components/ui/menu";
+import { AccountScopeMenu } from "@/components/sidebar/account-scope-menu";
+import { CommandMenu } from "@/components/header/command-menu";
+import { authClient } from "@/lib/auth-client";
 import type { AccountType } from "@/lib/accounts";
+
+const NAV_ITEMS = [
+  { label: "Dashboard", href: "/", icon: ChartLineIcon },
+  { label: "Portfolio", href: "/portfolio", icon: TrendUpIcon },
+  { label: "Holdings", href: "/holdings", icon: BriefcaseIcon },
+  { label: "Activity", href: "/activity", icon: ClockCounterClockwiseIcon },
+  { label: "Trade", href: "/trade", icon: CurrencyCircleDollarIcon },
+  { label: "Orders", href: "/orders", icon: ReceiptIcon },
+  { label: "News", href: "/news", icon: NewspaperIcon },
+  { label: "Watchlist", href: "/watchlist", icon: BinocularsIcon },
+] as const;
 
 type Account = {
   id: number;
@@ -38,137 +71,147 @@ type Account = {
   };
 };
 
-function formatBalance(balance: string) {
-  return Number(balance).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
+type BrokerageAccount = Account & {
+  tradingAccount: Account["tradingAccount"] & { type: "investment" | "crypto" };
+};
 
-function AccountItem({
-  account,
-  isActive,
-}: {
-  account: Account;
-  isActive: boolean;
-}) {
+function isBrokerageAccount(account: Account): account is BrokerageAccount {
   return (
-    <SidebarMenuItem>
-      <SidebarMenuButton
-        size="lg"
-        isActive={isActive}
-        render={<Link href={`/accounts/${account.tradingAccount.id}`} />}
-      >
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium">
-            {account.tradingAccount.name}
-          </span>
-          <span className="text-xs tabular-nums text-muted-foreground">
-            ${formatBalance(account.tradingAccount.balance)}
-          </span>
-        </div>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
+    account.tradingAccount.type === "investment" ||
+    account.tradingAccount.type === "crypto"
   );
 }
 
 export function AppSidebar({
   accounts,
   userName,
+  userImage,
 }: {
   accounts: Account[];
   userName: string;
+  userImage?: string | null;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === "dark";
+  const brokerageAccounts = accounts.filter(isBrokerageAccount);
 
-  const investmentAccounts = accounts.filter(
-    (a) => a.tradingAccount.type === "investment",
-  );
-  const cryptoAccounts = accounts.filter(
-    (a) => a.tradingAccount.type === "crypto",
-  );
+  const navHref = (href: string) => {
+    const account = searchParams.get("account");
+    const params = new URLSearchParams();
+    if (!account) return href;
+    params.set("account", account);
+    return `${href}?${params.toString()}`;
+  };
+
+  async function handleSignOut() {
+    await authClient.signOut();
+    router.push("/auth/login");
+  };
 
   return (
-    <Sidebar>
-      <SidebarHeader className="h-14 flex-row items-center border-b border-sidebar-border px-4">
+    <Sidebar variant="inset" collapsible="icon">
+      <SidebarHeader className="h-14 flex-row items-center px-4">
         <Link href="/" className="font-semibold tracking-tight">
           R U Trading
         </Link>
       </SidebarHeader>
 
       <SidebarContent>
-        {investmentAccounts.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>
-              <BankIcon className="size-4" />
-              <span className="ml-1">Investment</span>
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {investmentAccounts.map((a) => (
-                  <AccountItem
-                    key={a.id}
-                    account={a}
-                    isActive={pathname === `/accounts/${a.tradingAccount.id}`}
-                  />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {cryptoAccounts.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>
-              <CurrencyCircleDollarIcon className="size-4" />
-              <span className="ml-1">Crypto</span>
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {cryptoAccounts.map((a) => (
-                  <AccountItem
-                    key={a.id}
-                    account={a}
-                    isActive={pathname === `/accounts/${a.tradingAccount.id}`}
-                  />
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
         <SidebarGroup>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1.5">
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/onboarding" />}>
-                  <PlusIcon className="size-4" />
-                  <span>Open a New Account</span>
-                </SidebarMenuButton>
+                <AccountScopeMenu accounts={brokerageAccounts} />
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <CommandMenu trigger="sidebar" />
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+                const isActive =
+                  href === pathname || (href !== "/" && pathname.startsWith(href));
+                return (
+                  <SidebarMenuItem key={href}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      tooltip={label}
+                      render={<Link href={navHref(href)} />}
+                    >
+                      <Icon className="size-4" />
+                      <span>{label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
       </SidebarContent>
 
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={pathname === "/settings"}
-              render={<Link href="/settings" />}
-            >
-              <GearSixIcon className="size-4" />
-              <span>Settings</span>
-            </SidebarMenuButton>
+            <Menu>
+              <MenuTrigger
+                render={
+                  <SidebarMenuButton size="lg" tooltip={userName}>
+                    {userImage ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={userImage}
+                        alt="Profile"
+                        className="size-7 rounded-full"
+                      />
+                    ) : (
+                      <span className="grid size-7 place-items-center rounded-full bg-muted text-xs font-semibold">
+                        {userName.charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                    <span className="truncate text-sm font-medium">{userName}</span>
+                    <CaretUpDownIcon className="ms-auto size-3.5" />
+                  </SidebarMenuButton>
+                }
+              />
+              <MenuPopup align="start" side="right" className="w-56">
+                <MenuGroup>
+                  <MenuGroupLabel>Account</MenuGroupLabel>
+                  <MenuItem render={<Link href={navHref("/settings")} />}>
+                    <GearSixIcon />
+                    Settings
+                  </MenuItem>
+                  <MenuItem render={<Link href={navHref("/faq")} />}>
+                    <QuestionIcon />
+                    FAQ
+                  </MenuItem>
+                </MenuGroup>
+                <MenuSeparator />
+                <MenuCheckboxItem
+                  variant="switch"
+                  checked={isDark}
+                  onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
+                >
+                  <MoonIcon />
+                  Dark Mode
+                </MenuCheckboxItem>
+                <MenuSeparator />
+                <MenuItem variant="destructive" onClick={handleSignOut}>
+                  <SignOutIcon />
+                  Sign Out
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="flex items-center justify-between px-2">
-          <span className="truncate text-sm text-muted-foreground">
-            {userName}
-          </span>
-          <SignOutButton />
-        </div>
       </SidebarFooter>
     </Sidebar>
   );

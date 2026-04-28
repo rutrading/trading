@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, X, Star, Binoculars } from "@phosphor-icons/react";
 import { toastManager } from "@/components/ui/toast";
@@ -8,7 +8,12 @@ import { removeFromWatchlist, type WatchlistItem } from "@/app/actions/watchlist
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuotes } from "@/components/ws-provider";
 import { mergeQuote } from "@/lib/quote";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import {
+  DataTable,
+  createColumnHelper,
+  type DataTableColumnDef,
+} from "@/components/ui/table";
 import {
   Pagination,
   PaginationContent,
@@ -23,6 +28,8 @@ const PER_PAGE = 25;
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const col = createColumnHelper<WatchlistItem>();
+
 export const WatchlistTable = ({
   items,
   qtyByTicker,
@@ -32,8 +39,7 @@ export const WatchlistTable = ({
 }) => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tickers = useMemo(() => items.map((w) => w.ticker), [items]);
-  const liveQuotes = useQuotes(tickers);
+  const liveQuotes = useQuotes(items.map((w) => w.ticker));
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const totalPages = Math.max(1, Math.ceil(items.length / PER_PAGE));
   const clampedPage = Math.min(page, totalPages);
@@ -67,15 +73,129 @@ export const WatchlistTable = ({
     }
   };
 
+  const columns: DataTableColumnDef<WatchlistItem>[] = [
+    col.accessor("ticker", {
+      header: "Symbol",
+      size: 180,
+      cell: (info) => {
+        const ticker = info.getValue();
+        return (
+          <div className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleRemove(ticker)}
+              disabled={removingTickers.has(ticker)}
+              aria-label={`Remove ${ticker} from watchlist`}
+              className="rounded-sm text-amber-400 transition-opacity hover:opacity-70 disabled:opacity-50"
+            >
+              <Star size={14} weight="fill" className="shrink-0" />
+            </button>
+            <Link
+              href={`/stocks/${ticker}`}
+              className="text-sm font-semibold leading-none hover:underline"
+            >
+              {ticker}
+            </Link>
+          </div>
+        );
+      },
+    }),
+    col.display({
+      id: "qty",
+      header: () => <span className="flex justify-end">Qty Owned</span>,
+      size: 110,
+      cell: ({ row }) => {
+        const qty = qtyByTicker[row.original.ticker] ?? 0;
+        return <div className="text-right text-muted-foreground tabular-nums">{qty > 0 ? fmt(qty) : "—"}</div>;
+      },
+    }),
+    col.display({
+      id: "value",
+      header: () => <span className="flex justify-end">Value Owned</span>,
+      size: 130,
+      cell: ({ row }) => {
+        const q = mergeQuote(row.original.quote, liveQuotes.get(row.original.ticker));
+        const qty = qtyByTicker[row.original.ticker] ?? 0;
+        const valueOwned = qty > 0 && q.price != null ? qty * q.price : null;
+        return <div className="text-right text-muted-foreground tabular-nums">{valueOwned != null ? `$${fmt(valueOwned)}` : "—"}</div>;
+      },
+    }),
+    col.display({
+      id: "price",
+      header: () => <span className="flex justify-end">Price</span>,
+      size: 110,
+      cell: ({ row }) => {
+        const q = mergeQuote(row.original.quote, liveQuotes.get(row.original.ticker));
+        return <div className="text-right font-medium tabular-nums">{q.price != null ? `$${fmt(q.price)}` : "—"}</div>;
+      },
+    }),
+    col.display({
+      id: "change",
+      header: () => <span className="flex justify-end">Change</span>,
+      size: 110,
+      cell: ({ row }) => {
+        const q = mergeQuote(row.original.quote, liveQuotes.get(row.original.ticker));
+        const change = q.change_percent;
+        if (change == null) {
+          return <div className="text-right text-muted-foreground">—</div>;
+        }
+        return (
+          <div className={`flex items-center justify-end gap-0.5 font-medium tabular-nums ${change >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+            {change >= 0 ? <ArrowUp size={12} weight="bold" /> : <ArrowDown size={12} weight="bold" />}
+            {change >= 0 ? "+" : ""}{change.toFixed(2)}%
+          </div>
+        );
+      },
+    }),
+    col.display({
+      id: "bid",
+      header: () => <span className="flex justify-end">Bid</span>,
+      size: 100,
+      cell: ({ row }) => {
+        const q = mergeQuote(row.original.quote, liveQuotes.get(row.original.ticker));
+        return <div className="text-right text-muted-foreground tabular-nums">{q.bid_price != null ? `$${fmt(q.bid_price)}` : "—"}</div>;
+      },
+    }),
+    col.display({
+      id: "ask",
+      header: () => <span className="flex justify-end">Ask</span>,
+      size: 100,
+      cell: ({ row }) => {
+        const q = mergeQuote(row.original.quote, liveQuotes.get(row.original.ticker));
+        return <div className="text-right text-muted-foreground tabular-nums">{q.ask_price != null ? `$${fmt(q.ask_price)}` : "—"}</div>;
+      },
+    }),
+    col.display({
+      id: "remove",
+      header: "",
+      size: 52,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ticker = row.original.ticker;
+        return (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={() => handleRemove(ticker)}
+              disabled={removingTickers.has(ticker)}
+              aria-label={`Remove ${ticker} from watchlist`}
+              className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        );
+      },
+    }),
+  ];
+
   if (items.length === 0) {
     return (
       <div className="rounded-2xl bg-accent p-6">
         <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><Binoculars /></EmptyMedia>
-            <EmptyTitle>No stocks tracked</EmptyTitle>
-            <EmptyDescription>Search for stocks to add them to your watchlist.</EmptyDescription>
-          </EmptyHeader>
+          <EmptyMedia><Binoculars className="size-6 text-muted-foreground" /></EmptyMedia>
+          <EmptyTitle>No stocks tracked</EmptyTitle>
+          <EmptyDescription>Search for stocks to add them to your watchlist.</EmptyDescription>
         </Empty>
       </div>
     );
@@ -83,110 +203,12 @@ export const WatchlistTable = ({
 
   return (
     <div className="rounded-2xl bg-accent p-6">
-      <div className="overflow-hidden rounded-xl bg-card">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-border text-xs text-muted-foreground">
-              <th className="px-4 py-2.5 text-left font-medium">Symbol</th>
-              <th className="px-4 py-2.5 text-right font-medium">Qty Owned</th>
-              <th className="px-4 py-2.5 text-right font-medium">Value Owned</th>
-              <th className="px-4 py-2.5 text-right font-medium">Price</th>
-              <th className="px-4 py-2.5 text-right font-medium">Change</th>
-              <th className="hidden px-4 py-2.5 text-right font-medium md:table-cell">Bid</th>
-              <th className="hidden px-4 py-2.5 text-right font-medium md:table-cell">Ask</th>
-              <th className="w-10 px-2 py-2.5" />
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((w) => {
-              const q = mergeQuote(w.quote, liveQuotes.get(w.ticker));
-              const { price, change_percent: change, bid_price: bid, ask_price: ask } = q;
-              const qty = qtyByTicker[w.ticker] ?? 0;
-              const valueOwned = qty > 0 && price != null ? qty * price : null;
-              return (
-                <tr
-                  key={w.ticker}
-                  className="group border-b border-border last:border-0 transition-colors hover:bg-muted/30"
-                >
-                  <td className="px-4 py-3">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(w.ticker)}
-                        disabled={removingTickers.has(w.ticker)}
-                        aria-label={`Remove ${w.ticker} from watchlist`}
-                        className="rounded-sm text-amber-400 transition-opacity hover:opacity-70 disabled:opacity-50"
-                      >
-                        <Star size={14} weight="fill" className="shrink-0" />
-                      </button>
-                      <Link
-                        href={`/stocks/${w.ticker}`}
-                        className="text-sm font-semibold leading-none hover:underline"
-                      >
-                        {w.ticker}
-                      </Link>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-sm tabular-nums text-muted-foreground">
-                      {qty > 0 ? fmt(qty) : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-sm tabular-nums text-muted-foreground">
-                      {valueOwned != null ? `$${fmt(valueOwned)}` : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="text-sm font-medium tabular-nums">
-                      {price != null ? `$${fmt(price)}` : "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {change != null ? (
-                      <span
-                        className={`inline-flex items-center gap-0.5 text-sm font-medium tabular-nums ${
-                          change >= 0 ? "text-emerald-500" : "text-red-500"
-                        }`}
-                      >
-                        {change >= 0 ? (
-                          <ArrowUp size={12} weight="bold" />
-                        ) : (
-                          <ArrowDown size={12} weight="bold" />
-                        )}
-                        {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="hidden px-4 py-3 text-right md:table-cell">
-                    <span className="text-sm tabular-nums text-muted-foreground">
-                      {bid != null ? `$${fmt(bid)}` : "—"}
-                    </span>
-                  </td>
-                  <td className="hidden px-4 py-3 text-right md:table-cell">
-                    <span className="text-sm tabular-nums text-muted-foreground">
-                      {ask != null ? `$${fmt(ask)}` : "—"}
-                    </span>
-                  </td>
-                  <td className="px-2 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(w.ticker)}
-                      disabled={removingTickers.has(w.ticker)}
-                      aria-label={`Remove ${w.ticker} from watchlist`}
-                      className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-50"
-                    >
-                      <X size={14} />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={pageItems}
+        density="compact"
+        enableColumnResizing
+      />
       {totalPages > 1 && (
         <Pagination className="mt-4">
           <PaginationContent>

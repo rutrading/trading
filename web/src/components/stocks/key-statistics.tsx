@@ -33,11 +33,11 @@ export const KeyStatistics = ({
   return (
     <div className="rounded-2xl bg-accent p-6">
       <h2 className="mb-4 text-sm font-medium text-muted-foreground">Key Statistics</h2>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border md:grid-cols-5">
         {stats.map((stat, i) => (
           <div
             key={stat.label}
-            className={`bg-card px-4 py-3 ${i === 4 ? "col-span-2 md:col-span-4" : ""}`}
+            className={`bg-card px-4 py-3 ${i === 4 ? "col-span-2 md:col-span-1" : ""}`}
           >
             <p className="text-xs text-muted-foreground">{stat.label}</p>
             <p className="text-sm font-medium tabular-nums">{stat.value}</p>

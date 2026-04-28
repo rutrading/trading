@@ -23,6 +23,9 @@ const WSContext = createContext<WSContextValue | null>(null);
 
 const WS_BASE: string =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/api/ws";
+const USE_REST_QUOTES =
+  process.env.NEXT_PUBLIC_MARKET_DATA_TRANSPORT?.toLowerCase() === "rest";
+const REST_POLL_INTERVAL_MS = 15000;
 
 export function WebSocketProvider({
   children,
@@ -31,6 +34,7 @@ export function WebSocketProvider({
 }) {
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const [restoredTickers, setRestoredTickers] = useState<string[]>([]);
+  const [subscribedTickers, setSubscribedTickers] = useState<string[]>([]);
 
   // ref-counted subscriptions: ticker -> number of active subscribers
   const refCounts = useRef(new Map<string, number>());
@@ -60,8 +64,29 @@ export function WebSocketProvider({
     return WS_BASE;
   }, []);
 
+  const refreshTicker = useCallback(async (ticker: string) => {
+    try {
+      const res = await fetch(`/api/quote?ticker=${encodeURIComponent(ticker)}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const payload = (await res.json()) as { ok: boolean; data?: Quote };
+      if (!payload.ok || !payload.data) return;
+      const data = payload.data;
+      setQuotes((prev) => {
+        const next = new Map(prev);
+        const key = ticker.toUpperCase();
+        const prior = prev.get(key);
+        next.set(key, prior ? { ...prior, ...data } : data);
+        return next;
+      });
+    } catch {
+      // REST-only mode is a dev fallback; keep stale data instead of erroring UI.
+    }
+  }, []);
+
   const { sendJsonMessage, lastJsonMessage, readyState } = useWebSocket(
-    getSocketUrl,
+    USE_REST_QUOTES ? null : getSocketUrl,
     {
       shouldReconnect: () => true,
       reconnectAttempts: Infinity,
@@ -76,6 +101,21 @@ export function WebSocketProvider({
       },
     },
   );
+
+  useEffect(() => {
+    if (!USE_REST_QUOTES) return;
+    if (subscribedTickers.length === 0) return;
+
+    const poll = () => {
+      for (const ticker of subscribedTickers) {
+        void refreshTicker(ticker);
+      }
+    };
+
+    poll();
+    const id = window.setInterval(poll, REST_POLL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [refreshTicker, subscribedTickers]);
 
   // handle incoming messages
   useEffect(() => {
@@ -130,6 +170,27 @@ export function WebSocketProvider({
     const t = ticker.toUpperCase();
     const count = refCounts.current.get(t) ?? 0;
     refCounts.current.set(t, count + 1);
+    if (count === 0) {
+      setSubscribedTickers([...refCounts.current.keys()]);
+    }
+
+    if (USE_REST_QUOTES) {
+      void refreshTicker(t);
+      return () => {
+        const current = refCounts.current.get(t) ?? 0;
+        if (current <= 1) {
+          refCounts.current.delete(t);
+          setSubscribedTickers([...refCounts.current.keys()]);
+          setQuotes((prev) => {
+            const next = new Map(prev);
+            next.delete(t);
+            return next;
+          });
+        } else {
+          refCounts.current.set(t, current - 1);
+        }
+      };
+    }
 
     // First subscriber — tell the server, but only if the socket is open.
     // Otherwise the open-effect below will bulk-subscribe from refCounts
@@ -144,6 +205,7 @@ export function WebSocketProvider({
       const current = refCounts.current.get(t) ?? 0;
       if (current <= 1) {
         refCounts.current.delete(t);
+        setSubscribedTickers([...refCounts.current.keys()]);
         if (readyState === ReadyState.OPEN) {
           sendJsonMessage({ type: "unsubscribe", tickers: [t] });
         }

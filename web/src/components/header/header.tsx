@@ -22,6 +22,7 @@ import {
   Question,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { CommandMenu } from "./command-menu";
 import {
@@ -88,12 +89,15 @@ export function Header({ userName, userImage }: { userName: string; userImage?: 
 
   return (
     <header className="mb-8 flex items-center justify-between gap-4">
-      <Link
-        href="/"
-        className="text-xl font-bold tracking-tight"
-      >
-        R U Trading
-      </Link>
+      <div className="flex items-center gap-2">
+        <SidebarTrigger />
+        <Link
+          href="/"
+          className="text-xl font-bold tracking-tight"
+        >
+          R U Trading
+        </Link>
+      </div>
 
       {!isMobile && (
         <Tabs value={active}>

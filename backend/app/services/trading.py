@@ -20,7 +20,6 @@ the holding via ``with_for_update()`` itself.
 """
 
 import logging
-from datetime import datetime, timezone
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from sqlalchemy.orm import Session
@@ -220,11 +219,52 @@ def validate_buying_power(
     """
     if side == "buy":
         total_cost = quantity * price
-        available = account.balance - account.reserved_balance
+        available = account.available_balance
         if available < total_cost:
             raise OrderValidationError(
                 f"Insufficient buying power: need ${total_cost:.2f}, have ${available:.2f} available"
             )
+
+
+def release_buy_reservation(
+    account: TradingAccount | None, order: Order, units: Decimal
+) -> None:
+    """Release `units * order.reserved_per_share` from `account.reserved_balance`.
+
+    No-op when `account` is None or `order.reserved_per_share` is None (plain
+    market buy never reserved). Floor-clamped at 0; logs a warning when the
+    pre-clamp value goes negative — defense-in-depth against rounding drift.
+    """
+    if account is None or order.reserved_per_share is None:
+        return
+    release = units * order.reserved_per_share
+    new_reserved = account.reserved_balance - release
+    if new_reserved < 0:
+        logger.warning(
+            "Reserved balance underflow on release: account=%d order=%d "
+            "release=%s reserved_before=%s — clamping to 0",
+            account.id,
+            order.id,
+            release,
+            account.reserved_balance,
+        )
+    account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
+
+
+def release_sell_reservation(
+    holding: Holding | None, order: Order, units: Decimal
+) -> None:
+    """Release `units` from `holding.reserved_quantity`.
+
+    No-op when `holding` is None or this is a sync market sell (which never
+    reserved at placement — gate mirrors `place_order`'s immediate-fill
+    branch). Floor-clamped at 0.
+    """
+    if holding is None:
+        return
+    if order.order_type == "market" and order.time_in_force not in ("opg", "cls"):
+        return
+    holding.reserved_quantity = max(Decimal("0"), holding.reserved_quantity - units)
 
 
 def execute_fill(
@@ -241,18 +281,13 @@ def execute_fill(
     (order is cancelled and reservation released). Caller must not commit in that case since
     execute_fill already updates the order and account — just commit to persist the cancellation.
 
+    Caller contract: ``account`` must already be locked via ``with_for_update()``
+    before calling. Both production callers (``place_order`` sync-market path and
+    the executor's fill branch) acquire the lock first per the module-level lock
+    ordering convention; passing an unlocked account is undefined.
+
     Must be called within a db transaction (caller handles commit).
     """
-    # re-fetch with a row lock so the balance check and mutations below always
-    # see the latest committed state, even when called from a background worker
-    # that didn't lock the account itself
-    account = (
-        db.query(TradingAccount)
-        .filter(TradingAccount.id == account.id)
-        .with_for_update()
-        .first()
-    )
-
     # `total` lands in transaction.total (numeric(14,2)) and drives the
     # account.balance update — quantize once here so every downstream consumer
     # sees the same value Postgres will store.
@@ -261,7 +296,7 @@ def execute_fill(
     # pre-fill balance check for buy orders — safety net in case funds were
     # consumed by other orders between placement and execution
     if order.side == "buy":
-        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+        remaining = order.remaining_quantity
         per_share = order.reserved_per_share or Decimal("0")
         # subtract this order's own reservation to get what other orders need
         other_reserved = account.reserved_balance - remaining * per_share
@@ -269,13 +304,7 @@ def execute_fill(
         if available < total:
             order.status = "cancelled"
             order.rejection_reason = "Insufficient buying power at fill time"
-            account.reserved_balance = to_money(
-                max(
-                    Decimal("0"),
-                    account.reserved_balance - remaining * per_share,
-                )
-            )
-            account.updated_at = datetime.now(timezone.utc)
+            release_buy_reservation(account, order, remaining)
             return None
 
     # update order fill tracking
@@ -298,8 +327,6 @@ def execute_fill(
         order.status = "filled"
     else:
         order.status = "partially_filled"
-
-    order.updated_at = datetime.now(timezone.utc)
 
     # find or create holding for this ticker. Take an explicit row lock —
     # the caller already holds the trading_account lock above (account →
@@ -337,30 +364,12 @@ def execute_fill(
                 (old_qty * old_cost) + (fill_quantity * fill_price)
             ) / (old_qty + fill_quantity)
             holding.quantity = old_qty + fill_quantity
-            holding.updated_at = datetime.now(timezone.utc)
 
         # deduct from balance — quantize so the in-memory value matches what
         # numeric(14,2) will store on flush
         account.balance = to_money(account.balance - total)
 
-        # release the per-share reservation for the filled quantity
-        if order.reserved_per_share is not None:
-            release = fill_quantity * order.reserved_per_share
-            new_reserved = account.reserved_balance - release
-            if new_reserved < 0:
-                # Clamp is defense-in-depth; with explicit money quantize in
-                # place this should not fire under normal operation. If it
-                # does, surface it so we can investigate the underlying
-                # accounting drift.
-                logger.warning(
-                    "Reserved balance underflow on fill: account=%d order=%d "
-                    "release=%s reserved_before=%s — clamping to 0",
-                    account.id,
-                    order.id,
-                    release,
-                    account.reserved_balance,
-                )
-            account.reserved_balance = to_money(max(Decimal("0"), new_reserved))
+        release_buy_reservation(account, order, fill_quantity)
 
     elif order.side == "sell":
         if holding is None:
@@ -368,17 +377,10 @@ def execute_fill(
             # cancel rather than ghost-crediting proceeds for shares not owned
             order.status = "cancelled"
             order.rejection_reason = "Position no longer exists at fill time"
-            order.updated_at = datetime.now(timezone.utc)
             return None
 
         holding.quantity -= fill_quantity
-        # release the reserved_quantity for the filled shares (non-market sell orders)
-        if order.order_type != "market":
-            holding.reserved_quantity = max(
-                Decimal("0"),
-                holding.reserved_quantity - fill_quantity,
-            )
-        holding.updated_at = datetime.now(timezone.utc)
+        release_sell_reservation(holding, order, fill_quantity)
         # remove holding row if fully sold
         if holding.quantity <= 0:
             db.delete(holding)
@@ -386,8 +388,6 @@ def execute_fill(
         # add proceeds to balance — quantize so the in-memory value matches
         # what numeric(14,2) will store on flush
         account.balance = to_money(account.balance + total)
-
-    account.updated_at = datetime.now(timezone.utc)
 
     # create transaction record
     txn = Transaction(

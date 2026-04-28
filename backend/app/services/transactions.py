@@ -1,6 +1,5 @@
 """Transaction-creation helpers."""
 
-from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -30,6 +29,5 @@ def create_deposit(
     )
     db.add(txn)
     account.balance = to_money(account.balance + quantized)
-    account.updated_at = datetime.now(timezone.utc)
     db.flush()
     return txn

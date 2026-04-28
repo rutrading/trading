@@ -8,6 +8,15 @@ type BulkQuotesResponse = {
   quotes: Record<string, Quote>;
 };
 
+export type QuoteabilityItem = {
+  quoteable: boolean;
+  reason: string | null;
+};
+
+type QuoteabilityResponse = {
+  symbols: Record<string, QuoteabilityItem>;
+};
+
 export async function getQuote(
   ticker: string,
 ): Promise<api.ApiResult<Quote>> {
@@ -37,4 +46,20 @@ export async function getQuotes(
     tickers: unique.join(","),
   });
   return res.ok ? res.data.quotes : {};
+}
+
+export async function getQuoteability(
+  tickers: string[],
+): Promise<Record<string, QuoteabilityItem>> {
+  const session = await getSession();
+  if (!session) return {};
+  const cleaned = tickers
+    .map((t) => t.trim().toUpperCase())
+    .filter((t) => t.length > 0);
+  if (cleaned.length === 0) return {};
+  const unique = Array.from(new Set(cleaned));
+  const res = await api.get<QuoteabilityResponse>("/quoteability", {
+    tickers: unique.join(","),
+  });
+  return res.ok ? res.data.symbols : {};
 }

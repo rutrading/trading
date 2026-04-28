@@ -8,6 +8,7 @@ Account-level authorization lives in dependencies.py.
 """
 
 import os
+from pathlib import Path
 
 import jwt
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 AUTH_SERVER_URL = os.environ.get("AUTH_SERVER_URL", "http://localhost:3000")
 JWKS_URL = f"{AUTH_SERVER_URL}/api/auth/jwks"

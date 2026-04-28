@@ -42,8 +42,9 @@ export const DeleteAccount = ({ accountId, accountName }: Props) => {
   return (
     <>
       <Button
-        variant="destructive-outline"
+        variant="outline"
         size="sm"
+        className="text-destructive hover:text-destructive"
         onClick={() => setOpen(true)}
       >
         <Trash size={14} />

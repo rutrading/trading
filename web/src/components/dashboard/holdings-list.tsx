@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Briefcase } from "@phosphor-icons/react/ssr";
 import type { HoldingRow } from "@/app/actions/portfolio";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { fmtSigned, fmtUsd, tone } from "@/lib/format";
 
 export const HoldingsList = ({
@@ -22,11 +22,9 @@ export const HoldingsList = ({
   if (holdings.length === 0) {
     return (
       <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon"><Briefcase /></EmptyMedia>
-          <EmptyTitle>No holdings yet</EmptyTitle>
-          <EmptyDescription>Place a trade to see your positions here.</EmptyDescription>
-        </EmptyHeader>
+        <EmptyMedia><Briefcase className="size-6 text-muted-foreground" /></EmptyMedia>
+        <EmptyTitle>No holdings yet</EmptyTitle>
+        <EmptyDescription>Place a trade to see your positions here.</EmptyDescription>
       </Empty>
     );
   }

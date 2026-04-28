@@ -199,6 +199,95 @@ export default async function FaqPage() {
         </section>
 
         <section className="rounded-2xl bg-accent p-6">
+          <h2 className="mb-2 text-lg font-semibold">Fill realism</h2>
+          <Accordion multiple>
+            <FaqItem
+              value="realism-partial-atr"
+              question="Partial Orders and ATR — how it works"
+            >
+              <p>
+                Resting orders (limit, stop, stop-limit, OPG, CLS) are checked
+                by a background worker every 5 seconds. On each cycle, an
+                order can fill at most 0.05% of the ticker&apos;s daily volume,
+                with a 1-share floor and capped by what&apos;s left to fill.
+                Big orders on thin names span multiple cycles, and each
+                partial fill is recorded as its own transaction at that
+                moment&apos;s quote — so your average price is the
+                quantity-weighted blend of those fills. Plain market orders
+                (TIF Day or GTC) skip this cap and fill in full at placement.
+              </p>
+              <Examples
+                items={[
+                  [
+                    "Large-cap",
+                    "60M shares/day → 30,000 fillable per 5s cycle. Most retail-size orders clear in one cycle.",
+                  ],
+                  [
+                    "Small-cap",
+                    "200K shares/day → 100 fillable per 5s cycle. A 1,000-share order takes ~10 cycles (~50 seconds).",
+                  ],
+                ]}
+              />
+              <p className="mt-2">
+                ATR (14-day Average True Range) is used only for cash
+                reservations on stop-buy orders and on deferred market buys
+                (OPG/CLS). When a stop triggers it becomes a market order, so
+                the actual fill can be worse than the stop price. To make sure
+                the buying-power check still passes at fill time, we hold
+                aside per share: max(stop_price × 1.02, stop_price + 1.5 ×
+                ATR). The 2% floor covers calm names; the 1.5× ATR term
+                widens the buffer for volatile ones. Limit orders don&apos;t
+                need this — the limit price is already the worst-case fill.
+              </p>
+              <Examples
+                items={[
+                  [
+                    "Calm name",
+                    "Stop-buy at $100, ATR $0.50. Reservation = max($102, $100.75) = $102/share.",
+                  ],
+                  [
+                    "Volatile name",
+                    "Stop-buy at $100, ATR $4. Reservation = max($102, $106) = $106/share.",
+                  ],
+                ]}
+              />
+            </FaqItem>
+            <FaqItem
+              value="realism-market-slippage"
+              question="Slippage for Market Orders — how it works"
+            >
+              <p>
+                Market fills are nudged away from the quote to simulate
+                crossing the spread and pushing the book. The slippage rate
+                is min(0.05% + 5% × (quantity / daily_volume), 2%). Buys fill
+                at quote × (1 + slippage); sells at quote × (1 − slippage).
+                The 0.05% base applies even to a 1-share order, the 5%
+                impact term scales with how much of a day&apos;s volume
+                you&apos;re taking, and the 2% cap keeps illiquid names from
+                producing absurd fills. Limit and stop-limit fills have no
+                slippage — they print at the quote that crossed your limit.
+              </p>
+              <Examples
+                items={[
+                  [
+                    "Tiny order, liquid name",
+                    "Buy 10 shares, 60M daily volume. Slippage ≈ 0.05% (impact term is negligible). $100 quote → fill near $100.05.",
+                  ],
+                  [
+                    "Chunky order, thin name",
+                    "Buy 5,000 shares, 200K daily volume. 0.05% + 5% × 0.025 = 0.175%. $100 quote → fill ≈ $100.18.",
+                  ],
+                  [
+                    "Capped",
+                    "Order size pushes the formula past 2% — fill is clamped at quote × 1.02 (buy) or quote × 0.98 (sell).",
+                  ],
+                ]}
+              />
+            </FaqItem>
+          </Accordion>
+        </section>
+
+        <section className="rounded-2xl bg-accent p-6">
           <h2 className="mb-2 text-lg font-semibold">Crypto</h2>
           <Accordion multiple>
             <FaqItem

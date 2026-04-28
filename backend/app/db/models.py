@@ -25,6 +25,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -180,6 +181,16 @@ class User(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String)
     email: Mapped[str] = mapped_column(String)
+    email_verified: Mapped[bool] = mapped_column("emailVerified", Boolean, default=False)
+    image: Mapped[str | None] = mapped_column(String, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        "createdAt", default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        "updatedAt",
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class Symbol(Base):
@@ -337,6 +348,11 @@ class TradingAccount(Base):
     )
     holdings: Mapped[list["Holding"]] = relationship(back_populates="trading_account")
 
+    @hybrid_property
+    def available_balance(self) -> Decimal:
+        """Cash available for new orders: balance − reserved_balance."""
+        return self.balance - self.reserved_balance
+
 
 class Order(Base):
     __tablename__ = "order"
@@ -401,6 +417,11 @@ class Order(Base):
     trading_account: Mapped["TradingAccount"] = relationship(back_populates="orders")
     symbol: Mapped["Symbol"] = relationship(back_populates="orders")
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="order")
+
+    @hybrid_property
+    def remaining_quantity(self) -> Decimal:
+        """Quantity yet to fill: quantity − filled_quantity (None → 0)."""
+        return self.quantity - (self.filled_quantity or Decimal("0"))
 
 
 class Strategy(Base):

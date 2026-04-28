@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { CaretRight } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 import { HoldingsList } from "@/components/dashboard/holdings-list";
 import { OpenOrdersList } from "@/components/dashboard/open-orders-list";
 import { PerformanceCard } from "@/components/dashboard/performance-card";
@@ -146,14 +147,21 @@ export default async function DashboardPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-8">
-      <div className="space-y-4">
-        <div className="flex items-baseline gap-4">
-          <h1 className="text-5xl font-bold tabular-nums tracking-tight">
-            ${fmt(totalMarketValue + totalCash)}
-          </h1>
+      <PageHeader divider={false} className="h-auto px-0 pb-2">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground">
-            {scopedAccount ? `${scopedAccount.name} · Portfolio Value` : "Portfolio Value"}
+            Account overview and market activity.
           </p>
+        </div>
+      </PageHeader>
+
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">Portfolio Value</p>
+          <h2 className="text-4xl font-semibold tabular-nums tracking-tight md:text-5xl">
+            ${fmt(totalMarketValue + totalCash)}
+          </h2>
         </div>
 
         <div className="flex items-end justify-between gap-8">

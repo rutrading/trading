@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, Newspaper } from "@phosphor-icons/react/ssr";
 import { Button } from "@/components/ui/button";
 import { NewsCard } from "./news-card";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { PageHeader } from "@/components/ui/page";
 import type { NewsArticle } from "@/app/actions/news";
 
 export const TickerNews = ({ ticker, articles }: { ticker: string; articles: NewsArticle[] }) => {
@@ -10,7 +11,8 @@ export const TickerNews = ({ ticker, articles }: { ticker: string; articles: New
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <PageHeader divider={false} className="h-auto px-0 pb-2">
+      <div className="flex w-full items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{upper}</h1>
@@ -28,20 +30,19 @@ export const TickerNews = ({ ticker, articles }: { ticker: string; articles: New
           </Button>
         </Link>
       </div>
+      </PageHeader>
 
       {articles.length === 0 ? (
         <div className="rounded-2xl bg-accent p-6">
           <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon"><Newspaper /></EmptyMedia>
-              <EmptyTitle>No news for {upper}</EmptyTitle>
-              <EmptyDescription>Check back later for articles about this stock.</EmptyDescription>
-            </EmptyHeader>
+            <EmptyMedia><Newspaper className="size-6 text-muted-foreground" /></EmptyMedia>
+            <EmptyTitle>No news for {upper}</EmptyTitle>
+            <EmptyDescription>Check back later for articles about this stock.</EmptyDescription>
           </Empty>
         </div>
       ) : (
         <div className="rounded-2xl bg-accent p-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid items-stretch gap-4 overflow-visible md:grid-cols-2 xl:grid-cols-3">
             {articles.map((item, i) => (
               <NewsCard key={i} item={item} />
             ))}
