@@ -560,7 +560,7 @@ async def cancel_order(
             detail=f"Cannot cancel order with status '{order.status}'",
         )
 
-    remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+    remaining = order.remaining_quantity
 
     if order.side == "buy":
         release_buy_reservation(account, order, remaining)

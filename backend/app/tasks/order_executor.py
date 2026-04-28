@@ -158,7 +158,7 @@ def _process_open_orders() -> None:
                 # has since revoked.
                 if not _should_fill(order, price, now_et):
                     continue
-                remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+                remaining = order.remaining_quantity
                 fill_quantity = _compute_fill_quantity(remaining, volumes.get(order.ticker))
                 # The only `market` orders that reach the executor are those
                 # whose placement deferred them to the next session boundary
@@ -195,7 +195,7 @@ def _process_open_orders() -> None:
                         fill_price,
                     )
             elif _should_expire(order, now_et, expiry_boundaries):
-                remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+                remaining = order.remaining_quantity
                 if order.side == "buy" and order.reserved_per_share is not None:
                     account = (
                         db.query(TradingAccount)

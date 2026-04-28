@@ -220,7 +220,7 @@ def validate_buying_power(
     """
     if side == "buy":
         total_cost = quantity * price
-        available = account.balance - account.reserved_balance
+        available = account.available_balance
         if available < total_cost:
             raise OrderValidationError(
                 f"Insufficient buying power: need ${total_cost:.2f}, have ${available:.2f} available"
@@ -303,7 +303,7 @@ def execute_fill(
     # pre-fill balance check for buy orders — safety net in case funds were
     # consumed by other orders between placement and execution
     if order.side == "buy":
-        remaining = order.quantity - (order.filled_quantity or Decimal("0"))
+        remaining = order.remaining_quantity
         per_share = order.reserved_per_share or Decimal("0")
         # subtract this order's own reservation to get what other orders need
         other_reserved = account.reserved_balance - remaining * per_share
