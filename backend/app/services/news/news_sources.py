@@ -4,6 +4,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import json
 import re
+import spacy
 
 class News_Source:
     _EXPLICIT_TICKER_PATTERNS = (
@@ -123,22 +124,32 @@ class News_Source:
     async def nlp_get_stock_tickers(article_text: str) -> list:
         if News_Source.stock_map is None:
             await News_Source.get_stock_map()
-        if not article_text:
-            return []
+        nlp = spacy.load("en_core_web_sm")
+        
+        doc = nlp(article_text)
 
-        valid_symbols = {
-            stock.get("symbol", "").upper()
-            for stock in News_Source.stock_map
-            if stock.get("symbol")
-        }
-        counts = {}
-        for pattern in News_Source._EXPLICIT_TICKER_PATTERNS:
-            for match in pattern.finditer(article_text):
-                ticker = match.group("ticker").upper().replace(".", "-")
-                if ticker in valid_symbols:
-                    counts[ticker] = counts.get(ticker, 0) + 1
+        blacklist = [
+            "AI",
+            "InvestingPro",
+            "InvestingPro Tips",
+            "Overvalued"
+        ]
 
-        return sorted(counts, key=lambda ticker: (-counts[ticker], ticker))
+        companies = []
+        tickers = []
+        for ent in doc.ents:
+            if ent.label_ == "ORG":
+                if ent.text not in blacklist:
+                    companies.append(ent.text)
+        print(companies)
+        for company in companies:
+            for stock in News_Source.stock_map:
+                if company in stock["name"]:
+                    symbol = stock["symbol"]
+                    if symbol not in tickers:
+                        tickers.append(symbol)
+                    
+        return tickers
 
 class News_Source_NBC(News_Source):
     
