@@ -131,11 +131,11 @@
   --chart-3: oklch(0.696 0.17 162.48);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: color-mix(in srgb, var(--foreground) 4%, var(--background));
-  --sidebar-foreground: color-mix(in srgb, var(--foreground) 82%, var(--sidebar));
+  --sidebar: color-mix(in srgb, var(--foreground) 8%, var(--background));
+  --sidebar-foreground: color-mix(in srgb, var(--foreground) 90%, var(--sidebar));
   --sidebar-primary: oklch(0.72 0.12 55);
   --sidebar-primary-foreground: oklch(0.14 0.01 50);
-  --sidebar-accent: --alpha(var(--color-white) / 7%);
+  --sidebar-accent: --alpha(var(--color-white) / 10%);
   --sidebar-accent-foreground: var(--foreground);
   --sidebar-border: --alpha(var(--color-white) / 7%);
   --sidebar-ring: --alpha(oklch(0.72 0.12 55) / 50%);
