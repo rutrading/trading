@@ -107,7 +107,10 @@ async def _run_one_cycle(config: Config, session_factory) -> None:
     history = await _load_btc_history(now)
 
     markets = await kalshi_rest.list_btc_hourly_markets(limit=200)
-    tickers = [m["ticker"] for m in markets if m.get("status") == "open"]
+    # Trust the upstream `status=open` query filter; Kalshi's response uses
+    # `active` for currently-tradeable markets, not the `open` literal we sent
+    # in the URL.
+    tickers = [m["ticker"] for m in markets]
     if not tickers:
         return
 
@@ -182,7 +185,7 @@ async def _evaluate_account(
         return
 
     candidates = sorted(
-        [m for m in markets if m.get("status") == "open"],
+        markets,
         key=lambda m: m.get("close_time") or "",
     )[: account_ctx.max_orders_per_cycle]
 

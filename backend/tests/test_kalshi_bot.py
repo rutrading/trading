@@ -407,6 +407,35 @@ def test_dry_run_writes_signal_no_order(monkeypatch):
     assert rest.place.await_count == 0
 
 
+def test_active_status_markets_are_processed(monkeypatch):
+    # Demo Kalshi returns markets with `status="active"` for currently-tradeable
+    # rows; the historic test fixtures used `"open"`. The bot must accept both
+    # (the upstream `status=open` query filter is the source of truth, not the
+    # response field), otherwise live cycles silently no-op.
+    _, factory = _make_db()
+    with factory() as db:
+        seed_user(db, "u1")
+        account = _seed_kalshi_account(db, user_id="u1", subaccount_number=5)
+        _seed_bot_state(db, account.id, dry_run=True)
+
+    _patch_alpaca(monkeypatch)
+    rest = _patch_kalshi_rest(
+        monkeypatch,
+        markets=[_market_dict("KXBTCD-T1", status="active")],
+        orderbooks={"KXBTCD-T1": _orderbook("KXBTCD-T1")},
+    )
+    _stub_strategy(monkeypatch, intent=_intent_for())
+
+    _run_cycle(factory)
+
+    with factory() as db:
+        sig = db.query(KalshiSignal).one()
+        assert sig.decision == "dry_run"
+        state = db.query(KalshiBotState).one()
+        assert state.last_cycle_at is not None
+    assert rest.place.await_count == 0
+
+
 def test_no_subaccount_blocks_with_reason(monkeypatch):
     _, factory = _make_db()
     with factory() as db:
