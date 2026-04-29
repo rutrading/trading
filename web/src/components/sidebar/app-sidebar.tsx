@@ -86,10 +86,12 @@ function isBrokerageAccount(account: Account): account is BrokerageAccount {
 
 export function AppSidebar({
   accounts,
+  hasKalshiAccount,
   userName,
   userImage,
 }: {
   accounts: Account[];
+  hasKalshiAccount: boolean;
   userName: string;
   userImage?: string | null;
 }) {
@@ -154,6 +156,18 @@ export function AppSidebar({
                   </SidebarMenuItem>
                 );
               })}
+              {hasKalshiAccount && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    isActive={pathname.startsWith("/kalshi")}
+                    tooltip="Kalshi"
+                    render={<Link href="/kalshi" />}
+                  >
+                    <RobotIcon className="size-4" weight="duotone" />
+                    <span>Kalshi</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

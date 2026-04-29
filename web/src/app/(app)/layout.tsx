@@ -12,10 +12,14 @@ export default async function AppLayout({
 
   const accounts = await getAccounts();
   if (accounts.length === 0) redirect("/onboarding");
+  const hasKalshiAccount = accounts.some(
+    (m) => m.tradingAccount.type === "kalshi",
+  );
 
   return (
     <AppShell
       accounts={accounts}
+      hasKalshiAccount={hasKalshiAccount}
       userName={session.user.name}
       userImage={session.user.image}
     >
