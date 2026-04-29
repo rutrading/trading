@@ -1,8 +1,8 @@
-CREATE TYPE "public"."strategy_action" AS ENUM('place_buy', 'place_sell', 'none');--> statement-breakpoint
-CREATE TYPE "public"."strategy_signal" AS ENUM('buy', 'sell', 'hold');--> statement-breakpoint
-CREATE TYPE "public"."strategy_status" AS ENUM('active', 'paused', 'disabled');--> statement-breakpoint
-CREATE TYPE "public"."strategy_type" AS ENUM('ema_crossover', 'sma_crossover', 'rsi_reversion', 'donchian_breakout');--> statement-breakpoint
-CREATE TABLE "strategy" (
+DO $$ BEGIN CREATE TYPE "public"."strategy_action" AS ENUM('place_buy', 'place_sell', 'none'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."strategy_signal" AS ENUM('buy', 'sell', 'hold'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."strategy_status" AS ENUM('active', 'paused', 'disabled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN CREATE TYPE "public"."strategy_type" AS ENUM('ema_crossover', 'sma_crossover', 'rsi_reversion', 'donchian_breakout'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "strategy" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"trading_account_id" integer NOT NULL,
 	"name" text NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE "strategy" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "strategy_run" (
+CREATE TABLE IF NOT EXISTS "strategy_run" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"strategy_id" integer NOT NULL,
 	"trading_account_id" integer NOT NULL,
@@ -35,16 +35,16 @@ CREATE TABLE "strategy_run" (
 	"error" text
 );
 --> statement-breakpoint
-ALTER TABLE "strategy" ADD CONSTRAINT "strategy_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "strategy" ADD CONSTRAINT "strategy_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_strategy_id_strategy_id_fk" FOREIGN KEY ("strategy_id") REFERENCES "public"."strategy"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_order_id_order_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."order"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "strategy_trading_account_id_idx" ON "strategy" USING btree ("trading_account_id");--> statement-breakpoint
-CREATE INDEX "strategy_ticker_idx" ON "strategy" USING btree ("ticker");--> statement-breakpoint
-CREATE INDEX "strategy_status_idx" ON "strategy" USING btree ("status");--> statement-breakpoint
-CREATE UNIQUE INDEX "strategy_account_type_ticker_idx" ON "strategy" USING btree ("trading_account_id","strategy_type","ticker");--> statement-breakpoint
-CREATE INDEX "strategy_run_strategy_id_idx" ON "strategy_run" USING btree ("strategy_id");--> statement-breakpoint
-CREATE INDEX "strategy_run_trading_account_id_idx" ON "strategy_run" USING btree ("trading_account_id");--> statement-breakpoint
-CREATE INDEX "strategy_run_run_at_idx" ON "strategy_run" USING btree ("run_at");
+DO $$ BEGIN ALTER TABLE "strategy" ADD CONSTRAINT "strategy_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "strategy" ADD CONSTRAINT "strategy_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_strategy_id_strategy_id_fk" FOREIGN KEY ("strategy_id") REFERENCES "public"."strategy"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_trading_account_id_trading_account_id_fk" FOREIGN KEY ("trading_account_id") REFERENCES "public"."trading_account"("id") ON DELETE cascade ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_ticker_symbol_ticker_fk" FOREIGN KEY ("ticker") REFERENCES "public"."symbol"("ticker") ON DELETE no action ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+DO $$ BEGIN ALTER TABLE "strategy_run" ADD CONSTRAINT "strategy_run_order_id_order_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."order"("id") ON DELETE set null ON UPDATE no action; EXCEPTION WHEN duplicate_object THEN NULL; END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_trading_account_id_idx" ON "strategy" USING btree ("trading_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_ticker_idx" ON "strategy" USING btree ("ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_status_idx" ON "strategy" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "strategy_account_type_ticker_idx" ON "strategy" USING btree ("trading_account_id","strategy_type","ticker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_run_strategy_id_idx" ON "strategy_run" USING btree ("strategy_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_run_trading_account_id_idx" ON "strategy_run" USING btree ("trading_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "strategy_run_run_at_idx" ON "strategy_run" USING btree ("run_at");
