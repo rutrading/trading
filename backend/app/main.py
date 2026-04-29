@@ -7,11 +7,11 @@ from urllib.parse import urlparse
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import AUTH_SERVER_URL, SKIP_AUTH
-from app.config import get_config
+from app.config import env_bool, get_config
 from app.db.redis import close_redis, get_redis
 from app.routers import (
     accounts,
@@ -216,13 +216,14 @@ async def lifespan(app: FastAPI):
     logger.info("News refresh task started")
     logger.info("Strategy executor task started")
 
-    # Bot task is gated on KALSHI_BOT_ENABLED. The local import is intentional
-    # — keep ``app.tasks.kalshi_bot`` (and its transitive
-    # ``app.services.kalshi_rest``) out of ``sys.modules`` when disabled.
-    from app.config import env_bool
-
+    # Bot task is gated on KALSHI_BOT_ENABLED *and* the master KALSHI_ENABLED
+    # switch. The bot module is imported lazily so ``app.tasks.kalshi_bot`` and
+    # its transitive ``app.services.kalshi_rest`` stay out of ``sys.modules``
+    # when disabled.
     kalshi_task: asyncio.Task | None = None
-    if env_bool("KALSHI_BOT_ENABLED", default=False):
+    if env_bool("KALSHI_ENABLED", default=True) and env_bool(
+        "KALSHI_BOT_ENABLED", default=False
+    ):
         from app.tasks.kalshi_bot import run_kalshi_bot
 
         kalshi_task = asyncio.create_task(run_kalshi_bot())
@@ -294,4 +295,8 @@ app.include_router(watchlist.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(company.router, prefix="/api")
 app.include_router(accounts.router, prefix="/api")
-app.include_router(kalshi.router, prefix="/api")
+app.include_router(
+    kalshi.router,
+    prefix="/api",
+    dependencies=[Depends(kalshi.require_kalshi_enabled)],
+)

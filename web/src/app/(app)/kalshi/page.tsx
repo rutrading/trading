@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { isKalshiEnabled } from "@/lib/kalshi-enabled";
 import { KalshiOnboardingCard } from "@/components/kalshi/onboarding-card";
 import { KalshiStatusCard } from "@/components/kalshi/status-card";
 import { KalshiControlPanel } from "@/components/kalshi/control-panel";
@@ -24,6 +25,20 @@ export const metadata: Metadata = { title: "Kalshi Bot — R U Trading" };
 const NO_ACCOUNT_DETAIL = "No Kalshi account for this user";
 
 export default async function KalshiPage() {
+  if (!isKalshiEnabled()) {
+    return (
+      <div className="mx-auto max-w-2xl py-12">
+        <div className="rounded-2xl bg-accent p-8 text-center">
+          <h1 className="text-xl font-semibold">Kalshi service disabled</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            The Kalshi integration is turned off in this environment. Contact
+            an administrator if you expected it to be available.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const statusRes = await getKalshiStatus();
 
   if (!statusRes.ok) {

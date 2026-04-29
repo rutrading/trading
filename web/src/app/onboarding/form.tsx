@@ -138,7 +138,7 @@ function OptionCard<T extends string>({
   );
 }
 
-export function OnboardingForm() {
+export function OnboardingForm({ kalshiEnabled }: { kalshiEnabled: boolean }) {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [experience, setExperience] = useState<Experience>("beginner");
@@ -274,36 +274,40 @@ export function OnboardingForm() {
                           />
                         ))}
                       </div>
-                      <div className="my-4 flex items-center gap-3">
-                        <div className="h-px flex-1 bg-border" />
-                        <span className="text-xs text-muted-foreground">or</span>
-                        <div className="h-px flex-1 bg-border" />
-                      </div>
-                      <Button
-                        variant="outline"
-                        type="button"
-                        disabled={kalshiPending}
-                        onClick={() => {
-                          startKalshi(async () => {
-                            const result = await createKalshiAccount(
-                              "My Kalshi Account",
-                            );
-                            if (!result.success) {
-                              toast.error(
-                                "Could not create Kalshi account",
-                                result.error,
-                              );
-                              return;
-                            }
-                            router.push("/kalshi");
-                          });
-                        }}
-                      >
-                        <Robot size={16} weight="duotone" />
-                        {kalshiPending
-                          ? "Creating..."
-                          : "Create a Kalshi bot account instead"}
-                      </Button>
+                      {kalshiEnabled && (
+                        <>
+                          <div className="my-4 flex items-center gap-3">
+                            <div className="h-px flex-1 bg-border" />
+                            <span className="text-xs text-muted-foreground">or</span>
+                            <div className="h-px flex-1 bg-border" />
+                          </div>
+                          <Button
+                            variant="outline"
+                            type="button"
+                            disabled={kalshiPending}
+                            onClick={() => {
+                              startKalshi(async () => {
+                                const result = await createKalshiAccount(
+                                  "My Kalshi Account",
+                                );
+                                if (!result.success) {
+                                  toast.error(
+                                    "Could not create Kalshi account",
+                                    result.error,
+                                  );
+                                  return;
+                                }
+                                router.push("/kalshi");
+                              });
+                            }}
+                          >
+                            <Robot size={16} weight="duotone" />
+                            {kalshiPending
+                              ? "Creating..."
+                              : "Create a Kalshi bot account instead"}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   )}
 

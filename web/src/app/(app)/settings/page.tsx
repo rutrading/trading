@@ -6,12 +6,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ProfileForm } from "@/components/settings/profile-form";
 import { SecurityForm } from "@/components/settings/security-form";
 import { AccountsList } from "@/components/settings/accounts-list";
+import { isKalshiEnabled } from "@/lib/kalshi-enabled";
 
 export const metadata: Metadata = { title: "Settings - R U Trading" };
 
 async function AccountsLoader() {
   const accounts = await getAccounts();
-  return <AccountsList accounts={accounts} />;
+  return <AccountsList accounts={accounts} kalshiEnabled={isKalshiEnabled()} />;
 }
 
 async function ProfileLoader() {

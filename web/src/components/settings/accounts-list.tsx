@@ -46,14 +46,20 @@ function AccountTypeIcon({ type }: { type: AccountType }) {
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
+export const AccountsList = ({
+  accounts,
+  kalshiEnabled,
+}: {
+  accounts: Account[];
+  kalshiEnabled: boolean;
+}) => {
   const hasKalshi = accounts.some((m) => m.tradingAccount.type === "kalshi");
   return (
     <div className="rounded-2xl bg-accent p-6">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Trading Accounts</h2>
         <div className="flex items-center gap-2">
-          <CreateKalshiAccountButton disabled={hasKalshi} />
+          {kalshiEnabled && <CreateKalshiAccountButton disabled={hasKalshi} />}
           <Link href="/onboarding">
             <Button variant="outline" size="sm">
               <Plus size={14} />

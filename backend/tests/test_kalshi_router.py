@@ -45,6 +45,17 @@ client = TestClient(app)
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _enable_kalshi(monkeypatch):
+    """The repo-local ``backend/.env`` may set ``KALSHI_ENABLED=false`` (the
+    operator's chosen production posture); ``app.main`` loads it via
+    ``load_dotenv`` at import time. Force the master switch on for every
+    router test so the dependency-level 503 gate doesn't short-circuit the
+    handlers under test. ``TestMasterKillSwitch`` overrides this back to
+    false per-test to exercise the gate."""
+    monkeypatch.setenv("KALSHI_ENABLED", "true")
+
+
 @pytest.fixture
 def session_factory():
     engine = make_test_engine()
@@ -229,6 +240,36 @@ class TestUnauthenticated:
             request = getattr(client, method)
             response = request(path, json=body) if body is not None else request(path)
         assert response.status_code == 401
+
+
+class TestMasterKillSwitch:
+    """KALSHI_ENABLED=false short-circuits every endpoint with 503 before the
+    auth dependency runs, so the gate fires even on unauthenticated probes.
+    The default-true behaviour is covered implicitly by every other test in
+    this module (none of which set the env var)."""
+
+    @pytest.mark.parametrize(
+        "method,path,body",
+        [
+            ("get", "/api/kalshi/status", None),
+            ("post", "/api/kalshi/provision-subaccount", None),
+            ("get", "/api/kalshi/signals", None),
+            ("get", "/api/kalshi/orders", None),
+            ("get", "/api/kalshi/positions", None),
+            ("get", "/api/kalshi/fills", None),
+            ("post", "/api/kalshi/strategy", {"strategy": "momentum"}),
+            ("post", "/api/kalshi/control", {"paused": True}),
+        ],
+    )
+    def test_disabled_returns_503(
+        self, monkeypatch, session_factory, method, path, body
+    ):
+        monkeypatch.setenv("KALSHI_ENABLED", "false")
+        with db_override(session_factory), auth_as("u1"):
+            request = getattr(client, method)
+            response = request(path, json=body) if body is not None else request(path)
+        assert response.status_code == 503
+        assert response.json()["detail"] == "Kalshi service disabled"
 
 
 # ---------------------------------------------------------------------------
