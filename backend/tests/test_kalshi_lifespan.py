@@ -66,9 +66,12 @@ def test_lifespan_does_not_import_kalshi_bot_when_disabled(
 ):
     """KALSHI_BOT_ENABLED=false → neither kalshi_bot nor kalshi_rest enters
     sys.modules during startup. Both modules are popped first because earlier
-    tests in this suite (test_kalshi_bot, test_kalshi_rest) imported them."""
+    tests in this suite (test_kalshi_bot, test_kalshi_rest) imported them.
+    Master switch is forced on to isolate the bot-flag gate from the
+    KALSHI_ENABLED gate."""
     sys.modules.pop("app.tasks.kalshi_bot", None)
     sys.modules.pop("app.services.kalshi_rest", None)
+    monkeypatch.setenv("KALSHI_ENABLED", "true")
     monkeypatch.setenv("KALSHI_BOT_ENABLED", "false")
 
     _run_lifespan_once()
@@ -90,6 +93,7 @@ def test_lifespan_starts_bot_task_when_enabled(monkeypatch, _mock_lifespan_exter
     run_kalshi_bot` line runs and asyncio.create_task awaits it. The bot
     function itself is replaced with an AsyncMock so the test does not hang
     and the await can be asserted."""
+    monkeypatch.setenv("KALSHI_ENABLED", "true")
     monkeypatch.setenv("KALSHI_BOT_ENABLED", "true")
 
     # Pre-import and patch run_kalshi_bot so the lifespan's `from ... import
@@ -105,3 +109,20 @@ def test_lifespan_starts_bot_task_when_enabled(monkeypatch, _mock_lifespan_exter
     # The await is the actual contract — sys.modules alone is tautological
     # because the pre-import above already put the module in sys.modules.
     assert bot_stub.await_count == 1
+
+
+def test_lifespan_skips_bot_task_when_master_kill_switch_off(
+    monkeypatch, _mock_lifespan_externals
+):
+    """KALSHI_ENABLED=false overrides KALSHI_BOT_ENABLED=true — the master
+    switch wins. ``app.tasks.kalshi_bot`` and ``app.services.kalshi_rest``
+    must stay out of ``sys.modules`` exactly like the bot-disabled case."""
+    sys.modules.pop("app.tasks.kalshi_bot", None)
+    sys.modules.pop("app.services.kalshi_rest", None)
+    monkeypatch.setenv("KALSHI_ENABLED", "false")
+    monkeypatch.setenv("KALSHI_BOT_ENABLED", "true")
+
+    _run_lifespan_once()
+
+    assert "app.tasks.kalshi_bot" not in sys.modules
+    assert "app.services.kalshi_rest" not in sys.modules

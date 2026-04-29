@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.config import env_bool
 from app.db import (
     KalshiAccount,
     KalshiBotState,
@@ -29,6 +30,16 @@ from app.db import (
 from app.strategies.kalshi import list_strategies
 
 router = APIRouter()
+
+
+def require_kalshi_enabled() -> None:
+    """Master kill switch read at request time so an operator can flip
+    ``KALSHI_ENABLED=false`` in Coolify without redeploying. Applied once at
+    the router include in ``app.main``."""
+    if not env_bool("KALSHI_ENABLED", default=True):
+        raise HTTPException(
+            status_code=503, detail="Kalshi service disabled"
+        )
 
 
 def _decimal_str(value: Decimal | None) -> str | None:

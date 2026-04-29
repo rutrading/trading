@@ -9,6 +9,7 @@ import * as schema from "@/db/schema";
 import { del, post, put, type ApiResult } from "@/lib/api";
 import { BALANCE_MAP, type Experience } from "@/lib/experience";
 import type { BrokerageAccountType } from "@/lib/accounts";
+import { isKalshiEnabled } from "@/lib/kalshi-enabled";
 
 type ActionResult = { success: true } | { success: false; error: string };
 
@@ -42,6 +43,10 @@ export async function updateProfile(name: string): Promise<ActionResult> {
 }
 
 export async function createKalshiAccount(name: string): Promise<ActionResult> {
+  if (!isKalshiEnabled()) {
+    return { success: false, error: "Kalshi service is currently disabled" };
+  }
+
   const session = await getSession();
   if (!session) return { success: false, error: "Not authenticated" };
 

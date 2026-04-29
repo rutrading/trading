@@ -23,11 +23,13 @@ type Account = {
 
 export function AppShell({
   accounts,
+  hasKalshiAccount,
   userName,
   userImage,
   children,
 }: {
   accounts: Account[];
+  hasKalshiAccount: boolean;
   userName: string;
   userImage?: string | null;
   children: React.ReactNode;
@@ -35,7 +37,12 @@ export function AppShell({
   return (
     <WebSocketProvider>
       <SidebarProvider defaultOpen>
-        <AppSidebar accounts={accounts} userName={userName} userImage={userImage} />
+        <AppSidebar
+          accounts={accounts}
+          hasKalshiAccount={hasKalshiAccount}
+          userName={userName}
+          userImage={userImage}
+        />
         <SidebarInset className="md:peer-data-[variant=inset]:me-0 md:peer-data-[variant=inset]:mb-0 md:peer-data-[variant=inset]:rounded-e-none md:peer-data-[variant=inset]:rounded-b-none">
           <Page className="min-h-screen bg-background text-foreground">
             <PageBody>
