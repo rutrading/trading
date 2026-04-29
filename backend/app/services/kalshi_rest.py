@@ -239,5 +239,8 @@ async def create_subaccount() -> dict:
 
 
 async def get_subaccount_balances() -> list[dict]:
+    # Kalshi's response wrapper key is `subaccount_balances`, not `balances`;
+    # an earlier draft assumed the shorter form and the bot's _update_balance
+    # silently no-op'd every cycle on live demo because the list was empty.
     body = await _request("GET", "/portfolio/subaccounts/balances")
-    return body.get("balances", [])
+    return body.get("subaccount_balances", [])

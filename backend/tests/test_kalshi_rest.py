@@ -378,6 +378,41 @@ def test_create_subaccount_parses_subaccount_number(monkeypatch, kalshi_creds):
     assert result["subaccount_number"] == 7
 
 
+def test_get_subaccount_balances_reads_subaccount_balances_wrapper_key(
+    monkeypatch, kalshi_creds
+):
+    # Live demo Kalshi returns `{"subaccount_balances": [...]}`, not `{"balances": [...]}`.
+    # An earlier draft read the shorter key and the bot's _update_balance silently
+    # no-op'd every cycle, leaving kalshi_account.last_balance_dollars NULL forever.
+    _patch_httpx(
+        monkeypatch,
+        lambda req: httpx.Response(
+            200,
+            json={
+                "subaccount_balances": [
+                    {
+                        "subaccount_number": 0,
+                        "balance": "100.0000",
+                        "updated_ts": 1777265847,
+                    },
+                    {
+                        "subaccount_number": 5,
+                        "balance": "0.0000",
+                        "updated_ts": 1777493463,
+                    },
+                ]
+            },
+        ),
+    )
+
+    from app.services import kalshi_rest as kr
+
+    result = asyncio.run(kr.get_subaccount_balances())
+    assert len(result) == 2
+    assert result[1]["subaccount_number"] == 5
+    assert result[1]["balance"] == "0.0000"
+
+
 def test_no_module_level_network_or_key_load(monkeypatch):
     """Importing kalshi_rest must not open a client or load a private key."""
     network_calls: list = []
