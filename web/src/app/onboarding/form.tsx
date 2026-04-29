@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, LayoutGroup } from "motion/react";
@@ -15,9 +15,10 @@ import {
   CoinsIcon,
   UsersThreeIcon,
   EnvelopeSimpleIcon,
+  Robot,
 } from "@phosphor-icons/react";
 
-import { createAccount } from "@/app/actions/auth";
+import { createAccount, createKalshiAccount } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -146,6 +147,7 @@ export function OnboardingForm() {
   const [partnerEmail, setPartnerEmail] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [kalshiPending, startKalshi] = useTransition();
 
   // derive slide direction from previous step
   const prevStepRef = useRef(0);
@@ -272,6 +274,36 @@ export function OnboardingForm() {
                           />
                         ))}
                       </div>
+                      <div className="my-4 flex items-center gap-3">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-xs text-muted-foreground">or</span>
+                        <div className="h-px flex-1 bg-border" />
+                      </div>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={kalshiPending}
+                        onClick={() => {
+                          startKalshi(async () => {
+                            const result = await createKalshiAccount(
+                              "My Kalshi Account",
+                            );
+                            if (!result.success) {
+                              toast.error(
+                                "Could not create Kalshi account",
+                                result.error,
+                              );
+                              return;
+                            }
+                            router.push("/kalshi");
+                          });
+                        }}
+                      >
+                        <Robot size={16} weight="duotone" />
+                        {kalshiPending
+                          ? "Creating..."
+                          : "Create a Kalshi bot account instead"}
+                      </Button>
                     </div>
                   )}
 
