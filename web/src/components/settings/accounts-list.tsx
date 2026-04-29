@@ -12,6 +12,7 @@ import { EditAccountName } from "@/components/settings/edit-account-name";
 import { ResetAccount } from "@/components/settings/reset-account";
 import { DepositCash } from "@/components/settings/deposit-cash";
 import { DeleteAccount } from "@/components/settings/delete-account";
+import { CreateKalshiAccountButton } from "@/components/settings/create-kalshi-account";
 import { cn } from "@/lib/utils";
 import type { AccountType } from "@/lib/accounts";
 
@@ -46,20 +47,25 @@ const fmt = (n: number) =>
   n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
+  const hasKalshi = accounts.some((m) => m.tradingAccount.type === "kalshi");
   return (
     <div className="rounded-2xl bg-accent p-6">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Trading Accounts</h2>
-        <Link href="/onboarding">
-          <Button variant="outline" size="sm">
-            <Plus size={14} />
-            New Account
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <CreateKalshiAccountButton disabled={hasKalshi} />
+          <Link href="/onboarding">
+            <Button variant="outline" size="sm">
+              <Plus size={14} />
+              New Account
+            </Button>
+          </Link>
+        </div>
       </div>
       <div className="space-y-3">
         {accounts.map((m) => {
           const acct = m.tradingAccount;
+          const isKalshi = acct.type === "kalshi";
           const balance = Number(acct.balance);
           const reserved = Number(acct.reservedBalance);
           const available = balance - reserved;
@@ -82,7 +88,7 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                     <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                       {acct.type}
                     </span>
-                    {acct.type !== "kalshi" && (
+                    {!isKalshi && (
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
                         {acct.experienceLevel}
                       </span>
@@ -97,16 +103,25 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-4 border-t border-border pt-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Available</p>
-                  <p className="text-sm font-medium tabular-nums">${fmt(available)}</p>
+              {isKalshi ? (
+                <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
+                  Managed by the Kalshi bot.{" "}
+                  <Link href="/kalshi" className="text-primary hover:underline">
+                    Open dashboard
+                  </Link>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Total</p>
-                  <p className="text-sm font-medium tabular-nums">${fmt(balance)}</p>
+              ) : (
+                <div className="mt-3 grid grid-cols-2 gap-4 border-t border-border pt-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Available</p>
+                    <p className="text-sm font-medium tabular-nums">${fmt(available)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total</p>
+                    <p className="text-sm font-medium tabular-nums">${fmt(balance)}</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <Separator className="my-3" />
               <div className="flex items-center justify-between gap-2">
@@ -115,15 +130,19 @@ export const AccountsList = ({ accounts }: { accounts: Account[] }) => {
                     accountId={acct.id}
                     currentName={acct.name}
                   />
-                  <ResetAccount
-                    accountId={acct.id}
-                    accountName={acct.name}
-                    currentLevel={acct.experienceLevel}
-                  />
-                  <DepositCash
-                    accountId={acct.id}
-                    accountName={acct.name}
-                  />
+                  {!isKalshi && (
+                    <>
+                      <ResetAccount
+                        accountId={acct.id}
+                        accountName={acct.name}
+                        currentLevel={acct.experienceLevel}
+                      />
+                      <DepositCash
+                        accountId={acct.id}
+                        accountName={acct.name}
+                      />
+                    </>
+                  )}
                 </div>
                 <DeleteAccount
                   accountId={acct.id}

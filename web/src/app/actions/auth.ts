@@ -41,6 +41,68 @@ export async function updateProfile(name: string): Promise<ActionResult> {
   }
 }
 
+export async function createKalshiAccount(name: string): Promise<ActionResult> {
+  const session = await getSession();
+  if (!session) return { success: false, error: "Not authenticated" };
+
+  const trimmed = name.trim();
+  if (trimmed.length === 0) return { success: false, error: "Name cannot be empty" };
+  if (trimmed.length > 64) return { success: false, error: "Name too long" };
+
+  // Optimistic precheck — UX nicety. Real enforcement is the unique index on
+  // kalshi_account.user_id; the catch below converts SQLSTATE 23505 into the
+  // same friendly error so a race between two concurrent attempts can't 500.
+  const existing = await db.query.kalshiAccount.findFirst({
+    where: eq(schema.kalshiAccount.userId, session.user.id),
+  });
+  if (existing) {
+    return { success: false, error: "You already have a Kalshi account" };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const [tradingAccount] = await tx
+        .insert(schema.tradingAccount)
+        .values({
+          name: trimmed,
+          type: "kalshi",
+          balance: "0",
+          isJoint: false,
+          // satisfies NOT NULL; not surfaced for kalshi
+          experienceLevel: "beginner",
+        })
+        .returning();
+
+      await tx.insert(schema.accountMember).values({
+        accountId: tradingAccount.id,
+        userId: session.user.id,
+      });
+
+      await tx.insert(schema.kalshiAccount).values({
+        tradingAccountId: tradingAccount.id,
+        userId: session.user.id,
+        status: "local_only",
+      });
+
+      await tx.insert(schema.kalshiBotState).values({
+        tradingAccountId: tradingAccount.id,
+        activeStrategy: "threshold_drift",
+        automationEnabled: false,
+        paused: false,
+        dryRun: true,
+      });
+    });
+  } catch (err) {
+    const code = (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23505") {
+      return { success: false, error: "You already have a Kalshi account" };
+    }
+    return { success: false, error: "Failed to create Kalshi account" };
+  }
+
+  return { success: true };
+}
+
 export async function createAccount(
   name: string,
   type: BrokerageAccountType,
