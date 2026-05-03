@@ -141,7 +141,6 @@ class News_Source:
             if ent.label_ == "ORG":
                 if ent.text not in blacklist:
                     companies.append(ent.text)
-        print(companies)
         for company in companies:
             for stock in News_Source.stock_map:
                 if company in stock["name"]:
