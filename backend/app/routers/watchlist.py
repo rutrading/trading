@@ -32,11 +32,10 @@ router = APIRouter()
 
 
 def _ensure_user_row(db: Session, user: dict) -> str:
-    """Return the auth subject and create the local dev user row if needed.
+    """Return the auth subject and ensure the FK target exists.
 
-    In normal auth, Better Auth owns the `user` table and the row already
-    exists. In local `SKIP_AUTH` mode the backend emits a synthetic `dev` user,
-    so watchlist inserts need a matching FK target first.
+    Better Auth owns the `user` table, but watchlist inserts still need a
+    matching local row when auth state reaches the API before user sync does.
     """
     user_id = user["sub"]
     if db.get(User, user_id) is None:
@@ -44,7 +43,7 @@ def _ensure_user_row(db: Session, user: dict) -> str:
         db.add(
             User(
                 id=user_id,
-                name=user.get("name") or "Dev User",
+                name=user.get("name") or user_id,
                 email=user.get("email") or f"{user_id}@localhost",
                 email_verified=False,
                 created_at=now,
