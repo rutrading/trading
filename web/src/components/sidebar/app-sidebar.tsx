@@ -55,7 +55,6 @@ const NAV_ITEMS = [
   { label: "Orders", href: "/orders", icon: ReceiptIcon },
   { label: "News", href: "/news", icon: NewspaperIcon },
   { label: "Watchlist", href: "/watchlist", icon: BinocularsIcon },
-  { label: "Strategy", href: "/automated-trading", icon: RobotIcon },
 ] as const;
 
 type Account = {
