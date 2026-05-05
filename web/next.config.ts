@@ -21,7 +21,10 @@ const nextConfig: NextConfig = {
     preloadEntriesOnStart: false,
     turbopackFileSystemCacheForDev: true,
     turbopackFileSystemCacheForBuild: true,
-    optimizePackageImports: ["@tanstack/react-table", "@tanstack/react-virtual"],
+    optimizePackageImports: [
+      "@tanstack/react-table",
+      "@tanstack/react-virtual",
+    ],
   },
   allowedDevOrigins: ["10.0.0.104"],
 };
