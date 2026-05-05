@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { getAccounts } from "@/app/actions/auth";
 import { getAllOrders, type OrderStatus } from "@/app/actions/orders";
 import { getAllHoldings } from "@/app/actions/portfolio";
@@ -13,6 +14,7 @@ import { KeyStatistics } from "@/components/stocks/key-statistics";
 import { OrderForm, type OrderFormAccount } from "@/components/stocks/order-form";
 import { PositionSummary } from "@/components/stocks/position-summary";
 import { StockHeader } from "@/components/stocks/stock-header";
+import { Spinner } from "@/components/ui/spinner";
 import { STOCKS } from "@/components/stocks/stock-data";
 import { isUSMarketOpen } from "@/lib/market-hours";
 import {
@@ -21,6 +23,17 @@ import {
 } from "@/lib/accounts";
 
 type Props = { params: Promise<{ ticker: string[] }> };
+
+function RelatedNewsLoading() {
+  return (
+    <div className="rounded-2xl bg-accent p-6">
+      <h2 className="mb-4 text-sm font-medium text-muted-foreground">Related News</h2>
+      <div className="grid min-h-40 place-items-center rounded-xl bg-card">
+        <Spinner className="size-5 text-muted-foreground" />
+      </div>
+    </div>
+  );
+}
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { ticker } = await params;
@@ -137,7 +150,9 @@ export default async function StockPage({ params }: Props) {
       </div>
       <CompanyProfileCard ticker={symbol} company={company} />
       <KeyStatistics stock={stock} ticker={symbol} assetClass={assetClass} />
-      <RelatedNews ticker={symbol} />
+      <Suspense fallback={<RelatedNewsLoading />}>
+        <RelatedNews ticker={symbol} />
+      </Suspense>
     </div>
   );
 }
