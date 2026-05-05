@@ -22,7 +22,7 @@ export async function getWatchlist(): Promise<api.ApiResult<WatchlistResponse>> 
 export async function addToWatchlist(ticker: string): Promise<api.ApiResult<MutateResponse>> {
   const session = await getSession();
   if (!session) return { ok: false, error: "Not authenticated" };
-  return api.post<MutateResponse>("/watchlist", { ticker });
+  return api.post<MutateResponse>("/watchlist", { query: { ticker } });
 }
 
 export async function removeFromWatchlist(ticker: string): Promise<api.ApiResult<MutateResponse>> {
