@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { getAccounts } from "@/app/actions/auth";
 import {
   getAllHoldings,
+  getAllTransactions,
   getPortfolioTimeSeries,
   type PortfolioPoint,
 } from "@/app/actions/portfolio";
@@ -10,9 +12,12 @@ import { getQuotes } from "@/app/actions/quotes";
 import { AllocationPie } from "@/components/dashboard/allocation-pie";
 import { PortfolioChart } from "@/components/dashboard/portfolio-chart";
 import { HoldingsTable } from "@/components/portfolio/holdings-table";
+import { TransactionHistory } from "@/components/portfolio/transaction-history";
 import { PageHeader } from "@/components/ui/page";
 import { fmtUsd } from "@/lib/format";
-import { resolveAccountScope } from "@/lib/accounts";
+import { filterBrokerageMembers, resolveAccountScope } from "@/lib/accounts";
+
+const RECENT_TXN_LIMIT = 10;
 
 export const metadata: Metadata = { title: "Portfolio - R U Trading" };
 
@@ -21,13 +26,28 @@ type Props = { searchParams: Promise<{ account?: string }> };
 export default async function PortfolioPage({ searchParams }: Props) {
   const { account: accountParam } = await searchParams;
   const accounts = await getAccounts();
-  const { scopedAccount, activeIds } = resolveAccountScope(accounts, accountParam);
+  const { scopedId, scopedAccount, activeIds, accountsById } = resolveAccountScope(
+    accounts,
+    accountParam,
+  );
 
   const { holdings, totalCash } = await getAllHoldings(activeIds);
   const uniqueTickers = Array.from(new Set(holdings.map((h) => h.ticker)));
-  const [quotes, portfolioSeries] = await Promise.all([
+
+  // /transactions is brokerage-only — Kalshi has its own activity feed.
+  const brokerageActiveIds: number[] = [];
+  const cashByAccount: Record<number, string> = {};
+  for (const m of filterBrokerageMembers(accounts)) {
+    if (activeIds.includes(m.tradingAccount.id)) {
+      brokerageActiveIds.push(m.tradingAccount.id);
+      cashByAccount[m.tradingAccount.id] = String(m.tradingAccount.balance);
+    }
+  }
+
+  const [quotes, portfolioSeries, recentTxns] = await Promise.all([
     getQuotes(uniqueTickers),
     getPortfolioTimeSeries(holdings, totalCash, 30),
+    getAllTransactions(brokerageActiveIds, cashByAccount, 1, RECENT_TXN_LIMIT),
   ]);
 
   let totalMarketValue = 0;
@@ -120,6 +140,28 @@ export default async function PortfolioPage({ searchParams }: Props) {
       </div>
 
       <HoldingsTable holdings={holdings} totalCash={totalCash} initialQuotes={quotes} />
+
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Recent transactions</h2>
+        <TransactionHistory
+          transactions={recentTxns.transactions}
+          accountsById={scopedAccount ? undefined : accountsById}
+          page={1}
+          perPage={recentTxns.perPage}
+          total={recentTxns.transactions.length}
+          scopedAccountId={scopedId ?? undefined}
+        />
+        {recentTxns.total > recentTxns.transactions.length && (
+          <div className="text-right">
+            <Link
+              href={scopedId ? `/activity?account=${scopedId}` : "/activity"}
+              className="text-xs text-primary hover:underline"
+            >
+              View all {recentTxns.total} transactions →
+            </Link>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
